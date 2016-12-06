@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2015 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2016 by Pentaho : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -24,11 +24,15 @@ package org.pentaho.di.trans.steps.getxmldata;
 
 import java.io.InputStream;
 import java.io.StringReader;
-import java.net.URL;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.zip.GZIPInputStream;
 
+import org.apache.commons.httpclient.Header;
+import org.apache.commons.httpclient.HttpClient;
+import org.apache.commons.httpclient.HttpMethod;
+import org.apache.commons.httpclient.methods.GetMethod;
 import org.apache.commons.vfs2.FileObject;
 import org.apache.commons.vfs2.FileSystemException;
 import org.dom4j.Element;
@@ -40,6 +44,7 @@ import org.dom4j.XPath;
 import org.dom4j.io.SAXReader;
 import org.dom4j.tree.AbstractNode;
 import org.pentaho.di.core.Const;
+import org.pentaho.di.core.util.Utils;
 import org.pentaho.di.core.ResultFile;
 import org.pentaho.di.core.exception.KettleException;
 import org.pentaho.di.core.fileinput.FileInputList;
@@ -49,6 +54,7 @@ import org.pentaho.di.core.row.RowMetaInterface;
 import org.pentaho.di.core.row.ValueMetaInterface;
 import org.pentaho.di.core.row.value.ValueMetaFactory;
 import org.pentaho.di.core.vfs.KettleVFS;
+import org.pentaho.di.core.xml.XMLParserFactoryProducer;
 import org.pentaho.di.i18n.BaseMessages;
 import org.pentaho.di.trans.Trans;
 import org.pentaho.di.trans.TransMeta;
@@ -82,9 +88,8 @@ public class GetXMLData extends BaseStep implements StepInterface {
     this.prevRow = buildEmptyRow(); // pre-allocate previous row
 
     try {
-      SAXReader reader = new SAXReader();
+      SAXReader reader = XMLParserFactoryProducer.getSAXReader( null );
       data.stopPruning = false;
-
       // Validate XML against specified schema?
       if ( meta.isValidating() ) {
         reader.setValidation( true );
@@ -156,11 +161,24 @@ public class GetXMLData extends BaseStep implements StepInterface {
         data.document = reader.read( new StringReader( StringXML ) );
       } else if ( readurl ) {
         // read url as source
-        data.document = reader.read( new URL( StringXML ) );
+        HttpClient client = new HttpClient();
+        HttpMethod method = new GetMethod( StringXML );
+        method.addRequestHeader( "Accept-Encoding", "gzip" );
+        client.executeMethod( method );
+        Header contentEncoding = method.getResponseHeader( "Content-Encoding" );
+        if ( contentEncoding != null ) {
+          String acceptEncodingValue = contentEncoding.getValue();
+          if ( acceptEncodingValue.indexOf( "gzip" ) != -1 ) {
+            GZIPInputStream in = new GZIPInputStream( method.getResponseBodyAsStream() );
+            data.document = reader.read( in );
+          }
+        } else {
+          data.document = reader.read( method.getResponseBodyAsStream() );
+        }
       } else {
         // get encoding. By default UTF-8
         String encoding = "UTF-8";
-        if ( !Const.isEmpty( meta.getEncoding() ) ) {
+        if ( !Utils.isEmpty( meta.getEncoding() ) ) {
           encoding = meta.getEncoding();
         }
         InputStream is = KettleVFS.getInputStream( file );
@@ -341,7 +359,7 @@ public class GetXMLData extends BaseStep implements StepInterface {
         data.convertRowMeta = data.outputRowMeta.cloneToType( ValueMetaInterface.TYPE_STRING );
 
         // Check is XML field is provided
-        if ( Const.isEmpty( meta.getXMLField() ) ) {
+        if ( Utils.isEmpty( meta.getXMLField() ) ) {
           logError( BaseMessages.getString( PKG, "GetXMLData.Log.NoField" ) );
           throw new KettleException( BaseMessages.getString( PKG, "GetXMLData.Log.NoField" ) );
         }
@@ -371,6 +389,12 @@ public class GetXMLData extends BaseStep implements StepInterface {
           try {
             // XML source is a file.
             file = KettleVFS.getFileObject( Fieldvalue, getTransMeta() );
+
+            if ( meta.isIgnoreEmptyFile() && file.getContent().getSize() == 0 ) {
+              logBasic( BaseMessages.getString( PKG, "GetXMLData.Error.FileSizeZero", "" + file.getName() ) );
+              return ReadNextString();
+            }
+
             // Open the XML document
             if ( !setDocument( null, file, false, false ) ) {
               throw new KettleException( BaseMessages.getString( PKG, "GetXMLData.Log.UnableCreateDocument" ) );
@@ -705,7 +729,24 @@ public class GetXMLData extends BaseStep implements StepInterface {
         GetXMLDataField xmlDataField = meta.getInputFields()[i];
         // Get the Path to look for
         String XPathValue = xmlDataField.getXPath();
-
+        XPathValue = environmentSubstitute( XPathValue );
+        if ( xmlDataField.getElementType() == GetXMLDataField.ELEMENT_TYPE_ATTRIBUT ) {
+          // We have an attribute
+          // do we need to add leading @?
+          // Only put @ to the last element in path, not in front at all
+          int last = XPathValue.lastIndexOf( GetXMLDataMeta.N0DE_SEPARATOR );
+          if ( last > -1 ) {
+            last++;
+            String attribut = XPathValue.substring( last, XPathValue.length() );
+            if ( !attribut.startsWith( GetXMLDataMeta.AT ) ) {
+              XPathValue = XPathValue.substring( 0, last ) + GetXMLDataMeta.AT + attribut;
+            }
+          } else {
+            if ( !XPathValue.startsWith( GetXMLDataMeta.AT ) ) {
+              XPathValue = GetXMLDataMeta.AT + XPathValue;
+            }
+          }
+        }
         if ( meta.isuseToken() ) {
           // See if user use Token inside path field
           // The syntax is : @_Fieldname-
@@ -772,7 +813,7 @@ public class GetXMLData extends BaseStep implements StepInterface {
 
         // Do we need to repeat this field if it is null?
         if ( meta.getInputFields()[i].isRepeated() ) {
-          if ( data.previousRow != null && Const.isEmpty( nodevalue ) ) {
+          if ( data.previousRow != null && Utils.isEmpty( nodevalue ) ) {
             outputRowData[data.totalpreviousfields + i] = data.previousRow[data.totalpreviousfields + i];
           }
         }
@@ -781,11 +822,11 @@ public class GetXMLData extends BaseStep implements StepInterface {
       int rowIndex = data.totalpreviousfields + data.nrInputFields;
 
       // See if we need to add the filename to the row...
-      if ( meta.includeFilename() && !Const.isEmpty( meta.getFilenameField() ) ) {
+      if ( meta.includeFilename() && !Utils.isEmpty( meta.getFilenameField() ) ) {
         outputRowData[rowIndex++] = data.filename;
       }
       // See if we need to add the row number to the row...
-      if ( meta.includeRowNumber() && !Const.isEmpty( meta.getRowNumberField() ) ) {
+      if ( meta.includeRowNumber() && !Utils.isEmpty( meta.getRowNumberField() ) ) {
         outputRowData[rowIndex++] = data.rownr;
       }
       // Possibly add short filename...
@@ -892,35 +933,8 @@ public class GetXMLData extends BaseStep implements StepInterface {
     if ( super.init( smi, sdi ) ) {
       data.rownr = 1L;
       data.nrInputFields = meta.getInputFields().length;
-
-      // correct attribut path if needed
-      // do it once
-      for ( int i = 0; i < data.nrInputFields; i++ ) {
-        GetXMLDataField xmlDataField = meta.getInputFields()[i];
-        // Resolve variable substitution
-        String XPathValue = environmentSubstitute( xmlDataField.getXPath() );
-        if ( xmlDataField.getElementType() == GetXMLDataField.ELEMENT_TYPE_ATTRIBUT ) {
-          // We have an attribute
-          // do we need to add leading @?
-          // Only put @ to the last element in path, not in front at all
-          int last = XPathValue.lastIndexOf( GetXMLDataMeta.N0DE_SEPARATOR );
-          if ( last > -1 ) {
-            last++;
-            String attribut = XPathValue.substring( last, XPathValue.length() );
-            if ( !attribut.startsWith( GetXMLDataMeta.AT ) ) {
-              XPathValue = XPathValue.substring( 0, last ) + GetXMLDataMeta.AT + attribut;
-            }
-          } else {
-            if ( !XPathValue.startsWith( GetXMLDataMeta.AT ) ) {
-              XPathValue = GetXMLDataMeta.AT + XPathValue;
-            }
-          }
-        }
-        xmlDataField.setXPath( XPathValue );
-      }
-
       data.PathValue = environmentSubstitute( meta.getLoopXPath() );
-      if ( Const.isEmpty( data.PathValue ) ) {
+      if ( Utils.isEmpty( data.PathValue ) ) {
         logError( BaseMessages.getString( PKG, "GetXMLData.Error.EmptyPath" ) );
         return false;
       }
@@ -933,7 +947,7 @@ public class GetXMLData extends BaseStep implements StepInterface {
 
       data.prunePath = environmentSubstitute( meta.getPrunePath() );
       if ( data.prunePath != null ) {
-        if ( Const.isEmpty( data.prunePath.trim() ) ) {
+        if ( Utils.isEmpty( data.prunePath.trim() ) ) {
           data.prunePath = null;
         } else {
           // ensure a leading slash

@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2013 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2016 by Pentaho : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -38,6 +38,7 @@ import org.pentaho.di.base.AbstractMeta;
 import org.pentaho.di.cluster.ClusterSchema;
 import org.pentaho.di.cluster.SlaveServer;
 import org.pentaho.di.core.Const;
+import org.pentaho.di.core.util.Utils;
 import org.pentaho.di.core.ObjectLocationSpecificationMethod;
 import org.pentaho.di.core.Props;
 import org.pentaho.di.core.database.DatabaseMeta;
@@ -45,6 +46,8 @@ import org.pentaho.di.core.exception.KettleException;
 import org.pentaho.di.core.exception.KettleMissingPluginsException;
 import org.pentaho.di.core.exception.KettleXMLException;
 import org.pentaho.di.core.exception.LookupReferencesException;
+import org.pentaho.di.core.extension.ExtensionPointHandler;
+import org.pentaho.di.core.extension.KettleExtensionPoint;
 import org.pentaho.di.core.gui.HasOverwritePrompter;
 import org.pentaho.di.core.gui.OverwritePrompter;
 import org.pentaho.di.core.gui.SpoonFactory;
@@ -65,7 +68,6 @@ import org.pentaho.di.shared.SharedObjects;
 import org.pentaho.di.trans.TransMeta;
 import org.pentaho.di.trans.step.StepMeta;
 import org.pentaho.di.trans.steps.mapping.MappingMeta;
-import org.pentaho.di.trans.steps.metainject.MetaInjectMeta;
 import org.w3c.dom.Document;
 import org.w3c.dom.Node;
 import org.xml.sax.SAXParseException;
@@ -212,7 +214,7 @@ public class RepositoryImporter implements IRepositoryImporter, CanLimitDirs {
       for ( int ii = 0; ii < filenames.length; ++ii ) {
 
         final String filename =
-            ( !Const.isEmpty( fileDirectory ) ) ? fileDirectory + Const.FILE_SEPARATOR + filenames[ii] : filenames[ii];
+            ( !Utils.isEmpty( fileDirectory ) ) ? fileDirectory + Const.FILE_SEPARATOR + filenames[ii] : filenames[ii];
         if ( log.isBasic() ) {
           log.logBasic( "Import objects from XML file [" + filename + "]" );
         }
@@ -575,6 +577,13 @@ public class RepositoryImporter implements IRepositoryImporter, CanLimitDirs {
    * package-local visibility for testing purposes
    */
   void patchTransSteps( TransMeta transMeta ) {
+
+    Object[] metaInjectObjectArray = new Object[4];
+
+    metaInjectObjectArray[0] = transDirOverride;
+    metaInjectObjectArray[1] = baseDirectory;
+    metaInjectObjectArray[3] = needToCheckPathForVariables;
+
     for ( StepMeta stepMeta : transMeta.getSteps() ) {
       if ( stepMeta.isMapping() ) {
         MappingMeta mappingMeta = (MappingMeta) stepMeta.getStepMetaInterface();
@@ -587,16 +596,14 @@ public class RepositoryImporter implements IRepositoryImporter, CanLimitDirs {
           mappingMeta.setDirectoryPath( mappingMetaPath );
         }
       }
-      if ( stepMeta.isEtlMetaInject() ) {
-        MetaInjectMeta metaInjectMeta = (MetaInjectMeta) stepMeta.getStepMetaInterface();
-        if ( metaInjectMeta.getSpecificationMethod() == ObjectLocationSpecificationMethod.REPOSITORY_BY_NAME ) {
-          if ( transDirOverride != null ) {
-            metaInjectMeta.setDirectoryPath( transDirOverride );
-            continue;
-          }
-          String mappingMetaPath = resolvePath( baseDirectory.getPath(), metaInjectMeta.getDirectoryPath() );
-          metaInjectMeta.setDirectoryPath( mappingMetaPath );
-        }
+
+      metaInjectObjectArray[2] = stepMeta;
+
+      try {
+        ExtensionPointHandler
+          .callExtensionPoint( log, KettleExtensionPoint.RepositoryImporterPatchTransStep.id, metaInjectObjectArray );
+      } catch ( KettleException ke ) {
+        log.logError( ke.getMessage(), ke );
       }
     }
   }
@@ -919,6 +926,9 @@ public class RepositoryImporter implements IRepositoryImporter, CanLimitDirs {
 
   private RepositoryDirectoryInterface getTargetDirectory( String directoryPath, String dirOverride,
       RepositoryImportFeedbackInterface feedback ) throws KettleException {
+    if ( directoryPath.isEmpty() ) {
+      return baseDirectory;
+    }
     RepositoryDirectoryInterface targetDirectory = null;
     if ( dirOverride != null ) {
       targetDirectory = rep.findDirectory( directoryPath );

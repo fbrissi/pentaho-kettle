@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2013 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2016 by Pentaho : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -213,7 +213,7 @@ public class SwingGC implements GCInterface {
 
     imageLocked = getImageIcon( BasePropertyHandler.getProperty( "Locked_image" ) );
     imageStepError = getImageIcon( BasePropertyHandler.getProperty( "StepErrorLines_image" ) );
-    imageEdit = getImageIcon( BasePropertyHandler.getProperty( "Edit_image" ) );
+    imageEdit = getImageIcon( BasePropertyHandler.getProperty( "EditSmall_image" ) );
     imageContextMenu = getImageIcon( BasePropertyHandler.getProperty( "ContextMenu_image" ) );
     imageTrue = getImageIcon( BasePropertyHandler.getProperty( "True_image" ) );
     imageFalse = getImageIcon( BasePropertyHandler.getProperty( "False_image" ) );
@@ -341,7 +341,7 @@ public class SwingGC implements GCInterface {
   @Override
   public void drawImage( String location, ClassLoader classLoader, int x, int y ) {
     SwingUniversalImage img = SwingSvgImageUtil.getUniversalImage( classLoader, location );
-    drawImage( img, x, y, small_icon_size  );
+    drawImage( img, x, y, small_icon_size );
   }
 
   @Override
@@ -358,6 +358,11 @@ public class SwingGC implements GCInterface {
 
     // gc.drawImage(img, locationX+xOffset, locationY+yOffset, observer);
 
+  }
+
+  public void drawImage( EImage image, int x, int y, int width, int height, float magnification ) {
+    SwingUniversalImage img = getNativeImage( image );
+    drawImage( img, x, y, width, height );
   }
 
   @Override
@@ -811,5 +816,4 @@ public class SwingGC implements GCInterface {
   public void drawImage( BufferedImage image, int x, int y ) {
     gc.drawImage( image, x, y, observer );
   }
-
 }

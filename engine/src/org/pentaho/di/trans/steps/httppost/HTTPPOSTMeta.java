@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2013 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2016 by Pentaho : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -27,14 +27,16 @@ import java.util.List;
 import org.pentaho.di.core.CheckResult;
 import org.pentaho.di.core.CheckResultInterface;
 import org.pentaho.di.core.Const;
+import org.pentaho.di.core.util.Utils;
 import org.pentaho.di.core.database.DatabaseMeta;
 import org.pentaho.di.core.encryption.Encr;
 import org.pentaho.di.core.exception.KettleException;
 import org.pentaho.di.core.exception.KettleStepException;
 import org.pentaho.di.core.exception.KettleXMLException;
 import org.pentaho.di.core.row.RowMetaInterface;
-import org.pentaho.di.core.row.ValueMeta;
 import org.pentaho.di.core.row.ValueMetaInterface;
+import org.pentaho.di.core.row.value.ValueMetaInteger;
+import org.pentaho.di.core.row.value.ValueMetaString;
 import org.pentaho.di.core.variables.VariableSpace;
 import org.pentaho.di.core.xml.XMLHandler;
 import org.pentaho.di.i18n.BaseMessages;
@@ -93,7 +95,6 @@ public class HTTPPOSTMeta extends BaseStepMeta implements StepMetaInterface {
   private String fieldName;
   private String resultCodeFieldName;
   private String responseHeaderFieldName;
-
   private boolean urlInField;
 
   private String urlField;
@@ -334,18 +335,15 @@ public class HTTPPOSTMeta extends BaseStepMeta implements StepMetaInterface {
 
     int nrargs = argumentField.length;
     retval.allocate( nrargs );
-    for ( int i = 0; i < nrargs; i++ ) {
-      retval.argumentField[i] = argumentField[i];
-      retval.argumentParameter[i] = argumentParameter[i];
-      retval.argumentHeader[i] = argumentHeader[i];
-    }
+    System.arraycopy( argumentField, 0, retval.argumentField, 0, nrargs );
+    System.arraycopy( argumentParameter, 0, retval.argumentParameter, 0, nrargs );
+    System.arraycopy( argumentHeader, 0, retval.argumentHeader, 0, nrargs );
+
 
     int nrqueryparams = queryField.length;
     retval.allocateQuery( nrqueryparams );
-    for ( int i = 0; i < nrqueryparams; i++ ) {
-      retval.queryField[i] = queryField[i];
-      retval.queryParameter[i] = queryParameter[i];
-    }
+    System.arraycopy( queryField, 0, retval.queryField, 0, nrqueryparams );
+    System.arraycopy( queryParameter, 0, retval.queryParameter, 0, nrqueryparams );
 
     return retval;
   }
@@ -382,31 +380,32 @@ public class HTTPPOSTMeta extends BaseStepMeta implements StepMetaInterface {
 
   public void getFields( RowMetaInterface inputRowMeta, String name, RowMetaInterface[] info, StepMeta nextStep,
     VariableSpace space, Repository repository, IMetaStore metaStore ) throws KettleStepException {
-    if ( !Const.isEmpty( fieldName ) ) {
-      ValueMetaInterface v = new ValueMeta( space.environmentSubstitute( fieldName ), ValueMeta.TYPE_STRING );
+    if ( !Utils.isEmpty( fieldName ) ) {
+      ValueMetaInterface v = new ValueMetaString( space.environmentSubstitute( fieldName ) );
       inputRowMeta.addValueMeta( v );
     }
 
-    if ( !Const.isEmpty( resultCodeFieldName ) ) {
+    if ( !Utils.isEmpty( resultCodeFieldName ) ) {
       ValueMetaInterface v =
-        new ValueMeta( space.environmentSubstitute( resultCodeFieldName ), ValueMeta.TYPE_INTEGER );
+        new ValueMetaInteger( space.environmentSubstitute( resultCodeFieldName ) );
       inputRowMeta.addValueMeta( v );
     }
-    if ( !Const.isEmpty( responseTimeFieldName ) ) {
+    if ( !Utils.isEmpty( responseTimeFieldName ) ) {
       ValueMetaInterface v =
-        new ValueMeta( space.environmentSubstitute( responseTimeFieldName ), ValueMeta.TYPE_INTEGER );
+        new ValueMetaInteger( space.environmentSubstitute( responseTimeFieldName ) );
       inputRowMeta.addValueMeta( v );
     }
-    if ( !Const.isEmpty( responseHeaderFieldName ) ) {
+    String headerFieldName = space.environmentSubstitute( responseHeaderFieldName );
+    if ( !Utils.isEmpty( headerFieldName ) ) {
       ValueMetaInterface v =
-        new ValueMeta( space.environmentSubstitute( responseHeaderFieldName ), ValueMeta.TYPE_STRING );
+        new ValueMetaString( headerFieldName );
       v.setOrigin( name );
       inputRowMeta.addValueMeta( v );
     }
   }
 
   public String getXML() {
-    StringBuffer retval = new StringBuffer();
+    StringBuilder retval = new StringBuilder();
 
     retval.append( "    " + XMLHandler.addTagValue( "postafile", postafile ) );
     retval.append( "    " + XMLHandler.addTagValue( "encoding", encoding ) );
@@ -491,7 +490,8 @@ public class HTTPPOSTMeta extends BaseStepMeta implements StepMetaInterface {
       fieldName = XMLHandler.getTagValue( stepnode, "result", "name" ); // Optional, can be null
       resultCodeFieldName = XMLHandler.getTagValue( stepnode, "result", "code" ); // Optional, can be null
       responseTimeFieldName = XMLHandler.getTagValue( stepnode, "result", "response_time" ); // Optional, can be null
-      responseHeaderFieldName = XMLHandler.getTagValue( stepnode, "result", "response_header" ); // Optional, can be null
+      responseHeaderFieldName =
+        XMLHandler.getTagValue( stepnode, "result", "response_header" ); // Optional, can be null
     } catch ( Exception e ) {
       throw new KettleXMLException(
         BaseMessages.getString( PKG, "HTTPPOSTMeta.Exception.UnableToReadStepInfo" ), e );
@@ -600,7 +600,7 @@ public class HTTPPOSTMeta extends BaseStepMeta implements StepMetaInterface {
 
     // check Url
     if ( urlInField ) {
-      if ( Const.isEmpty( urlField ) ) {
+      if ( Utils.isEmpty( urlField ) ) {
         cr =
           new CheckResult( CheckResult.TYPE_RESULT_ERROR, BaseMessages.getString(
             PKG, "HTTPPOSTMeta.CheckResult.UrlfieldMissing" ), stepMeta );
@@ -611,7 +611,7 @@ public class HTTPPOSTMeta extends BaseStepMeta implements StepMetaInterface {
       }
 
     } else {
-      if ( Const.isEmpty( url ) ) {
+      if ( Utils.isEmpty( url ) ) {
         cr =
           new CheckResult( CheckResult.TYPE_RESULT_ERROR, BaseMessages.getString(
             PKG, "HTTPPOSTMeta.CheckResult.UrlMissing" ), stepMeta );
@@ -746,13 +746,12 @@ public class HTTPPOSTMeta extends BaseStepMeta implements StepMetaInterface {
   public void setResponseTimeFieldName( String responseTimeFieldName ) {
     this.responseTimeFieldName = responseTimeFieldName;
   }
-  
+
   public String getResponseHeaderFieldName() {
-	return responseHeaderFieldName;
+    return responseHeaderFieldName;
   }
 
   public void setResponseHeaderFieldName( String responseHeaderFieldName ) {
     this.responseHeaderFieldName = responseHeaderFieldName;
   }
-  
 }

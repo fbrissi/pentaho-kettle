@@ -23,6 +23,7 @@
 package org.pentaho.di.www;
 
 import org.pentaho.di.core.Const;
+import org.pentaho.di.core.util.Utils;
 import org.pentaho.di.core.logging.LoggingObjectType;
 import org.pentaho.di.core.logging.SimpleLoggingObject;
 import org.pentaho.di.core.xml.XMLHandler;
@@ -180,7 +181,7 @@ public class AddJobServlet extends BaseHttpServlet implements CartePluginInterfa
     try {
       // First read the complete transformation in memory from the request
       int c;
-      StringBuffer xml = new StringBuffer();
+      StringBuilder xml = new StringBuilder();
       while ( ( c = in.read() ) != -1 ) {
         xml.append( (char) c );
       }
@@ -225,7 +226,7 @@ public class AddJobServlet extends BaseHttpServlet implements CartePluginInterfa
         // Grab the parameter value set in the job entry
         //
         String thisValue = jobExecutionConfiguration.getParams().get( parameterNames[idx] );
-        if ( !Const.isEmpty( thisValue ) ) {
+        if ( !Utils.isEmpty( thisValue ) ) {
           // Set the value as specified by the user in the job entry
           //
           jobMeta.setParameterValue( parameterNames[idx], thisValue );

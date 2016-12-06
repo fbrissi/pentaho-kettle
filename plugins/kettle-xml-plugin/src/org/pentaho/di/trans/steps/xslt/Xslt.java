@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2015 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2016 by Pentaho : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -22,7 +22,6 @@
 
 package org.pentaho.di.trans.steps.xslt;
 
-import java.io.PrintWriter;
 import java.io.StringReader;
 import java.io.StringWriter;
 import java.util.Properties;
@@ -35,8 +34,7 @@ import javax.xml.transform.stream.StreamSource;
 
 import org.apache.commons.vfs2.FileObject;
 import org.apache.commons.vfs2.FileType;
-import org.apache.xml.utils.DefaultErrorHandler;
-import org.pentaho.di.core.Const;
+import org.pentaho.di.core.util.Utils;
 import org.pentaho.di.core.exception.KettleException;
 import org.pentaho.di.core.exception.KettleStepException;
 import org.pentaho.di.core.row.RowDataUtil;
@@ -86,14 +84,14 @@ public class Xslt extends BaseStep implements StepInterface {
       meta.getFields( data.outputRowMeta, getStepname(), null, null, this, repository, metaStore );
 
       // Check if The result field is given
-      if ( Const.isEmpty( meta.getResultfieldname() ) ) {
+      if ( Utils.isEmpty( meta.getResultfieldname() ) ) {
         // Result Field is missing !
         logError( BaseMessages.getString( PKG, "Xslt.Log.ErrorResultFieldMissing" ) );
         throw new KettleStepException( BaseMessages.getString( PKG, "Xslt.Exception.ErrorResultFieldMissing" ) );
       }
 
       // Check if The XML field is given
-      if ( Const.isEmpty( meta.getFieldname() ) ) {
+      if ( Utils.isEmpty( meta.getFieldname() ) ) {
         // Result Field is missing !
         logError( BaseMessages.getString( PKG, "Xslt.Exception.ErrorXMLFieldMissing" ) );
         throw new KettleStepException( BaseMessages.getString( PKG, "Xslt.Exception.ErrorXMLFieldMissing" ) );
@@ -111,7 +109,7 @@ public class Xslt extends BaseStep implements StepInterface {
 
       // Check if the XSL Filename is contained in a column
       if ( meta.useXSLField() ) {
-        if ( Const.isEmpty( meta.getXSLFileField() ) ) {
+        if ( Utils.isEmpty( meta.getXSLFileField() ) ) {
           // The field is missing
           // Result field is missing !
           logError( BaseMessages.getString( PKG, "Xslt.Log.ErrorXSLFileFieldMissing" ) );
@@ -131,7 +129,7 @@ public class Xslt extends BaseStep implements StepInterface {
         }
 
       } else {
-        if ( Const.isEmpty( meta.getXslFilename() ) ) {
+        if ( Utils.isEmpty( meta.getXslFilename() ) ) {
           logError( BaseMessages.getString( PKG, "Xslt.Log.ErrorXSLFile" ) );
           throw new KettleStepException( BaseMessages.getString( PKG, "Xslt.Exception.ErrorXSLFile" ) );
         }
@@ -182,7 +180,7 @@ public class Xslt extends BaseStep implements StepInterface {
         for ( int i = 0; i < data.nrParams; i++ ) {
           String name = environmentSubstitute( meta.getParameterName()[i] );
           String field = environmentSubstitute( meta.getParameterField()[i] );
-          if ( Const.isEmpty( field ) ) {
+          if ( Utils.isEmpty( field ) ) {
             throw new KettleStepException( BaseMessages
                 .getString( PKG, "Xslt.Exception.ParameterFieldMissing", name, i ) );
           }
@@ -261,18 +259,13 @@ public class Xslt extends BaseStep implements StepInterface {
       putRow( data.outputRowMeta, outputRowData ); // copy row to output rowset(s);
 
     } catch ( Exception e ) {
-      String errorMessage = e.getMessage();
-      StringWriter sw = new StringWriter();
-      PrintWriter pw = new PrintWriter( sw );
-      DefaultErrorHandler.printLocation( pw, e );
-      pw.close();
-      errorMessage = sw.toString() + "\n" + errorMessage;
+      String errorMessage = e.getClass().toString() + ": " + e.getMessage();
 
       if ( getStepMeta().isDoingErrorHandling() ) {
         // Simply add this row to the error row
         putError( getInputRowMeta(), row, 1, errorMessage, meta.getResultfieldname(), "XSLT01" );
       } else {
-        logError( BaseMessages.getString( PKG, "Xslt.ErrorProcesing" + " : " + errorMessage ) );
+        logError( BaseMessages.getString( PKG, "Xslt.ErrorProcesing" + " : " + errorMessage ), e );
         throw new KettleStepException( BaseMessages.getString( PKG, "Xslt.ErrorProcesing" ), e );
       }
     }

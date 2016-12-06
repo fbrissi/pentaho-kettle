@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2015 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2016 by Pentaho : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -36,6 +36,7 @@ import org.apache.commons.lang.StringUtils;
 import org.pentaho.di.ExecutionConfiguration;
 import org.pentaho.di.cluster.SlaveServer;
 import org.pentaho.di.core.Const;
+import org.pentaho.di.core.util.Utils;
 import org.pentaho.di.core.Result;
 import org.pentaho.di.core.encryption.Encr;
 import org.pentaho.di.core.exception.KettleException;
@@ -47,9 +48,13 @@ import org.pentaho.di.core.plugins.RepositoryPluginType;
 import org.pentaho.di.core.variables.VariableSpace;
 import org.pentaho.di.core.variables.Variables;
 import org.pentaho.di.core.xml.XMLHandler;
+import org.pentaho.di.job.entries.trans.JobEntryTrans;
+import org.pentaho.di.job.entry.JobEntryCopy;
 import org.pentaho.di.repository.RepositoriesMeta;
 import org.pentaho.di.repository.Repository;
 import org.pentaho.di.repository.RepositoryMeta;
+import org.pentaho.di.trans.TransMeta;
+import org.pentaho.metastore.api.IMetaStore;
 import org.w3c.dom.Node;
 
 public class JobExecutionConfiguration implements ExecutionConfiguration {
@@ -315,7 +320,7 @@ public class JobExecutionConfiguration implements ExecutionConfiguration {
   }
 
   public String getXML() throws IOException {
-    StringBuffer xml = new StringBuffer( 160 );
+    StringBuilder xml = new StringBuilder( 160 );
 
     xml.append( "  <" + XML_TAG + ">" ).append( Const.CR );
 
@@ -428,7 +433,7 @@ public class JobExecutionConfiguration implements ExecutionConfiguration {
       Node argNode = XMLHandler.getSubNodeByNr( varsNode, "variable", i );
       String name = XMLHandler.getTagValue( argNode, "name" );
       String value = XMLHandler.getTagValue( argNode, "value" );
-      if ( !Const.isEmpty( name ) && !Const.isEmpty( value ) ) {
+      if ( !Utils.isEmpty( name ) && !Utils.isEmpty( value ) ) {
         variables.put( name, value );
       }
     }
@@ -441,7 +446,7 @@ public class JobExecutionConfiguration implements ExecutionConfiguration {
       Node argNode = XMLHandler.getSubNodeByNr( argsNode, "argument", i );
       String name = XMLHandler.getTagValue( argNode, "name" );
       String value = XMLHandler.getTagValue( argNode, "value" );
-      if ( !Const.isEmpty( name ) && !Const.isEmpty( value ) ) {
+      if ( !Utils.isEmpty( name ) && !Utils.isEmpty( value ) ) {
         arguments.put( name, value );
       }
     }
@@ -454,7 +459,7 @@ public class JobExecutionConfiguration implements ExecutionConfiguration {
       Node parmNode = XMLHandler.getSubNodeByNr( parmsNode, "parameter", i );
       String name = XMLHandler.getTagValue( parmNode, "name" );
       String value = XMLHandler.getTagValue( parmNode, "value" );
-      if ( !Const.isEmpty( name ) ) {
+      if ( !Utils.isEmpty( name ) ) {
         params.put( name, value );
       }
     }
@@ -499,6 +504,7 @@ public class JobExecutionConfiguration implements ExecutionConfiguration {
     // Verify that the repository exists on the slave server...
     //
     RepositoriesMeta repositoriesMeta = new RepositoriesMeta();
+    repositoriesMeta.getLog().setLogLevel( log.getLogLevel() );
     try {
       repositoriesMeta.readData();
     } catch ( Exception e ) {
@@ -672,5 +678,26 @@ public class JobExecutionConfiguration implements ExecutionConfiguration {
 
   public void setPassedBatchId( Long passedBatchId ) {
     this.passedBatchId = passedBatchId;
+  }
+
+  public void getUsedArguments( JobMeta jobMeta, String[] commandLineArguments, IMetaStore metaStore ) {
+
+    for ( JobEntryCopy jobEntryCopy : jobMeta.jobcopies ) {
+      if ( jobEntryCopy.isTransformation() ) {
+        JobEntryTrans jobEntryTrans = (JobEntryTrans) jobEntryCopy.getEntry();
+        try {
+          TransMeta transMeta = jobEntryTrans.getTransMeta( repository, metaStore, jobMeta );
+          Map<String, String> map = transMeta.getUsedArguments( commandLineArguments );
+          for ( String key : map.keySet() ) {
+            String value = map.get( key );
+            if ( !arguments.containsKey( key ) ) {
+              arguments.put( key, value );
+            }
+          }
+        } catch ( KettleException ke ) {
+          log.logBasic( ke.getMessage(), ke );
+        }
+      }
+    }
   }
 }

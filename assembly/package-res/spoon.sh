@@ -114,6 +114,16 @@ case `uname -s` in
 
 
 	Linux)
+
+            HASWEBKITGTK=`ldconfig -p | grep webkitgtk-1.0`
+            if [ -z "$HASWEBKITGTK" ]; then
+              echo "#######################################################################"
+              echo "WARNING:  no libwebkitgtk-1.0 detected, some features will be unavailable"
+              echo "    Consider installing the package with apt-get or yum."
+              echo "    e.g. 'sudo apt-get install libwebkitgtk-1.0-0'"
+              echo "#######################################################################"
+            fi
+
 	    ARCH=`uname -m`
 		case $ARCH in
 			x86_64)
@@ -220,6 +230,6 @@ fi
 EXIT_CODE=$?
 
 # return to the catalog from which spoon.sh has been started
-cd $INITIALDIR
+cd "$INITIALDIR"
 
 exit $EXIT_CODE

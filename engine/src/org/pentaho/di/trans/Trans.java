@@ -3,7 +3,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2015 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2016 by Pentaho : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -32,7 +32,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Date;
-import java.util.Deque;
+import java.util.Queue;
 import java.util.HashMap;
 import java.util.Hashtable;
 import java.util.Iterator;
@@ -47,7 +47,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.servlet.http.HttpServletRequest;
@@ -60,6 +59,7 @@ import org.pentaho.di.cluster.SlaveServer;
 import org.pentaho.di.core.BlockingBatchingRowSet;
 import org.pentaho.di.core.BlockingRowSet;
 import org.pentaho.di.core.Const;
+import org.pentaho.di.core.util.Utils;
 import org.pentaho.di.core.Counter;
 import org.pentaho.di.core.ExecutorInterface;
 import org.pentaho.di.core.ExtensionDataInterface;
@@ -107,7 +107,7 @@ import org.pentaho.di.core.parameters.NamedParams;
 import org.pentaho.di.core.parameters.NamedParamsDefault;
 import org.pentaho.di.core.parameters.UnknownParamException;
 import org.pentaho.di.core.row.RowMetaInterface;
-import org.pentaho.di.core.row.ValueMeta;
+import org.pentaho.di.core.row.value.ValueMetaString;
 import org.pentaho.di.core.util.EnvUtil;
 import org.pentaho.di.core.variables.VariableSpace;
 import org.pentaho.di.core.variables.Variables;
@@ -146,6 +146,15 @@ import org.pentaho.di.www.SocketRepository;
 import org.pentaho.di.www.StartExecutionTransServlet;
 import org.pentaho.di.www.WebResult;
 import org.pentaho.metastore.api.IMetaStore;
+
+import static org.pentaho.di.trans.Trans.BitMaskStatus.FINISHED;
+import static org.pentaho.di.trans.Trans.BitMaskStatus.RUNNING;
+import static org.pentaho.di.trans.Trans.BitMaskStatus.STOPPED;
+import static org.pentaho.di.trans.Trans.BitMaskStatus.PREPARING;
+import static org.pentaho.di.trans.Trans.BitMaskStatus.INITIALIZING;
+import static org.pentaho.di.trans.Trans.BitMaskStatus.PAUSED;
+import static org.pentaho.di.trans.Trans.BitMaskStatus.BIT_STATUS_SUM;
+
 
 /**
  * This class represents the information and operations associated with the concept of a Transformation. It loads,
@@ -303,23 +312,30 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
   /** The transaction ID */
   private String transactionId;
 
-  /** Whether the transformation is preparing for execution. */
-  private volatile boolean preparing;
+  /** Int value for storage trans statuses*/
+  private AtomicInteger status;
 
-  /** Whether the transformation is initializing. */
-  private boolean initializing;
+  /**
+   * <p>This enum stores bit masks which are used to manipulate with
+   * statuses over field {@link Trans#status}
+   */
+  enum BitMaskStatus {
+    RUNNING( 1 ),
+    INITIALIZING( 2 ),
+    PREPARING( 4 ),
+    STOPPED( 8 ),
+    FINISHED( 16 ),
+    PAUSED( 32 );
 
-  /** Whether the transformation is running. */
-  private boolean running;
+    private final int mask;
+    //the sum of status masks
+    public static final int BIT_STATUS_SUM = 63;
 
-  /** Whether the transformation is finished. */
-  private final AtomicBoolean finished;
+    BitMaskStatus( int mask ) {
+      this.mask = mask;
+    }
 
-  /** Whether the transformation is paused. */
-  private AtomicBoolean paused;
-
-  /** Whether the transformation is stopped. */
-  private AtomicBoolean stopped;
+  }
 
   /** The number of errors that have occurred during execution of the transformation. */
   private AtomicInteger errors;
@@ -413,9 +429,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    * Instantiates a new transformation.
    */
   public Trans() {
-    finished = new AtomicBoolean( false );
-    paused = new AtomicBoolean( false );
-    stopped = new AtomicBoolean( false );
+    status = new AtomicInteger();
 
     transListeners = Collections.synchronizedList( new ArrayList<TransListener>() );
     transStoppedListeners = Collections.synchronizedList( new ArrayList<TransStoppedListener>() );
@@ -430,7 +444,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
     stepPerformanceSnapshotSeqNr = new AtomicInteger( 0 );
     lastWrittenStepPerformanceSequenceNr = 0;
 
-    activeSubtransformations = new HashMap<String, Trans>();
+    activeSubtransformations = new ConcurrentHashMap<>();
     activeSubjobs = new HashMap<String, Job>();
 
     resultRows = new ArrayList<RowMetaAndData>();
@@ -518,6 +532,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    * @return the log channel
    * @see org.pentaho.di.core.logging.HasLogChannelInterface#getLogChannel()
    */
+  @Override
   public LogChannelInterface getLogChannel() {
     return log;
   }
@@ -623,9 +638,9 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    *           in case the transformation could not be prepared (initialized)
    */
   public void prepareExecution( String[] arguments ) throws KettleException {
-    preparing = true;
+    setPreparing( true );
     startDate = null;
-    running = false;
+    setRunning( false );
 
     log.snap( Metrics.METRIC_TRANSFORMATION_EXECUTION_START );
     log.snap( Metrics.METRIC_TRANSFORMATION_INIT_START );
@@ -789,7 +804,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
                 // amounts of rows.
                 //
                 Boolean batchingRowSet =
-                    ValueMeta.convertStringToBoolean( System.getProperty( Const.KETTLE_BATCHING_ROWSET ) );
+                    ValueMetaString.convertStringToBoolean( System.getProperty( Const.KETTLE_BATCHING_ROWSET ) );
                 if ( batchingRowSet != null && batchingRowSet.booleanValue() ) {
                   rowSet = new BlockingBatchingRowSet( transMeta.getSizeRowset() );
                 } else {
@@ -1031,8 +1046,8 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
       }
     }
 
-    preparing = false;
-    initializing = true;
+    setPreparing( false );
+    setInitializing( true );
 
     // Do a topology sort... Over 150 step (copies) things might be slowing down too much.
     //
@@ -1078,7 +1093,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
       }
     }
 
-    initializing = false;
+    setInitializing( false );
     boolean ok = true;
 
     // All step are initialized now: see if there was one that didn't do it
@@ -1190,6 +1205,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
       // also attach a Step Listener to detect when we're done...
       //
       StepListener stepListener = new StepListener() {
+        @Override
         public void stepActive( Trans trans, StepMeta stepMeta, StepInterface step ) {
           nrOfActiveSteps++;
           if ( nrOfActiveSteps == 1 ) {
@@ -1203,6 +1219,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
           }
         }
 
+        @Override
         public void stepFinished( Trans trans, StepMeta stepMeta, StepInterface step ) {
           synchronized ( Trans.this ) {
             nrOfFinishedSteps++;
@@ -1254,7 +1271,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
       // Calculate the maximum number of snapshots to be kept in memory
       //
       String limitString = environmentSubstitute( transMeta.getStepPerformanceCapturingSizeLimit() );
-      if ( Const.isEmpty( limitString ) ) {
+      if ( Utils.isEmpty( limitString ) ) {
         limitString = EnvUtil.getSystemProperty( Const.KETTLE_STEP_PERFORMANCE_SNAPSHOT_LIMIT );
       }
       stepPerformanceSnapshotSizeLimit = Const.toInt( limitString, 0 );
@@ -1263,6 +1280,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
       //
       stepPerformanceSnapShotTimer = new Timer( "stepPerformanceSnapShot Timer: " + transMeta.getName() );
       TimerTask timerTask = new TimerTask() {
+        @Override
         public void run() {
           if ( !isFinished() ) {
             addStepPerformanceSnapShot();
@@ -1275,12 +1293,13 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
     // Now start a thread to monitor the running transformation...
     //
     setFinished( false );
-    paused.set( false );
-    stopped.set( false );
+    setPaused( false );
+    setStopped( false );
 
     transFinishedBlockingQueue = new ArrayBlockingQueue<Object>( 10 );
 
     TransListener transListener = new TransAdapter() {
+      @Override
       public void transFinished( Trans trans ) {
 
         try {
@@ -1299,7 +1318,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
         }
 
         setFinished( true );
-        running = false; // no longer running
+        setRunning( false ); // no longer running
 
         log.snap( Metrics.METRIC_TRANSFORMATION_EXECUTION_STOP );
 
@@ -1329,7 +1348,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
     //
     transListeners.add( 0, transListener );
 
-    running = true;
+    setRunning( true );
 
     switch ( transMeta.getTransformationType() ) {
       case Normal:
@@ -1363,6 +1382,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
 
       case SerialSingleThreaded:
         new Thread( new Runnable() {
+          @Override
           public void run() {
             try {
               // Always disable thread priority management, it will always slow us
@@ -1379,6 +1399,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
               // Sort the steps from start to finish...
               //
               Collections.sort( steps, new Comparator<StepMetaDataCombi>() {
+                @Override
                 public int compare( StepMetaDataCombi c1, StepMetaDataCombi c2 ) {
 
                   boolean c1BeforeC2 = transMeta.findPrevious( c2.stepMeta, c1.stepMeta );
@@ -1435,6 +1456,10 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
 
     heartbeat = startHeartbeat( getHeartbeatIntervalInSeconds() );
 
+    if ( steps.isEmpty() ) {
+      fireTransFinishedListeners();
+    }
+
     if ( log.isDetailed() ) {
       log.logDetailed( BaseMessages.getString( PKG, "Trans.Log.TransformationHasAllocated", String.valueOf( steps
           .size() ), String.valueOf( rowsets.size() ) ) );
@@ -1462,8 +1487,10 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
           badGuys.add( e );
         }
       }
-      // Signal for the the waitUntilFinished blocker...
-      transFinishedBlockingQueue.add( new Object() );
+      if ( transFinishedBlockingQueue != null ) {
+        // Signal for the the waitUntilFinished blocker...
+        transFinishedBlockingQueue.add( new Object() );
+      }
       if ( !badGuys.isEmpty() ) {
         // FIFO
         throw new KettleException( badGuys.get( 0 ) );
@@ -1642,11 +1669,12 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    * @return true if the transformation is finished, false otherwise
    */
   public boolean isFinished() {
-    return finished.get();
+    int exist = status.get() & FINISHED.mask;
+    return exist != 0;
   }
 
-  private void setFinished( boolean newValue ) {
-    finished.set( newValue );
+  private void setFinished( boolean finished ) {
+    status.updateAndGet( v -> finished ? v | FINISHED.mask : ( BIT_STATUS_SUM ^ FINISHED.mask ) & v );
   }
 
   public boolean isFinishedOrStopped() {
@@ -1868,8 +1896,8 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
     }
 
     // if it is stopped it is not paused
-    paused.set( false );
-    stopped.set( true );
+    setPaused( false );
+    setStopped( true );
 
     // Fire the stopped listener...
     //
@@ -2017,12 +2045,12 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
       if ( logConnection != null ) {
 
         String logSchemaAndTable = logConnection.getQuotedSchemaTableCombination( logSchema, logTable );
-        if ( Const.isEmpty( logTable ) ) {
+        if ( Utils.isEmpty( logTable ) ) {
           // It doesn't make sense to start database logging without a table
           // to log to.
           throw new KettleTransException( BaseMessages.getString( PKG, "Trans.Exception.NoLogTableDefined" ) );
         }
-        if ( Const.isEmpty( transMeta.getName() ) && logConnection != null && logTable != null ) {
+        if ( Utils.isEmpty( transMeta.getName() ) && logConnection != null && logTable != null ) {
           throw new KettleException( BaseMessages.getString( PKG, "Trans.Exception.NoTransnameAvailableForLogging" ) );
         }
         transLogTableDatabaseConnection = new Database( this, logConnection );
@@ -2234,7 +2262,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
           currentDate ) );
 
       try {
-        if ( transLogTableDatabaseConnection != null && !Const.isEmpty( logTable ) && !Const.isEmpty( transMeta
+        if ( transLogTableDatabaseConnection != null && !Utils.isEmpty( logTable ) && !Utils.isEmpty( transMeta
             .getName() ) ) {
           transLogTableDatabaseConnection.writeLogRecord( transLogTable, LogStatus.START, this, null );
 
@@ -2249,6 +2277,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
           if ( intervalInSeconds > 0 ) {
             final Timer timer = new Timer( getName() + " - interval logging timer" );
             TimerTask timerTask = new TimerTask() {
+              @Override
               public void run() {
                 try {
                   endProcessing();
@@ -2264,6 +2293,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
             timer.schedule( timerTask, intervalInSeconds * 1000, intervalInSeconds * 1000 );
 
             addTransListener( new TransAdapter() {
+              @Override
               public void transFinished( Trans trans ) {
                 timer.cancel();
               }
@@ -2273,6 +2303,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
           // Add a listener to make sure that the last record is also written when transformation finishes...
           //
           addTransListener( new TransAdapter() {
+            @Override
             public void transFinished( Trans trans ) throws KettleException {
               try {
                 endProcessing();
@@ -2294,6 +2325,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
         StepLogTable stepLogTable = transMeta.getStepLogTable();
         if ( stepLogTable.isDefined() ) {
           addTransListener( new TransAdapter() {
+            @Override
             public void transFinished( Trans trans ) throws KettleException {
               try {
                 writeStepLogInformation();
@@ -2310,6 +2342,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
         ChannelLogTable channelLogTable = transMeta.getChannelLogTable();
         if ( channelLogTable.isDefined() ) {
           addTransListener( new TransAdapter() {
+            @Override
             public void transFinished( Trans trans ) throws KettleException {
               try {
                 writeLogChannelInformation();
@@ -2328,6 +2361,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
         if ( performanceLogTable.isDefined() && perfLogInterval > 0 ) {
           final Timer timer = new Timer( getName() + " - step performance log interval timer" );
           TimerTask timerTask = new TimerTask() {
+            @Override
             public void run() {
               try {
                 lastWrittenStepPerformanceSequenceNr =
@@ -2345,6 +2379,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
           timer.schedule( timerTask, perfLogInterval * 1000, perfLogInterval * 1000 );
 
           addTransListener( new TransAdapter() {
+            @Override
             public void transFinished( Trans trans ) {
               timer.cancel();
             }
@@ -2489,7 +2524,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
 
       List<String> logChannelIds = LoggingRegistry.getInstance().getLogChannelChildren( getLogChannelId() );
       for ( String logChannelId : logChannelIds ) {
-        Deque<MetricsSnapshotInterface> snapshotList =
+        Queue<MetricsSnapshotInterface> snapshotList =
             MetricsRegistry.getInstance().getSnapshotLists().get( logChannelId );
         if ( snapshotList != null ) {
           Iterator<MetricsSnapshotInterface> iterator = snapshotList.iterator();
@@ -2570,7 +2605,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
     }
 
     result.setRows( resultRows );
-    if ( !Const.isEmpty( resultFiles ) ) {
+    if ( !Utils.isEmpty( resultFiles ) ) {
       result.setResultFiles( new HashMap<String, ResultFile>() );
       for ( ResultFile resultFile : resultFiles ) {
         result.getResultFiles().put( resultFile.toString(), resultFile );
@@ -2631,7 +2666,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
 
         // Write to the standard transformation log table...
         //
-        if ( !Const.isEmpty( logTable ) ) {
+        if ( !Utils.isEmpty( logTable ) ) {
           ldb.writeLogRecord( transLogTable, status, this, null );
         }
 
@@ -3063,6 +3098,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    * @return the string representation of the transformation
    * @see java.lang.Object#toString()
    */
+  @Override
   public String toString() {
     if ( transMeta == null || transMeta.getName() == null ) {
       return getClass().getSimpleName();
@@ -3070,7 +3106,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
 
     // See if there is a parent transformation. If so, print the name of the parent here as well...
     //
-    StringBuffer string = new StringBuffer();
+    StringBuilder string = new StringBuilder( 50 );
 
     // If we're running as a mapping, we get a reference to the calling (parent) transformation as well...
     //
@@ -3080,7 +3116,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
 
     // When we run a mapping we also set a mapping step name in there...
     //
-    if ( !Const.isEmpty( mappingStepName ) ) {
+    if ( !Utils.isEmpty( mappingStepName ) ) {
       string.append( '[' ).append( mappingStepName ).append( ']' ).append( '.' );
     }
 
@@ -3394,7 +3430,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
   /**
    * Gets the name of the thread that contains the transformation.
    *
-   * @deprecated please use getTransactionId() instead
+   * @deprecated use {@link #getTransactionId()}
    * @return the thread name
    */
   @Deprecated
@@ -3405,7 +3441,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
   /**
    * Sets the thread name for the transformation.
    *
-   * @deprecated please use setTransactionId() instead
+   * @deprecated use {@link #setTransactionId(String)}
    * @param threadName
    *          the thread name
    */
@@ -3422,26 +3458,26 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
   public String getStatus() {
     String message;
 
-    if ( running ) {
+    if ( isRunning() ) {
       if ( isStopped() ) {
         message = STRING_HALTING;
       } else {
-        if ( isFinished() ) {
-          message = STRING_FINISHED;
-          if ( getResult().getNrErrors() > 0 ) {
-            message += " (with errors)";
-          }
-        } else if ( isPaused() ) {
+        if ( isPaused() ) {
           message = STRING_PAUSED;
         } else {
           message = STRING_RUNNING;
         }
       }
+    } else if ( isFinished() ) {
+      message = STRING_FINISHED;
+      if ( getResult().getNrErrors() > 0 ) {
+        message += " (with errors)";
+      }
     } else if ( isStopped() ) {
       message = STRING_STOPPED;
-    } else if ( preparing ) {
+    } else if ( isPreparing() ) {
       message = STRING_PREPARING;
-    } else if ( initializing ) {
+    } else if ( isInitializing() ) {
       message = STRING_INITIALIZING;
     } else {
       message = STRING_WAITING;
@@ -3456,7 +3492,8 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    * @return true if the transformation is initializing, false otherwise
    */
   public boolean isInitializing() {
-    return initializing;
+    int exist = status.get() & INITIALIZING.mask;
+    return exist != 0;
   }
 
   /**
@@ -3466,7 +3503,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    *          true if the transformation is initializing, false otherwise
    */
   public void setInitializing( boolean initializing ) {
-    this.initializing = initializing;
+    status.updateAndGet( v -> initializing ? v | INITIALIZING.mask : ( BIT_STATUS_SUM ^ INITIALIZING.mask ) & v );
   }
 
   /**
@@ -3475,7 +3512,8 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    * @return true if the transformation is preparing for execution, false otherwise
    */
   public boolean isPreparing() {
-    return preparing;
+    int exist = status.get() & PREPARING.mask;
+    return exist != 0;
   }
 
   /**
@@ -3485,7 +3523,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    *          true if the transformation is preparing for execution, false otherwise
    */
   public void setPreparing( boolean preparing ) {
-    this.preparing = preparing;
+    status.updateAndGet( v -> preparing ? v | PREPARING.mask : ( BIT_STATUS_SUM ^ PREPARING.mask ) & v );
   }
 
   /**
@@ -3494,7 +3532,8 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    * @return true if the transformation is running, false otherwise
    */
   public boolean isRunning() {
-    return running;
+    int exist = status.get() & RUNNING.mask;
+    return exist != 0;
   }
 
   /**
@@ -3504,7 +3543,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    *          true if the transformation is running, false otherwise
    */
   public void setRunning( boolean running ) {
-    this.running = running;
+    status.updateAndGet( v -> running ? v | RUNNING.mask : ( BIT_STATUS_SUM ^ RUNNING.mask ) & v );
   }
 
   /**
@@ -3519,9 +3558,9 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    * @throws KettleException
    *           the kettle exception
    */
-  public static final TransSplitter executeClustered( final TransMeta transMeta,
+  public static TransSplitter executeClustered( final TransMeta transMeta,
       final TransExecutionConfiguration executionConfiguration ) throws KettleException {
-    if ( Const.isEmpty( transMeta.getName() ) ) {
+    if ( Utils.isEmpty( transMeta.getName() ) ) {
       throw new KettleException( "The transformation needs a name to uniquely identify it by on the remote server." );
     }
 
@@ -3548,7 +3587,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    *           the kettle exception
    * @see org.pentaho.di.ui.spoon.delegates.SpoonTransformationDelegate
    */
-  public static final void executeClustered( final TransSplitter transSplitter,
+  public static void executeClustered( final TransSplitter transSplitter,
       final TransExecutionConfiguration executionConfiguration ) throws KettleException {
     try {
       // Send the transformations to the servers...
@@ -3609,6 +3648,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
 
         if ( executionConfiguration.isClusterPosting() ) {
           Runnable runnable = new Runnable() {
+            @Override
             public void run() {
               try {
                 // Create a copy for local use... We get race-conditions otherwise...
@@ -4133,7 +4173,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
     if ( slaveServer == null ) {
       throw new KettleException( "No slave server specified" );
     }
-    if ( Const.isEmpty( transMeta.getName() ) ) {
+    if ( Utils.isEmpty( transMeta.getName() ) ) {
       throw new KettleException( "The transformation needs a name to uniquely identify it by on the remote server." );
     }
 
@@ -4238,7 +4278,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    *          the new internal kettle variables
    */
   public void setInternalKettleVariables( VariableSpace var ) {
-    if ( transMeta != null && !Const.isEmpty( transMeta.getFilename() ) ) { // we have a finename that's defined.
+    if ( transMeta != null && !Utils.isEmpty( transMeta.getFilename() ) ) { // we have a finename that's defined.
       try {
         FileObject fileObject = KettleVFS.getFileObject( transMeta.getFilename(), var );
         FileName fileName = fileObject.getName();
@@ -4300,6 +4340,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    *          the variable space
    * @see org.pentaho.di.core.variables.VariableSpace#copyVariablesFrom(org.pentaho.di.core.variables.VariableSpace)
    */
+  @Override
   public void copyVariablesFrom( VariableSpace space ) {
     variables.copyVariablesFrom( space );
   }
@@ -4312,6 +4353,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    * @return the string after variables have been resolved/susbstituted
    * @see org.pentaho.di.core.variables.VariableSpace#environmentSubstitute(java.lang.String)
    */
+  @Override
   public String environmentSubstitute( String aString ) {
     return variables.environmentSubstitute( aString );
   }
@@ -4325,10 +4367,12 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    * @return the array of strings after variables have been resolved/susbstituted
    * @see org.pentaho.di.core.variables.VariableSpace#environmentSubstitute(java.lang.String[])
    */
+  @Override
   public String[] environmentSubstitute( String[] aString ) {
     return variables.environmentSubstitute( aString );
   }
 
+  @Override
   public String fieldSubstitute( String aString, RowMetaInterface rowMeta, Object[] rowData )
     throws KettleValueException {
     return variables.fieldSubstitute( aString, rowMeta, rowData );
@@ -4340,6 +4384,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    * @return the parent variable space
    * @see org.pentaho.di.core.variables.VariableSpace#getParentVariableSpace()
    */
+  @Override
   public VariableSpace getParentVariableSpace() {
     return variables.getParentVariableSpace();
   }
@@ -4352,6 +4397,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    * @see org.pentaho.di.core.variables.VariableSpace#setParentVariableSpace(
    *      org.pentaho.di.core.variables.VariableSpace)
    */
+  @Override
   public void setParentVariableSpace( VariableSpace parent ) {
     variables.setParentVariableSpace( parent );
   }
@@ -4366,6 +4412,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    * @return the value of the specified variable, or returns a default value if no such variable exists
    * @see org.pentaho.di.core.variables.VariableSpace#getVariable(java.lang.String, java.lang.String)
    */
+  @Override
   public String getVariable( String variableName, String defaultValue ) {
     return variables.getVariable( variableName, defaultValue );
   }
@@ -4378,6 +4425,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    * @return the value of the specified variable, or returns a default value if no such variable exists
    * @see org.pentaho.di.core.variables.VariableSpace#getVariable(java.lang.String)
    */
+  @Override
   public String getVariable( String variableName ) {
     return variables.getVariable( variableName );
   }
@@ -4393,11 +4441,12 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    * @return a boolean representation of the specified variable after performing any necessary substitution
    * @see org.pentaho.di.core.variables.VariableSpace#getBooleanValueOfVariable(java.lang.String, boolean)
    */
+  @Override
   public boolean getBooleanValueOfVariable( String variableName, boolean defaultValue ) {
-    if ( !Const.isEmpty( variableName ) ) {
+    if ( !Utils.isEmpty( variableName ) ) {
       String value = environmentSubstitute( variableName );
-      if ( !Const.isEmpty( value ) ) {
-        return ValueMeta.convertStringToBoolean( value );
+      if ( !Utils.isEmpty( value ) ) {
+        return ValueMetaString.convertStringToBoolean( value );
       }
     }
     return defaultValue;
@@ -4411,6 +4460,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    * @see org.pentaho.di.core.variables.VariableSpace#initializeVariablesFrom(
    *      org.pentaho.di.core.variables.VariableSpace)
    */
+  @Override
   public void initializeVariablesFrom( VariableSpace parent ) {
     variables.initializeVariablesFrom( parent );
   }
@@ -4421,6 +4471,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    * @return a list of variable names
    * @see org.pentaho.di.core.variables.VariableSpace#listVariables()
    */
+  @Override
   public String[] listVariables() {
     return variables.listVariables();
   }
@@ -4434,6 +4485,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    *          the variable value
    * @see org.pentaho.di.core.variables.VariableSpace#setVariable(java.lang.String, java.lang.String)
    */
+  @Override
   public void setVariable( String variableName, String variableValue ) {
     variables.setVariable( variableName, variableValue );
   }
@@ -4446,6 +4498,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    *          the variable space
    * @see org.pentaho.di.core.variables.VariableSpace#shareVariablesWith(org.pentaho.di.core.variables.VariableSpace)
    */
+  @Override
   public void shareVariablesWith( VariableSpace space ) {
     variables = space;
   }
@@ -4459,6 +4512,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    *          the property map
    * @see org.pentaho.di.core.variables.VariableSpace#injectVariables(java.util.Map)
    */
+  @Override
   public void injectVariables( Map<String, String> prop ) {
     variables.injectVariables( prop );
   }
@@ -4467,7 +4521,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    * Pauses the transformation (pause all steps).
    */
   public void pauseRunning() {
-    paused.set( true );
+    setPaused( true );
     for ( StepMetaDataCombi combi : steps ) {
       combi.step.pauseRunning();
     }
@@ -4480,7 +4534,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
     for ( StepMetaDataCombi combi : steps ) {
       combi.step.resumeRunning();
     }
-    paused.set( false );
+    setPaused( false );
   }
 
   /**
@@ -4621,7 +4675,12 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    * @return true if the transformation is paused, false otherwise
    */
   public boolean isPaused() {
-    return paused.get();
+    int exist = status.get() & PAUSED.mask;
+    return exist != 0;
+  }
+
+  public void setPaused( boolean paused ) {
+    status.updateAndGet( v -> paused ? v | PAUSED.mask : ( BIT_STATUS_SUM ^ PAUSED.mask ) & v );
   }
 
   /**
@@ -4630,7 +4689,12 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    * @return true if the transformation is stopped, false otherwise
    */
   public boolean isStopped() {
-    return stopped.get();
+    int exist = status.get() & STOPPED.mask;
+    return exist != 0;
+  }
+
+  public void setStopped( boolean stopped ) {
+    status.updateAndGet( v -> stopped ? v | STOPPED.mask : ( BIT_STATUS_SUM ^ STOPPED.mask ) & v );
   }
 
   /**
@@ -4744,6 +4808,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    * @see org.pentaho.di.core.parameters.NamedParams#addParameterDefinition(java.lang.String, java.lang.String,
    *      java.lang.String)
    */
+  @Override
   public void addParameterDefinition( String key, String defValue, String description ) throws DuplicateParamException {
     namedParams.addParameterDefinition( key, defValue, description );
   }
@@ -4758,6 +4823,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    *           if the parameter does not exist
    * @see org.pentaho.di.core.parameters.NamedParams#getParameterDefault(java.lang.String)
    */
+  @Override
   public String getParameterDefault( String key ) throws UnknownParamException {
     return namedParams.getParameterDefault( key );
   }
@@ -4772,6 +4838,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    *           if the parameter does not exist
    * @see org.pentaho.di.core.parameters.NamedParams#getParameterDescription(java.lang.String)
    */
+  @Override
   public String getParameterDescription( String key ) throws UnknownParamException {
     return namedParams.getParameterDescription( key );
   }
@@ -4786,6 +4853,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    *           if the parameter does not exist
    * @see org.pentaho.di.core.parameters.NamedParams#getParameterValue(java.lang.String)
    */
+  @Override
   public String getParameterValue( String key ) throws UnknownParamException {
     return namedParams.getParameterValue( key );
   }
@@ -4796,6 +4864,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    * @return an array of strings containing the names of all parameters for the transformation
    * @see org.pentaho.di.core.parameters.NamedParams#listParameters()
    */
+  @Override
   public String[] listParameters() {
     return namedParams.listParameters();
   }
@@ -4811,6 +4880,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    *           if the parameter does not exist
    * @see org.pentaho.di.core.parameters.NamedParams#setParameterValue(java.lang.String, java.lang.String)
    */
+  @Override
   public void setParameterValue( String key, String value ) throws UnknownParamException {
     namedParams.setParameterValue( key, value );
   }
@@ -4820,6 +4890,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    *
    * @see org.pentaho.di.core.parameters.NamedParams#eraseParameters()
    */
+  @Override
   public void eraseParameters() {
     namedParams.eraseParameters();
   }
@@ -4829,6 +4900,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    *
    * @see org.pentaho.di.core.parameters.NamedParams#clearParameters()
    */
+  @Override
   public void clearParameters() {
     namedParams.clearParameters();
   }
@@ -4840,6 +4912,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    *
    * @see org.pentaho.di.core.parameters.NamedParams#activateParameters()
    */
+  @Override
   public void activateParameters() {
     String[] keys = listParameters();
 
@@ -4858,7 +4931,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
         defValue = "";
       }
 
-      if ( Const.isEmpty( value ) ) {
+      if ( Utils.isEmpty( value ) ) {
         setVariable( key, Const.NVL( defValue, "" ) );
       } else {
         setVariable( key, Const.NVL( value, "" ) );
@@ -4873,6 +4946,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    *          the NamedParams object from which to copy the parameters
    * @see org.pentaho.di.core.parameters.NamedParams#copyParametersFrom(org.pentaho.di.core.parameters.NamedParams)
    */
+  @Override
   public void copyParametersFrom( NamedParams params ) {
     namedParams.copyParametersFrom( params );
   }
@@ -4944,6 +5018,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    * @return the object name
    * @see org.pentaho.di.core.logging.LoggingObjectInterface#getObjectName()
    */
+  @Override
   public String getObjectName() {
     return getName();
   }
@@ -4954,6 +5029,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    * @return null
    * @see org.pentaho.di.core.logging.LoggingObjectInterface#getObjectCopy()
    */
+  @Override
   public String getObjectCopy() {
     return null;
   }
@@ -4964,6 +5040,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    * @return the filename
    * @see org.pentaho.di.core.logging.LoggingObjectInterface#getFilename()
    */
+  @Override
   public String getFilename() {
     if ( transMeta == null ) {
       return null;
@@ -4977,6 +5054,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    * @return the log channel ID
    * @see org.pentaho.di.core.logging.LoggingObjectInterface#getLogChannelId()
    */
+  @Override
   public String getLogChannelId() {
     return log.getLogChannelId();
   }
@@ -4987,6 +5065,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    * @return the object ID
    * @see org.pentaho.di.core.logging.LoggingObjectInterface#getObjectId()
    */
+  @Override
   public ObjectId getObjectId() {
     if ( transMeta == null ) {
       return null;
@@ -5000,6 +5079,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    * @return the object revision
    * @see org.pentaho.di.core.logging.LoggingObjectInterface#getObjectRevision()
    */
+  @Override
   public ObjectRevision getObjectRevision() {
     if ( transMeta == null ) {
       return null;
@@ -5013,6 +5093,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    * @return the object type
    * @see org.pentaho.di.core.logging.LoggingObjectInterface#getObjectType()
    */
+  @Override
   public LoggingObjectType getObjectType() {
     return LoggingObjectType.TRANS;
   }
@@ -5023,6 +5104,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    * @return the parent
    * @see org.pentaho.di.core.logging.LoggingObjectInterface#getParent()
    */
+  @Override
   public LoggingObjectInterface getParent() {
     return parent;
   }
@@ -5033,6 +5115,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    * @return the repository directory
    * @see org.pentaho.di.core.logging.LoggingObjectInterface#getRepositoryDirectory()
    */
+  @Override
   public RepositoryDirectoryInterface getRepositoryDirectory() {
     if ( transMeta == null ) {
       return null;
@@ -5046,6 +5129,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    * @return the log level
    * @see org.pentaho.di.core.logging.LoggingObjectInterface#getLogLevel()
    */
+  @Override
   public LogLevel getLogLevel() {
     return logLevel;
   }
@@ -5080,12 +5164,28 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
   }
 
   /**
-   * Gets the active sub-transformations.
+   *  Use:
+   *  {@link #addActiveSubTransformation(String, Trans),
+   *  {@link #getActiveSubTransformation(String)},
+   *  {@link #removeActiveSubTransformation(String)}
    *
-   * @return a map (by name) of the active sub-transformations
+   *  instead
    */
+  @Deprecated
   public Map<String, Trans> getActiveSubtransformations() {
     return activeSubtransformations;
+  }
+
+  public void addActiveSubTransformation( final String subTransName, Trans subTrans ) {
+    activeSubtransformations.put( subTransName, subTrans );
+  }
+
+  public Trans removeActiveSubTransformation( final String subTransName ) {
+    return activeSubtransformations.remove( subTransName );
+  }
+
+  public Trans getActiveSubTransformation( final String subTransName ) {
+    return activeSubtransformations.get( subTransName );
   }
 
   /**
@@ -5102,6 +5202,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    *
    * @return the Carte object ID
    */
+  @Override
   public String getContainerObjectId() {
     return containerObjectId;
   }
@@ -5121,6 +5222,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    *
    * @return null
    */
+  @Override
   public Date getRegistrationDate() {
     return null;
   }
@@ -5149,7 +5251,11 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    *
    * @return the executingServer
    */
+  @Override
   public String getExecutingServer() {
+    if ( executingServer == null ) {
+      setExecutingServer( Const.getHostname() );
+    }
     return executingServer;
   }
 
@@ -5159,6 +5265,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    * @param executingServer
    *          the executingServer to set
    */
+  @Override
   public void setExecutingServer( String executingServer ) {
     this.executingServer = executingServer;
   }
@@ -5168,6 +5275,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    *
    * @return the executingUser
    */
+  @Override
   public String getExecutingUser() {
     return executingUser;
   }
@@ -5178,6 +5286,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    * @param executingUser
    *          the executingUser to set
    */
+  @Override
   public void setExecutingUser( String executingUser ) {
     this.executingUser = executingUser;
   }
@@ -5251,7 +5360,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    * can continue with other data. This is intended for use when running single threaded.
    */
   public void clearError() {
-    stopped.set( false );
+    setStopped( false );
     errors.set( 0 );
     setFinished( false );
     for ( StepMetaDataCombi combi : steps ) {
@@ -5316,7 +5425,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
    * Sets encoding of HttpServletResponse according to System encoding.Check if system encoding is null or an empty and
    * set it to HttpServletResponse when not and writes error to log if null. Throw IllegalArgumentException if input
    * parameter is null.
-   * 
+   *
    * @param response
    *          the HttpServletResponse to set encoding, mayn't be null
    */
@@ -5519,6 +5628,7 @@ public class Trans implements VariableSpace, NamedParams, HasLogChannelInterface
     } );
 
     heartbeat.scheduleAtFixedRate( new Runnable() {
+      @Override
       public void run() {
         try {
 

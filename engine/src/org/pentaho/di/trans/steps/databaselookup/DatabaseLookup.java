@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2013 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2016 by Pentaho : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -25,8 +25,8 @@ package org.pentaho.di.trans.steps.databaselookup;
 import java.util.Arrays;
 import java.util.List;
 
-import com.google.common.annotations.VisibleForTesting;
 import org.pentaho.di.core.Const;
+import org.pentaho.di.core.util.Utils;
 import org.pentaho.di.core.database.Database;
 import org.pentaho.di.core.database.DatabaseMeta;
 import org.pentaho.di.core.exception.KettleDatabaseException;
@@ -35,9 +35,9 @@ import org.pentaho.di.core.exception.KettleStepException;
 import org.pentaho.di.core.row.RowDataUtil;
 import org.pentaho.di.core.row.RowMeta;
 import org.pentaho.di.core.row.RowMetaInterface;
-import org.pentaho.di.core.row.ValueMeta;
 import org.pentaho.di.core.row.ValueMetaInterface;
 import org.pentaho.di.core.row.value.ValueMetaFactory;
+import org.pentaho.di.core.row.value.ValueMetaString;
 import org.pentaho.di.i18n.BaseMessages;
 import org.pentaho.di.trans.Trans;
 import org.pentaho.di.trans.TransMeta;
@@ -47,6 +47,8 @@ import org.pentaho.di.trans.step.StepInterface;
 import org.pentaho.di.trans.step.StepMeta;
 import org.pentaho.di.trans.step.StepMetaInterface;
 import org.pentaho.di.trans.steps.databaselookup.readallcache.ReadAllCache;
+
+import com.google.common.annotations.VisibleForTesting;
 
 /**
  * Looks up values in a database using keys from input streams.
@@ -261,8 +263,8 @@ public class DatabaseLookup extends BaseStep implements StepInterface {
     data.nullif = new Object[ returnFields.length ];
 
     for ( int i = 0; i < returnFields.length; i++ ) {
-      if ( !Const.isEmpty( meta.getReturnValueDefault()[ i ] ) ) {
-        ValueMetaInterface stringMeta = new ValueMeta( "string", ValueMetaInterface.TYPE_STRING );
+      if ( !Utils.isEmpty( meta.getReturnValueDefault()[ i ] ) ) {
+        ValueMetaInterface stringMeta = new ValueMetaString( "string" );
         ValueMetaInterface returnMeta = data.outputRowMeta.getValueMeta( i + getInputRowMeta().size() );
         data.nullif[ i ] = returnMeta.convertData( stringMeta, meta.getReturnValueDefault()[ i ] );
       } else {
@@ -310,6 +312,7 @@ public class DatabaseLookup extends BaseStep implements StepInterface {
     }
   }
 
+  @Override
   public boolean processRow( StepMetaInterface smi, StepDataInterface sdi ) throws KettleException {
     Object[] r = getRow(); // Get row from input rowset & set row busy!
     if ( r == null ) { // no more input to be expected...
@@ -481,16 +484,18 @@ public class DatabaseLookup extends BaseStep implements StepInterface {
   }
 
   private void putToDefaultCache( Database db, List<Object[]> rows ) {
-    RowMetaInterface returnRowMeta = db.getReturnRowMeta();
+    final int keysAmount = meta.getStreamKeyField1().length;
+    RowMetaInterface prototype = copyValueMetasFrom( db.getReturnRowMeta(), keysAmount );
+
     // Copy the data into 2 parts: key and value...
     //
     for ( Object[] row : rows ) {
       int index = 0;
       // not sure it is efficient to re-create the same on every row,
       // but this was done earlier, so I'm keeping this behaviour
-      RowMetaInterface keyMeta = returnRowMeta.clone();
-      Object[] keyData = new Object[ meta.getStreamKeyField1().length ];
-      for ( int i = 0; i < meta.getStreamKeyField1().length; i++ ) {
+      RowMetaInterface keyMeta = prototype.clone();
+      Object[] keyData = new Object[ keysAmount ];
+      for ( int i = 0; i < keysAmount; i++ ) {
         keyData[ i ] = row[ index++ ];
       }
       // RowMeta valueMeta = new RowMeta();
@@ -504,6 +509,16 @@ public class DatabaseLookup extends BaseStep implements StepInterface {
       data.cache.storeRowInCache( meta, keyMeta, keyData, valueData );
       incrementLinesInput();
     }
+  }
+
+  private RowMetaInterface copyValueMetasFrom( RowMetaInterface source, int n ) {
+    RowMeta result = new RowMeta();
+    for ( int i = 0; i < n; i++ ) {
+      // don't need cloning here,
+      // because value metas will be cloned during iterating through rows
+      result.addValueMeta( source.getValueMeta( i ) );
+    }
+    return result;
   }
 
   private void putToReadOnlyCache( Database db, List<Object[]> rows ) {
@@ -534,6 +549,7 @@ public class DatabaseLookup extends BaseStep implements StepInterface {
   /**
    * Stop the running query
    */
+  @Override
   public void stopRunning( StepMetaInterface smi, StepDataInterface sdi ) throws KettleException {
     meta = (DatabaseLookupMeta) smi;
     data = (DatabaseLookupData) sdi;
@@ -546,6 +562,7 @@ public class DatabaseLookup extends BaseStep implements StepInterface {
     }
   }
 
+  @Override
   public boolean init( StepMetaInterface smi, StepDataInterface sdi ) {
     meta = (DatabaseLookupMeta) smi;
     data = (DatabaseLookupData) sdi;
@@ -568,7 +585,7 @@ public class DatabaseLookup extends BaseStep implements StepInterface {
         for ( int i = 0; i < meta.getKeyCondition().length; i++ ) {
           data.conditions[ i ] =
             Const.indexOfString( meta.getKeyCondition()[ i ], DatabaseLookupMeta.conditionStrings );
-          if ( !( "=".equals( meta.getKeyCondition()[ i ] ) ) ) {
+          if ( !( "=".equals( meta.getKeyCondition()[ i ] ) || "IS NULL".equalsIgnoreCase( meta.getKeyCondition()[ i ] ) ) ) {
             data.allEquals = false;
           }
           if ( data.conditions[ i ] == DatabaseLookupMeta.CONDITION_LIKE ) {
@@ -588,6 +605,7 @@ public class DatabaseLookup extends BaseStep implements StepInterface {
     return false;
   }
 
+  @Override
   public void dispose( StepMetaInterface smi, StepDataInterface sdi ) {
     meta = (DatabaseLookupMeta) smi;
     data = (DatabaseLookupData) sdi;
@@ -604,7 +622,7 @@ public class DatabaseLookup extends BaseStep implements StepInterface {
   }
 
   /*
-   * this method is required in order to 
+   * this method is required in order to
    * provide ability for unit tests to
    * mock the main database instance for the step
    * (@see org.pentaho.di.trans.steps.databaselookup.PDI5436Test)

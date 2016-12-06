@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2015 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2016 by Pentaho : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -37,8 +37,9 @@ import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.jface.dialogs.ProgressMonitorDialog;
 import org.eclipse.jface.operation.IRunnableWithProgress;
 import org.eclipse.swt.widgets.Shell;
-import org.pentaho.di.core.Const;
+import org.pentaho.di.core.util.Utils;
 import org.pentaho.di.core.vfs.KettleVFS;
+import org.pentaho.di.core.xml.XMLParserFactoryProducer;
 import org.pentaho.di.i18n.BaseMessages;
 import org.pentaho.di.trans.steps.getxmldata.GetXMLDataMeta;
 import org.pentaho.di.trans.steps.getxmldata.IgnoreDTDEntityResolver;
@@ -134,7 +135,7 @@ public class LoopNodesImportProgressDialog {
     monitor.beginTask( BaseMessages.getString( PKG, "GetXMLDateLoopNodesImportProgressDialog.Task.ScanningFile",
         filename ), 1 );
 
-    SAXReader reader = new SAXReader();
+    SAXReader reader = XMLParserFactoryProducer.getSAXReader( null );
     monitor.worked( 1 );
     if ( monitor.isCanceled() ) {
       return null;
@@ -156,11 +157,11 @@ public class LoopNodesImportProgressDialog {
     InputStream is = null;
     try {
       Document document = null;
-      if ( !Const.isEmpty( filename ) ) {
+      if ( !Utils.isEmpty( filename ) ) {
         is = KettleVFS.getInputStream( filename );
         document = reader.read( is, encoding );
       } else {
-        if ( !Const.isEmpty( xml ) ) {
+        if ( !Utils.isEmpty( xml ) ) {
           document = reader.read( new StringReader( xml ) );
         } else {
           document = reader.read( new URL( url ) );
@@ -225,7 +226,7 @@ public class LoopNodesImportProgressDialog {
       }
       Node cnode = ce.node( j );
 
-      if ( !Const.isEmpty( cnode.getName() ) ) {
+      if ( !Utils.isEmpty( cnode.getName() ) ) {
         Element cce = (Element) cnode;
         if ( !listpath.contains( cnode.getPath() ) ) {
           nr++;

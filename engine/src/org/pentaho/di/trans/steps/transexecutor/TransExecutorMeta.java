@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2013 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2016 by Pentaho : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -29,6 +29,7 @@ import java.util.Map;
 import org.pentaho.di.core.CheckResult;
 import org.pentaho.di.core.CheckResultInterface;
 import org.pentaho.di.core.Const;
+import org.pentaho.di.core.util.Utils;
 import org.pentaho.di.core.ObjectLocationSpecificationMethod;
 import org.pentaho.di.core.database.DatabaseMeta;
 import org.pentaho.di.core.exception.KettleException;
@@ -233,11 +234,24 @@ public class TransExecutorMeta extends BaseStepMeta implements StepMetaInterface
     super(); // allocate BaseStepMeta
 
     parameters = new TransExecutorParameters();
-    outputRowsField = new String[0];
+    this.allocate( 0 );
+  }
+
+  public void allocate( int nrFields ) {
+    outputRowsField = new String[nrFields];
+    outputRowsType = new int[nrFields];
+    outputRowsLength = new int[nrFields];
+    outputRowsPrecision = new int[nrFields];
   }
 
   public Object clone() {
-    Object retval = super.clone();
+    TransExecutorMeta retval = (TransExecutorMeta) super.clone();
+    int nrFields = outputRowsField.length;
+    retval.allocate( nrFields );
+    System.arraycopy( outputRowsField, 0, retval.outputRowsField, 0, nrFields );
+    System.arraycopy( outputRowsType, 0, retval.outputRowsType, 0, nrFields );
+    System.arraycopy( outputRowsLength, 0, retval.outputRowsLength, 0, nrFields );
+    System.arraycopy( outputRowsPrecision, 0, retval.outputRowsPrecision, 0, nrFields );
     return retval;
   }
 
@@ -328,7 +342,7 @@ public class TransExecutorMeta extends BaseStepMeta implements StepMetaInterface
       String method = XMLHandler.getTagValue( stepnode, "specification_method" );
       specificationMethod = ObjectLocationSpecificationMethod.getSpecificationMethodByCode( method );
       String transId = XMLHandler.getTagValue( stepnode, "trans_object_id" );
-      transObjectId = Const.isEmpty( transId ) ? null : new StringObjectId( transId );
+      transObjectId = Utils.isEmpty( transId ) ? null : new StringObjectId( transId );
 
       transName = XMLHandler.getTagValue( stepnode, "trans_name" );
       fileName = XMLHandler.getTagValue( stepnode, "filename" );
@@ -364,10 +378,7 @@ public class TransExecutorMeta extends BaseStepMeta implements StepMetaInterface
       outputRowsSourceStep = XMLHandler.getTagValue( stepnode, "result_rows_target_step" );
 
       int nrFields = XMLHandler.countNodes( stepnode, "result_rows_field" );
-      outputRowsField = new String[nrFields];
-      outputRowsType = new int[nrFields];
-      outputRowsLength = new int[nrFields];
-      outputRowsPrecision = new int[nrFields];
+      allocate( nrFields );
 
       for ( int i = 0; i < nrFields; i++ ) {
 
@@ -393,7 +404,7 @@ public class TransExecutorMeta extends BaseStepMeta implements StepMetaInterface
     String method = rep.getStepAttributeString( id_step, "specification_method" );
     specificationMethod = ObjectLocationSpecificationMethod.getSpecificationMethodByCode( method );
     String transId = rep.getStepAttributeString( id_step, "trans_object_id" );
-    transObjectId = Const.isEmpty( transId ) ? null : new StringObjectId( transId );
+    transObjectId = Utils.isEmpty( transId ) ? null : new StringObjectId( transId );
     transName = rep.getStepAttributeString( id_step, "trans_name" );
     fileName = rep.getStepAttributeString( id_step, "filename" );
     directoryPath = rep.getStepAttributeString( id_step, "directory_path" );
@@ -422,10 +433,7 @@ public class TransExecutorMeta extends BaseStepMeta implements StepMetaInterface
 
     outputRowsSourceStep = rep.getStepAttributeString( id_step, "result_rows_target_step" );
     int nrFields = rep.countNrStepAttributes( id_step, "result_rows_field_name" );
-    outputRowsField = new String[nrFields];
-    outputRowsType = new int[nrFields];
-    outputRowsLength = new int[nrFields];
-    outputRowsPrecision = new int[nrFields];
+    allocate( nrFields );
 
     for ( int i = 0; i < nrFields; i++ ) {
       outputRowsField[i] = rep.getStepAttributeString( id_step, i, "result_rows_field_name" );
@@ -549,7 +557,7 @@ public class TransExecutorMeta extends BaseStepMeta implements StepMetaInterface
 
   protected void addFieldToRow( RowMetaInterface row, String fieldName, int type, int length, int precision )
     throws KettleStepException {
-    if ( !Const.isEmpty( fieldName ) ) {
+    if ( !Utils.isEmpty( fieldName ) ) {
       try {
         ValueMetaInterface value = ValueMetaFactory.createValueMeta( fieldName, type, length, precision );
         value.setOrigin( getParentStepMeta().getName() );
@@ -660,7 +668,7 @@ public class TransExecutorMeta extends BaseStepMeta implements StepMetaInterface
         String realDirectory = tmpSpace.environmentSubstitute( executorMeta.getDirectoryPath() );
 
         if ( rep != null ) {
-          if ( !Const.isEmpty( realTransname ) && !Const.isEmpty( realDirectory ) ) {
+          if ( !Utils.isEmpty( realTransname ) && !Utils.isEmpty( realDirectory ) ) {
             realDirectory = r.normalizeSlashes( realDirectory );
             RepositoryDirectoryInterface repdir = rep.findDirectory( realDirectory );
             if ( repdir != null ) {
@@ -759,12 +767,12 @@ public class TransExecutorMeta extends BaseStepMeta implements StepMetaInterface
     ResourceReference reference = new ResourceReference( stepInfo );
     references.add( reference );
 
-    if ( !Const.isEmpty( realFilename ) ) {
+    if ( !Utils.isEmpty( realFilename ) ) {
       // Add the filename to the references, including a reference to this step
       // meta data.
       //
       reference.getEntries().add( new ResourceEntry( realFilename, ResourceType.ACTIONFILE ) );
-    } else if ( !Const.isEmpty( realTransname ) ) {
+    } else if ( !Utils.isEmpty( realTransname ) ) {
       // Add the filename to the references, including a reference to this step
       // meta data.
       //
@@ -1339,7 +1347,7 @@ public class TransExecutorMeta extends BaseStepMeta implements StepMetaInterface
   }
 
   private boolean isTransDefined() {
-    return !Const.isEmpty( fileName ) || transObjectId != null || ( !Const.isEmpty( this.directoryPath ) && !Const
+    return !Utils.isEmpty( fileName ) || transObjectId != null || ( !Utils.isEmpty( this.directoryPath ) && !Const
         .isEmpty( transName ) );
   }
 
@@ -1450,5 +1458,16 @@ public class TransExecutorMeta extends BaseStepMeta implements StepMetaInterface
 
   public void setExecutorsOutputStepMeta( StepMeta executorsOutputStepMeta ) {
     this.executorsOutputStepMeta = executorsOutputStepMeta;
+  }
+
+  @Override
+  public boolean cleanAfterHopFromRemove() {
+
+    setExecutionResultTargetStepMeta( null );
+    setOutputRowsSourceStepMeta( null );
+    setResultFilesTargetStepMeta( null );
+    setExecutorsOutputStepMeta( null );
+    return true;
+
   }
 }

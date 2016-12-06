@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2013 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2016 by Pentaho : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -22,9 +22,10 @@
 
 package org.pentaho.di.trans.steps.http;
 
+import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.UnknownHostException;
-import java.util.Arrays;
+
 
 import org.apache.commons.httpclient.Credentials;
 import org.apache.commons.httpclient.Header;
@@ -39,6 +40,7 @@ import org.apache.commons.httpclient.util.URIUtil;
 import org.json.simple.JSONObject;
 import org.pentaho.di.cluster.SlaveConnectionManager;
 import org.pentaho.di.core.Const;
+import org.pentaho.di.core.util.Utils;
 import org.pentaho.di.core.exception.KettleException;
 import org.pentaho.di.core.exception.KettleStepException;
 import org.pentaho.di.core.exception.KettleValueException;
@@ -55,7 +57,7 @@ import org.pentaho.di.trans.step.StepMetaInterface;
 
 /**
  * Retrieves values from a database by calling database stored procedures or functions
- * 
+ *
  * @author Matt
  * @since 26-apr-2003
  */
@@ -96,25 +98,25 @@ public class HTTP extends BaseStep implements StepInterface {
 
       // Prepare HTTP get
       //
-      HttpClient httpclient = SlaveConnectionManager.getInstance().createHttpClient();
+      HttpClient httpClient = SlaveConnectionManager.getInstance().createHttpClient();
       HttpMethod method = new GetMethod( url );
 
       // Set timeout
       if ( data.realConnectionTimeout > -1 ) {
-        httpclient.getHttpConnectionManager().getParams().setConnectionTimeout( data.realConnectionTimeout );
+        httpClient.getHttpConnectionManager().getParams().setConnectionTimeout( data.realConnectionTimeout );
       }
       if ( data.realSocketTimeout > -1 ) {
-        httpclient.getHttpConnectionManager().getParams().setSoTimeout( data.realSocketTimeout );
+        httpClient.getHttpConnectionManager().getParams().setSoTimeout( data.realSocketTimeout );
       }
 
-      if ( !Const.isEmpty( data.realHttpLogin ) ) {
-        httpclient.getParams().setAuthenticationPreemptive( true );
+      if ( !Utils.isEmpty( data.realHttpLogin ) ) {
+        httpClient.getParams().setAuthenticationPreemptive( true );
         Credentials defaultcreds = new UsernamePasswordCredentials( data.realHttpLogin, data.realHttpPassword );
-        httpclient.getState().setCredentials( AuthScope.ANY, defaultcreds );
+        httpClient.getState().setCredentials( AuthScope.ANY, defaultcreds );
       }
 
       HostConfiguration hostConfiguration = new HostConfiguration();
-      if ( !Const.isEmpty( data.realProxyHost ) ) {
+      if ( !Utils.isEmpty( data.realProxyHost ) ) {
         hostConfiguration.setProxy( data.realProxyHost, data.realProxyPort );
       }
 
@@ -142,8 +144,7 @@ public class HTTP extends BaseStep implements StepInterface {
         // used for calculating the responseTime
         long startTime = System.currentTimeMillis();
 
-        int statusCode = httpclient.executeMethod( hostConfiguration, method );
-
+        int statusCode = requestStatusCode( method, hostConfiguration, httpClient );
         // calculate the responseTime
         long responseTime = System.currentTimeMillis() - startTime;
         if ( log.isDetailed() ) {
@@ -165,35 +166,30 @@ public class HTTP extends BaseStep implements StepInterface {
             if ( statusCode != 401 ) {
               // guess encoding
               //
-              Header[] headers = method.getResponseHeaders();
+              Header[] headers = searchForHeaders( method );
               String encoding = meta.getEncoding();
 
               // Try to determine the encoding from the Content-Type value
               //
-              if ( Const.isEmpty( encoding ) ) {
+              if ( Utils.isEmpty( encoding ) ) {
                 String contentType = method.getResponseHeader( "Content-Type" ).getValue();
                 if ( contentType != null && contentType.contains( "charset" ) ) {
                   encoding = contentType.replaceFirst( "^.*;\\s*charset\\s*=\\s*", "" ).replace( "\"", "" ).trim();
                 }
               }
-              
               JSONObject json = new JSONObject();
               for ( Header header : headers ) {
-            	  json.put( header.getName(), header.getValue() );
+                json.put( header.getName(), header.getValue() );
               }
-              
               headerString = json.toJSONString();
 
               if ( isDebug() ) {
                 log.logDebug( toString(), BaseMessages.getString( PKG, "HTTP.Log.ResponseHeaderEncoding", encoding ) );
               }
               // the response
-              if ( !Const.isEmpty( encoding ) ) {
-                inputStreamReader = new InputStreamReader( method.getResponseBodyAsStream(), encoding );
-              } else {
-                inputStreamReader = new InputStreamReader( method.getResponseBodyAsStream() );
-              }
-              StringBuffer bodyBuffer = new StringBuffer();
+              inputStreamReader = openStream( encoding, method );
+
+              StringBuilder bodyBuffer = new StringBuilder();
 
               int c;
               while ( ( c = inputStreamReader.read() ) != -1 ) {
@@ -216,19 +212,19 @@ public class HTTP extends BaseStep implements StepInterface {
         }
 
         int returnFieldsOffset = rowMeta.size();
-        if ( !Const.isEmpty( meta.getFieldName() ) ) {
+        if ( !Utils.isEmpty( meta.getFieldName() ) ) {
           newRow = RowDataUtil.addValueData( newRow, returnFieldsOffset, body );
           returnFieldsOffset++;
         }
 
-        if ( !Const.isEmpty( meta.getResultCodeFieldName() ) ) {
+        if ( !Utils.isEmpty( meta.getResultCodeFieldName() ) ) {
           newRow = RowDataUtil.addValueData( newRow, returnFieldsOffset, new Long( statusCode ) );
           returnFieldsOffset++;
         }
-        if ( !Const.isEmpty( meta.getResponseTimeFieldName() ) ) {
+        if ( !Utils.isEmpty( meta.getResponseTimeFieldName() ) ) {
           newRow = RowDataUtil.addValueData( newRow, returnFieldsOffset, new Long( responseTime ) );
         }
-        if ( !Const.isEmpty( meta.getResponseHeaderFieldName() ) ) {
+        if ( !Utils.isEmpty( meta.getResponseHeaderFieldName() ) ) {
           newRow = RowDataUtil.addValueData( newRow, returnFieldsOffset, headerString.toString() );
         }
 
@@ -239,7 +235,7 @@ public class HTTP extends BaseStep implements StepInterface {
         // Release current connection to the connection pool once you are done
         method.releaseConnection();
         if ( data.realcloseIdleConnectionsTime > -1 ) {
-          httpclient.getHttpConnectionManager().closeIdleConnections( data.realcloseIdleConnectionsTime );
+          httpClient.getHttpConnectionManager().closeIdleConnections( data.realcloseIdleConnectionsTime );
         }
       }
       return newRow;
@@ -257,7 +253,7 @@ public class HTTP extends BaseStep implements StepInterface {
         // get dynamic url
         data.realUrl = outputRowMeta.getString( row, data.indexOfUrlField );
       }
-      StringBuffer url = new StringBuffer( data.realUrl ); // the base URL with variable substitution
+      StringBuilder url = new StringBuilder( data.realUrl ); // the base URL with variable substitution
 
       for ( int i = 0; i < data.argnrs.length; i++ ) {
         if ( i == 0 && url.indexOf( "?" ) < 0 ) {
@@ -281,6 +277,24 @@ public class HTTP extends BaseStep implements StepInterface {
     }
   }
 
+  protected int requestStatusCode( HttpMethod method, HostConfiguration hostConfiguration, HttpClient httpClient ) throws IOException {
+    return httpClient.executeMethod( hostConfiguration, method );
+  }
+
+  protected InputStreamReader openStream( String encoding, HttpMethod method ) throws Exception {
+
+    if ( !Utils.isEmpty( encoding ) ) {
+      return new InputStreamReader( method.getResponseBodyAsStream(), encoding );
+    } else {
+      return new InputStreamReader( method.getResponseBodyAsStream() );
+    }
+
+  }
+
+  protected Header[] searchForHeaders( HttpMethod method ) {
+    return method.getResponseHeaders();
+  }
+
   public boolean processRow( StepMetaInterface smi, StepDataInterface sdi ) throws KettleException {
     meta = (HTTPMeta) smi;
     data = (HTTPData) sdi;
@@ -297,7 +311,7 @@ public class HTTP extends BaseStep implements StepInterface {
       meta.getFields( data.outputRowMeta, getStepname(), null, null, this, repository, metaStore );
 
       if ( meta.isUrlInField() ) {
-        if ( Const.isEmpty( meta.getUrlField() ) ) {
+        if ( Utils.isEmpty( meta.getUrlField() ) ) {
           logError( BaseMessages.getString( PKG, "HTTP.Log.NoField" ) );
           throw new KettleException( BaseMessages.getString( PKG, "HTTP.Log.NoField" ) );
         }
@@ -385,7 +399,7 @@ public class HTTP extends BaseStep implements StepInterface {
       data.realProxyHost = environmentSubstitute( meta.getProxyHost() );
       data.realProxyPort = Const.toInt( environmentSubstitute( meta.getProxyPort() ), 8080 );
       data.realHttpLogin = environmentSubstitute( meta.getHttpLogin() );
-      data.realHttpPassword = environmentSubstitute( meta.getHttpPassword() );
+      data.realHttpPassword = Utils.resolvePassword( variables, meta.getHttpPassword() );
 
       data.realSocketTimeout = Const.toInt( environmentSubstitute( meta.getSocketTimeout() ), -1 );
       data.realConnectionTimeout = Const.toInt( environmentSubstitute( meta.getSocketTimeout() ), -1 );

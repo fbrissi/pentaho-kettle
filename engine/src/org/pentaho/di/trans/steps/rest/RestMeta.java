@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2013 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2016 by Pentaho : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -27,14 +27,16 @@ import java.util.List;
 import org.pentaho.di.core.CheckResult;
 import org.pentaho.di.core.CheckResultInterface;
 import org.pentaho.di.core.Const;
+import org.pentaho.di.core.util.Utils;
 import org.pentaho.di.core.database.DatabaseMeta;
 import org.pentaho.di.core.encryption.Encr;
 import org.pentaho.di.core.exception.KettleException;
 import org.pentaho.di.core.exception.KettleStepException;
 import org.pentaho.di.core.exception.KettleXMLException;
 import org.pentaho.di.core.row.RowMetaInterface;
-import org.pentaho.di.core.row.ValueMeta;
 import org.pentaho.di.core.row.ValueMetaInterface;
+import org.pentaho.di.core.row.value.ValueMetaInteger;
+import org.pentaho.di.core.row.value.ValueMetaString;
 import org.pentaho.di.core.variables.VariableSpace;
 import org.pentaho.di.core.xml.XMLHandler;
 import org.pentaho.di.i18n.BaseMessages;
@@ -353,6 +355,7 @@ public class RestMeta extends BaseStepMeta implements StepMetaInterface {
     this.fieldName = resultName;
   }
 
+  @Override
   public void loadXML( Node stepnode, List<DatabaseMeta> databases, IMetaStore metaStore ) throws KettleXMLException {
     readData( stepnode, databases );
   }
@@ -371,6 +374,7 @@ public class RestMeta extends BaseStepMeta implements StepMetaInterface {
     matrixParameterName = new String[nrmatrixparameters];
   }
 
+  @Override
   public Object clone() {
     RestMeta retval = (RestMeta) super.clone();
 
@@ -379,21 +383,17 @@ public class RestMeta extends BaseStepMeta implements StepMetaInterface {
     int nrmatrixparameters = matrixParameterField.length;
 
     retval.allocate( nrheaders, nrparameters, nrmatrixparameters );
-    for ( int i = 0; i < nrheaders; i++ ) {
-      retval.headerField[i] = headerField[i];
-      retval.headerName[i] = headerName[i];
-    }
-    for ( int i = 0; i < nrparameters; i++ ) {
-      retval.parameterField[i] = parameterField[i];
-      retval.parameterName[i] = parameterName[i];
-    }
-    for ( int i = 0; i < nrmatrixparameters; i++ ) {
-      retval.matrixParameterField[i] = matrixParameterField[i];
-      retval.matrixParameterName[i] = matrixParameterName[i];
-    }
+    System.arraycopy( headerField, 0, retval.headerField, 0, nrheaders );
+    System.arraycopy( headerName, 0, retval.headerName, 0, nrheaders );
+    System.arraycopy( parameterField, 0, retval.parameterField, 0, nrparameters );
+    System.arraycopy( parameterName, 0, retval.parameterName, 0, nrparameters );
+    System.arraycopy( matrixParameterField, 0, retval.matrixParameterField, 0, nrmatrixparameters );
+    System.arraycopy( matrixParameterName, 0, retval.matrixParameterName, 0, nrmatrixparameters );
+
     return retval;
   }
 
+  @Override
   public void setDefault() {
     int i;
     int nrheaders = 0;
@@ -427,36 +427,39 @@ public class RestMeta extends BaseStepMeta implements StepMetaInterface {
 
   }
 
+  @Override
   public void getFields( RowMetaInterface inputRowMeta, String name, RowMetaInterface[] info, StepMeta nextStep,
     VariableSpace space, Repository repository, IMetaStore metaStore ) throws KettleStepException {
-    if ( !Const.isEmpty( fieldName ) ) {
-      ValueMetaInterface v = new ValueMeta( space.environmentSubstitute( fieldName ), ValueMeta.TYPE_STRING );
+    if ( !Utils.isEmpty( fieldName ) ) {
+      ValueMetaInterface v = new ValueMetaString( space.environmentSubstitute( fieldName ) );
       v.setOrigin( name );
       inputRowMeta.addValueMeta( v );
     }
 
-    if ( !Const.isEmpty( resultCodeFieldName ) ) {
+    if ( !Utils.isEmpty( resultCodeFieldName ) ) {
       ValueMetaInterface v =
-        new ValueMeta( space.environmentSubstitute( resultCodeFieldName ), ValueMeta.TYPE_INTEGER );
+        new ValueMetaInteger( space.environmentSubstitute( resultCodeFieldName ) );
       v.setOrigin( name );
       inputRowMeta.addValueMeta( v );
     }
-    if ( !Const.isEmpty( responseTimeFieldName ) ) {
+    if ( !Utils.isEmpty( responseTimeFieldName ) ) {
       ValueMetaInterface v =
-        new ValueMeta( space.environmentSubstitute( responseTimeFieldName ), ValueMeta.TYPE_INTEGER );
+        new ValueMetaInteger( space.environmentSubstitute( responseTimeFieldName ) );
       v.setOrigin( name );
       inputRowMeta.addValueMeta( v );
     }
-    if ( !Const.isEmpty( responseHeaderFieldName ) ) {
+    String headerFieldName = space.environmentSubstitute( responseHeaderFieldName );
+    if ( !Utils.isEmpty( headerFieldName ) ) {
       ValueMetaInterface v =
-        new ValueMeta( space.environmentSubstitute( responseHeaderFieldName ), ValueMeta.TYPE_STRING );
+        new ValueMetaString( headerFieldName );
       v.setOrigin( name );
       inputRowMeta.addValueMeta( v );
     }
   }
 
+  @Override
   public String getXML() {
-    StringBuffer retval = new StringBuffer();
+    StringBuilder retval = new StringBuilder();
     retval.append( "    " ).append( XMLHandler.addTagValue( "applicationType", applicationType ) );
     retval.append( "    " ).append( XMLHandler.addTagValue( "method", method ) );
     retval.append( "    " ).append( XMLHandler.addTagValue( "url", url ) );
@@ -570,6 +573,7 @@ public class RestMeta extends BaseStepMeta implements StepMetaInterface {
     }
   }
 
+  @Override
   public void readRep( Repository rep, IMetaStore metaStore, ObjectId id_step, List<DatabaseMeta> databases ) throws KettleException {
     try {
       applicationType = rep.getStepAttributeString( id_step, "applicationType" );
@@ -621,6 +625,7 @@ public class RestMeta extends BaseStepMeta implements StepMetaInterface {
     }
   }
 
+  @Override
   public void saveRep( Repository rep, IMetaStore metaStore, ObjectId id_transformation, ObjectId id_step ) throws KettleException {
     try {
       rep.saveStepAttribute( id_transformation, id_step, "applicationType", applicationType );
@@ -666,6 +671,7 @@ public class RestMeta extends BaseStepMeta implements StepMetaInterface {
     }
   }
 
+  @Override
   public void check( List<CheckResultInterface> remarks, TransMeta transMeta, StepMeta stepMeta,
     RowMetaInterface prev, String[] input, String[] output, RowMetaInterface info, VariableSpace space,
     Repository repository, IMetaStore metaStore ) {
@@ -685,7 +691,7 @@ public class RestMeta extends BaseStepMeta implements StepMetaInterface {
 
     // check Url
     if ( urlInField ) {
-      if ( Const.isEmpty( urlField ) ) {
+      if ( Utils.isEmpty( urlField ) ) {
         cr =
           new CheckResult( CheckResult.TYPE_RESULT_ERROR, BaseMessages.getString(
             PKG, "RestMeta.CheckResult.UrlfieldMissing" ), stepMeta );
@@ -696,7 +702,7 @@ public class RestMeta extends BaseStepMeta implements StepMetaInterface {
       }
 
     } else {
-      if ( Const.isEmpty( url ) ) {
+      if ( Utils.isEmpty( url ) ) {
         cr =
           new CheckResult( CheckResult.TYPE_RESULT_ERROR, BaseMessages.getString(
             PKG, "RestMeta.CheckResult.UrlMissing" ), stepMeta );
@@ -710,7 +716,7 @@ public class RestMeta extends BaseStepMeta implements StepMetaInterface {
 
     // Check method
     if ( dynamicMethod ) {
-      if ( Const.isEmpty( methodFieldName ) ) {
+      if ( Utils.isEmpty( methodFieldName ) ) {
         cr =
           new CheckResult( CheckResult.TYPE_RESULT_ERROR, BaseMessages.getString(
             PKG, "RestMeta.CheckResult.MethodFieldMissing" ), stepMeta );
@@ -721,7 +727,7 @@ public class RestMeta extends BaseStepMeta implements StepMetaInterface {
       }
 
     } else {
-      if ( Const.isEmpty( method ) ) {
+      if ( Utils.isEmpty( method ) ) {
         cr =
           new CheckResult( CheckResult.TYPE_RESULT_ERROR, BaseMessages.getString(
             PKG, "RestMeta.CheckResult.MethodMissing" ), stepMeta );
@@ -735,15 +741,18 @@ public class RestMeta extends BaseStepMeta implements StepMetaInterface {
 
   }
 
+  @Override
   public StepInterface getStep( StepMeta stepMeta, StepDataInterface stepDataInterface, int cnr,
     TransMeta transMeta, Trans trans ) {
     return new Rest( stepMeta, stepDataInterface, cnr, transMeta, trans );
   }
 
+  @Override
   public StepDataInterface getStepData() {
     return new RestData();
   }
 
+  @Override
   public boolean supportsErrorHandling() {
     return true;
   }
@@ -893,17 +902,16 @@ public class RestMeta extends BaseStepMeta implements StepMetaInterface {
   public void setResponseTimeFieldName( String responseTimeFieldName ) {
     this.responseTimeFieldName = responseTimeFieldName;
   }
-  
   public String getResponseHeaderFieldName() {
     return responseHeaderFieldName;
   }
 
   public void setResponseHeaderFieldName( String responseHeaderFieldName ) {
-	this.responseHeaderFieldName = responseHeaderFieldName;
+    this.responseHeaderFieldName = responseHeaderFieldName;
   }
 
   public static boolean isActiveBody( String method ) {
-    if ( Const.isEmpty( method ) ) {
+    if ( Utils.isEmpty( method ) ) {
       return false;
     }
     return ( method.equals( HTTP_METHOD_POST ) || method.equals( HTTP_METHOD_PUT ) )
@@ -911,7 +919,7 @@ public class RestMeta extends BaseStepMeta implements StepMetaInterface {
   }
 
   public static boolean isActiveParameters( String method ) {
-    if ( Const.isEmpty( method ) ) {
+    if ( Utils.isEmpty( method ) ) {
       return false;
     }
     return ( method.equals( HTTP_METHOD_POST ) || method.equals( HTTP_METHOD_PUT ) || method

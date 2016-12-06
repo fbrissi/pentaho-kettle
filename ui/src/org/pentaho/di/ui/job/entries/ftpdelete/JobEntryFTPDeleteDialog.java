@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2013 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2016 by Pentaho : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -49,6 +49,7 @@ import org.eclipse.swt.widgets.Listener;
 import org.eclipse.swt.widgets.MessageBox;
 import org.eclipse.swt.widgets.Shell;
 import org.pentaho.di.core.Const;
+import org.pentaho.di.core.util.Utils;
 import org.pentaho.di.core.Props;
 import org.pentaho.di.i18n.BaseMessages;
 import org.pentaho.di.job.JobMeta;
@@ -1112,7 +1113,7 @@ public class JobEntryFTPDeleteDialog extends JobEntryDialog implements JobEntryD
     String errmsg = "";
     try {
       String realfoldername = jobMeta.environmentSubstitute( wFtpDirectory.getText() );
-      if ( !Const.isEmpty( realfoldername ) ) {
+      if ( !Utils.isEmpty( realfoldername ) ) {
         if ( connect() ) {
           if ( wProtocol.getText().equals( JobEntryFTPDelete.PROTOCOL_FTP ) ) {
             ftpclient.chdir( pwdFolder );
@@ -1196,7 +1197,7 @@ public class JobEntryFTPDeleteDialog extends JobEntryDialog implements JobEntryD
         ftpclient.setRemoteAddr( InetAddress.getByName( realServername ) );
         ftpclient.setRemotePort( realPort );
 
-        if ( !Const.isEmpty( wProxyHost.getText() ) ) {
+        if ( !Utils.isEmpty( wProxyHost.getText() ) ) {
           String realProxy_host = jobMeta.environmentSubstitute( wProxyHost.getText() );
           ftpclient.setRemoteAddr( InetAddress.getByName( realProxy_host ) );
 
@@ -1210,14 +1211,14 @@ public class JobEntryFTPDeleteDialog extends JobEntryDialog implements JobEntryD
         ftpclient.connect();
         String realUsername =
           jobMeta.environmentSubstitute( wUserName.getText() )
-            + ( !Const.isEmpty( wProxyHost.getText() ) ? "@" + realServername : "" )
-            + ( !Const.isEmpty( wProxyUsername.getText() ) ? " "
+            + ( !Utils.isEmpty( wProxyHost.getText() ) ? "@" + realServername : "" )
+            + ( !Utils.isEmpty( wProxyUsername.getText() ) ? " "
               + jobMeta.environmentSubstitute( wProxyUsername.getText() ) : "" );
 
         String realPassword =
-          jobMeta.environmentSubstitute( wPassword.getText() )
-            + ( !Const.isEmpty( wProxyPassword.getText() ) ? " "
-              + jobMeta.environmentSubstitute( wProxyPassword.getText() ) : "" );
+          Utils.resolvePassword( jobMeta, wPassword.getText() )
+            + ( !Utils.isEmpty( wProxyPassword.getText() ) ? " "
+              + Utils.resolvePassword( jobMeta, wProxyPassword.getText() ) : "" );
         // login now ...
         ftpclient.login( realUsername, realPassword );
         pwdFolder = ftpclient.pwd();
@@ -1248,7 +1249,7 @@ public class JobEntryFTPDeleteDialog extends JobEntryDialog implements JobEntryD
       if ( ftpsclient == null ) {
         String realServername = jobMeta.environmentSubstitute( wServerName.getText() );
         String realUsername = jobMeta.environmentSubstitute( wUserName.getText() );
-        String realPassword = jobMeta.environmentSubstitute( wPassword.getText() );
+        String realPassword = Utils.resolvePassword( jobMeta, wPassword.getText() );
         int port = Const.toInt( jobMeta.environmentSubstitute( wPort.getText() ), 0 );
 
         // Create ftp client to host:port ...
@@ -1257,20 +1258,20 @@ public class JobEntryFTPDeleteDialog extends JobEntryDialog implements JobEntryD
             FTPSConnection.getConnectionTypeByDesc( wConnectionType.getText() ), realServername, port,
             realUsername, realPassword );
 
-        if ( !Const.isEmpty( wProxyHost.getText() ) ) {
+        if ( !Utils.isEmpty( wProxyHost.getText() ) ) {
           // Set proxy
           String realProxy_host = jobMeta.environmentSubstitute( wProxyHost.getText() );
           String realProxy_user = jobMeta.environmentSubstitute( wProxyUsername.getText() );
-          String realProxy_pass = jobMeta.environmentSubstitute( wProxyPassword.getText() );
+          String realProxy_pass = Utils.resolvePassword( jobMeta, wProxyPassword.getText() );
           ftpsclient.setProxyHost( realProxy_host );
           int proxyport = Const.toInt( jobMeta.environmentSubstitute( wProxyPort.getText() ), 990 );
           if ( proxyport != 0 ) {
             ftpsclient.setProxyPort( proxyport );
           }
-          if ( !Const.isEmpty( realProxy_user ) ) {
+          if ( !Utils.isEmpty( realProxy_user ) ) {
             ftpsclient.setProxyUser( realProxy_user );
           }
-          if ( !Const.isEmpty( realProxy_pass ) ) {
+          if ( !Utils.isEmpty( realProxy_pass ) ) {
             ftpsclient.setProxyPassword( realProxy_pass );
           }
         }
@@ -1309,7 +1310,7 @@ public class JobEntryFTPDeleteDialog extends JobEntryDialog implements JobEntryD
             .environmentSubstitute( wUserName.getText() ) );
 
         // login to ftp host ...
-        sftpclient.login( jobMeta.environmentSubstitute( wPassword.getText() ) );
+        sftpclient.login( Utils.resolvePassword( jobMeta, wPassword.getText() ) );
         pwdFolder = sftpclient.pwd();
       }
 
@@ -1344,11 +1345,11 @@ public class JobEntryFTPDeleteDialog extends JobEntryDialog implements JobEntryD
         if ( wuseProxy.getSelection() ) {
           /* Now connect */
           // if the proxy requires basic authentication:
-          if ( !Const.isEmpty( wProxyUsername.getText() ) ) {
+          if ( !Utils.isEmpty( wProxyUsername.getText() ) ) {
             conn.setProxyData( new HTTPProxyData(
               jobMeta.environmentSubstitute( wProxyHost.getText() ), Const.toInt( wProxyPort.getText(), 22 ),
-              jobMeta.environmentSubstitute( wProxyUsername.getText() ), jobMeta
-                .environmentSubstitute( wProxyPassword.getText() ) ) );
+              jobMeta.environmentSubstitute( wProxyUsername.getText() ),
+                    Utils.resolvePassword( jobMeta, wProxyPassword.getText() ) ) );
           } else {
             conn.setProxyData( new HTTPProxyData( jobMeta.environmentSubstitute( wProxyHost.getText() ), Const
               .toInt( wProxyPort.getText(), 22 ) ) );
@@ -1366,8 +1367,8 @@ public class JobEntryFTPDeleteDialog extends JobEntryDialog implements JobEntryD
                 .environmentSubstitute( wkeyfilePass.getText() ) );
         } else {
           retval =
-            conn.authenticateWithPassword( jobMeta.environmentSubstitute( wUserName.getText() ), jobMeta
-              .environmentSubstitute( wPassword.getText() ) );
+            conn.authenticateWithPassword( jobMeta.environmentSubstitute( wUserName.getText() ),
+                    Utils.resolvePassword( jobMeta, wPassword.getText() ) );
         }
       }
 
@@ -1460,7 +1461,7 @@ public class JobEntryFTPDeleteDialog extends JobEntryDialog implements JobEntryD
   }
 
   private void ok() {
-    if ( Const.isEmpty( wName.getText() ) ) {
+    if ( Utils.isEmpty( wName.getText() ) ) {
       MessageBox mb = new MessageBox( shell, SWT.OK | SWT.ICON_ERROR );
       mb.setText( BaseMessages.getString( PKG, "System.StepJobEntryNameMissing.Title" ) );
       mb.setMessage( BaseMessages.getString( PKG, "System.JobEntryNameMissing.Msg" ) );

@@ -249,6 +249,7 @@ public class CreateDatabaseWizardPage1 extends WizardPage {
   public DatabaseMeta getDatabaseInfo() {
     if ( wName.getText() != null && wName.getText().length() > 0 ) {
       databaseMeta.setName( wName.getText() );
+      databaseMeta.setDisplayName( wName.getText() );
     }
 
     String[] dbTypeSel = wDBType.getSelection();
@@ -269,7 +270,7 @@ public class CreateDatabaseWizardPage1 extends WizardPage {
 
   /*
    * (non-Javadoc)
-   * 
+   *
    * @see org.eclipse.jface.wizard.WizardPage#getNextPage()
    */
   public IWizardPage getNextPage() {

@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2015 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2016 by Pentaho : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -22,159 +22,194 @@
 
 package org.pentaho.di.trans.steps.jsoninput;
 
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.Iterator;
-import java.util.List;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.Arrays;
+import java.util.BitSet;
 
+import org.apache.commons.lang.NotImplementedException;
 import org.apache.commons.vfs2.FileObject;
-import org.json.simple.JSONArray;
-import org.pentaho.di.core.Const;
+import org.apache.commons.vfs2.FileSystemException;
+import org.apache.poi.util.IOUtils;
+import org.pentaho.di.core.util.Utils;
+import org.pentaho.di.core.QueueRowSet;
 import org.pentaho.di.core.ResultFile;
+import org.pentaho.di.core.RowSet;
 import org.pentaho.di.core.exception.KettleException;
-import org.pentaho.di.core.fileinput.FileInputList;
+import org.pentaho.di.core.exception.KettleStepException;
+import org.pentaho.di.core.exception.KettleValueException;
 import org.pentaho.di.core.row.RowDataUtil;
 import org.pentaho.di.core.row.RowMeta;
-import org.pentaho.di.core.row.RowMetaInterface;
 import org.pentaho.di.core.row.ValueMetaInterface;
 import org.pentaho.di.core.vfs.KettleVFS;
 import org.pentaho.di.i18n.BaseMessages;
 import org.pentaho.di.trans.Trans;
 import org.pentaho.di.trans.TransMeta;
-import org.pentaho.di.trans.step.BaseStep;
 import org.pentaho.di.trans.step.StepDataInterface;
 import org.pentaho.di.trans.step.StepInterface;
 import org.pentaho.di.trans.step.StepMeta;
 import org.pentaho.di.trans.step.StepMetaInterface;
+import org.pentaho.di.trans.steps.fileinput.BaseFileInputStep;
+import org.pentaho.di.trans.steps.fileinput.IBaseFileInputReader;
+import org.pentaho.di.trans.steps.jsoninput.exception.JsonInputException;
+import org.pentaho.di.trans.steps.jsoninput.reader.FastJsonReader;
+import org.pentaho.di.trans.steps.jsoninput.reader.InputsReader;
+import org.pentaho.di.trans.steps.jsoninput.reader.RowOutputConverter;
 
 /**
  * Read Json files, parse them and convert them to rows and writes these to one or more output streams.
  *
  * @author Samatar
+ * @author edube
+ * @author jadametz
  * @since 20-06-2010
  */
-public class JsonInput extends BaseStep implements StepInterface {
+public class JsonInput extends BaseFileInputStep<JsonInputMeta, JsonInputData> implements StepInterface {
   private static Class<?> PKG = JsonInputMeta.class; // for i18n purposes, needed by Translator2!!
 
-  private JsonInputMeta meta;
-  private JsonInputData data;
+  private RowOutputConverter rowOutputConverter;
+
+  private static final byte[] EMPTY_JSON = "{}".getBytes(); // for replacing null inputs
 
   public JsonInput( StepMeta stepMeta, StepDataInterface stepDataInterface, int copyNr, TransMeta transMeta,
-    Trans trans ) {
+                    Trans trans ) {
     super( stepMeta, stepDataInterface, copyNr, transMeta, trans );
   }
 
-  /**
-   * Build an empty row based on the meta-data.
-   *
-   * @return
-   */
-  private Object[] buildEmptyRow() {
-    Object[] rowData = RowDataUtil.allocateRowData( data.outputRowMeta.size() );
-
-    return rowData;
-  }
-
-  private void handleMissingFiles() throws KettleException {
-    List<FileObject> nonExistantFiles = data.files.getNonExistantFiles();
-    if ( nonExistantFiles.size() != 0 ) {
-      String message = FileInputList.getRequiredFilesDescription( nonExistantFiles );
-      log.logError( BaseMessages.getString( PKG, "JsonInput.Log.RequiredFilesTitle" ), BaseMessages.getString(
-        PKG, "JsonInput.Log.RequiredFiles", message ) );
-
-      throw new KettleException( BaseMessages.getString( PKG, "JsonInput.Log.RequiredFilesMissing", message ) );
+  @Override
+  protected boolean init() {
+    data.rownr = 1L;
+    data.nrInputFields = meta.getInputFields().length;
+    data.repeatedFields = new BitSet( data.nrInputFields );
+    // Take care of variable substitution
+    for ( int i = 0; i < data.nrInputFields; i++ ) {
+      JsonInputField field = meta.getInputFields()[ i ];
+      field.setPath( environmentSubstitute( field.getPath() ) );
+      if ( field.isRepeated() ) {
+        data.repeatedFields.set( i );
+      }
     }
-
-    List<FileObject> nonAccessibleFiles = data.files.getNonAccessibleFiles();
-    if ( nonAccessibleFiles.size() != 0 ) {
-      String message = FileInputList.getRequiredFilesDescription( nonAccessibleFiles );
-      log.logError( BaseMessages.getString( PKG, "JsonInput.Log.RequiredFilesTitle" ), BaseMessages.getString(
-        PKG, "JsonInput.Log.RequiredNotAccessibleFiles", message ) );
-
-      throw new KettleException( BaseMessages.getString(
-        PKG, "JsonInput.Log.RequiredNotAccessibleFilesMissing", message ) );
-    }
-  }
-
-  private boolean ReadNextString() {
-
     try {
-      data.readrow = getRow(); // Grab another row ...
-
-      if ( data.readrow == null ) {
-        // finished processing!
-        if ( log.isDetailed() ) {
-          logDetailed( BaseMessages.getString( PKG, "JsonInput.Log.FinishedProcessing" ) );
-        }
-        return false;
-      }
-
-      if ( first ) {
-        first = false;
-
-        data.inputRowMeta = getInputRowMeta();
-        data.outputRowMeta = data.inputRowMeta.clone();
-        meta.getFields( data.outputRowMeta, getStepname(), null, null, this, repository, metaStore );
-
-        // Get total previous fields
-        data.totalpreviousfields = data.inputRowMeta.size();
-
-        // Create convert meta-data objects that will contain Date & Number formatters
-        data.convertRowMeta = data.outputRowMeta.cloneToType( ValueMetaInterface.TYPE_STRING );
-
-        // Check if source field is provided
-        if ( Const.isEmpty( meta.getFieldValue() ) ) {
-          logError( BaseMessages.getString( PKG, "JsonInput.Log.NoField" ) );
-          throw new KettleException( BaseMessages.getString( PKG, "JsonInput.Log.NoField" ) );
-        }
-
-        // cache the position of the field
-        if ( data.indexSourceField < 0 ) {
-          data.indexSourceField = getInputRowMeta().indexOfValue( meta.getFieldValue() );
-          if ( data.indexSourceField < 0 ) {
-            // The field is unreachable !
-            logError( BaseMessages.getString( PKG, "JsonInput.Log.ErrorFindingField", meta.getFieldValue() ) );
-            throw new KettleException( BaseMessages.getString( PKG, "JsonInput.Exception.CouldnotFindField", meta
-              .getFieldValue() ) );
-          }
-        }
-
-      }
-
-      // get source field value
-      String fieldValue = getInputRowMeta().getString( data.readrow, data.indexSourceField );
-
-      if ( log.isDetailed() ) {
-        logDetailed( BaseMessages.getString( PKG, "JsonInput.Log.SourceValue", meta.getFieldValue(), fieldValue ) );
-      }
-
-      if ( meta.getIsAFile() ) {
-
-        // source is a file.
-        data.file = KettleVFS.getFileObject( fieldValue, getTransMeta() );
-        if ( meta.isIgnoreEmptyFile() && data.file.getContent().getSize() == 0 ) {
-          // log only basic as a warning (was before logError)
-          logBasic( BaseMessages.getString( PKG, "JsonInput.Error.FileSizeZero", data.file.getName() ) );
-          ReadNextString();
-        }
-      } else {
-        // read string
-        data.stringToParse = fieldValue;
-      }
-
-      readFileOrString();
-    } catch ( Exception e ) {
-      logError( BaseMessages.getString( PKG, "JsonInput.Log.UnexpectedError", e.toString() ) );
-      stopAll();
-      logError( Const.getStackTracker( e ) );
-      setErrors( 1 );
+      // Init a new JSON reader
+      createReader();
+    } catch ( KettleException e ) {
+      logError( e.getMessage() );
       return false;
     }
     return true;
-
   }
 
-  private void addFileToResultFilesname( FileObject file ) throws Exception {
+  @Override
+  public boolean processRow( StepMetaInterface smi, StepDataInterface sdi ) throws KettleException {
+    if ( first ) {
+      first = false;
+      prepareToRowProcessing();
+    }
+
+    Object[] outRow = null;
+    try {
+      // Grab a row
+      outRow = getOneOutputRow();
+      if ( outRow == null ) {
+        setOutputDone(); // signal end to receiver(s)
+        return false; // end of data or error.
+      }
+
+      if ( log.isRowLevel() ) {
+        logRowlevel( BaseMessages.getString( PKG, "JsonInput.Log.ReadRow", data.outputRowMeta.getString( outRow ) ) );
+      }
+      incrementLinesInput();
+      data.rownr++;
+
+      putRow( data.outputRowMeta, outRow ); // copy row to output rowset(s);
+
+      if ( meta.getRowLimit() > 0 && data.rownr > meta.getRowLimit() ) {
+        // limit has been reached: stop now.
+        setOutputDone();
+        return false;
+      }
+
+    } catch ( JsonInputException e ) {
+      if ( !getStepMeta().isDoingErrorHandling() ) {
+        stopErrorExecution( e );
+        return false;
+      }
+    } catch ( Exception e ) {
+      logError( BaseMessages.getString( PKG, "JsonInput.ErrorInStepRunning", e.getMessage() ) );
+      if ( getStepMeta().isDoingErrorHandling() ) {
+        sendErrorRow( e.toString() );
+      } else {
+        incrementErrors();
+        stopErrorExecution( e );
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private void stopErrorExecution( Exception e ) {
+    stopAll();
+    setOutputDone();
+  }
+
+  @Override
+  protected void prepareToRowProcessing() throws KettleException, KettleStepException, KettleValueException {
+    if ( !meta.isInFields() ) {
+      data.outputRowMeta = new RowMeta();
+      if ( !meta.isDoNotFailIfNoFile() && data.files.nrOfFiles() == 0 ) {
+        String errMsg = BaseMessages.getString( PKG, "JsonInput.Log.NoFiles" );
+        logError( errMsg );
+        inputError( errMsg );
+      }
+    } else {
+      data.readrow = getRow();
+      data.inputRowMeta = getInputRowMeta();
+      if ( data.inputRowMeta == null ) {
+        data.hasFirstRow = false;
+        return;
+      }
+      data.hasFirstRow = true;
+      data.outputRowMeta = data.inputRowMeta.clone();
+
+      // Check if source field is provided
+      if ( Utils.isEmpty( meta.getFieldValue() ) ) {
+        logError( BaseMessages.getString( PKG, "JsonInput.Log.NoField" ) );
+        throw new KettleException( BaseMessages.getString( PKG, "JsonInput.Log.NoField" ) );
+      }
+
+      // cache the position of the field
+      if ( data.indexSourceField < 0 ) {
+        data.indexSourceField = getInputRowMeta().indexOfValue( meta.getFieldValue() );
+        if ( data.indexSourceField < 0 ) {
+          logError( BaseMessages.getString( PKG, "JsonInput.Log.ErrorFindingField", meta.getFieldValue() ) );
+          throw new KettleException( BaseMessages.getString( PKG, "JsonInput.Exception.CouldnotFindField",
+            meta.getFieldValue() ) );
+        }
+      }
+
+      // if RemoveSourceField option is set, we remove the source field from the output meta
+      if ( meta.isRemoveSourceField() ) {
+        data.outputRowMeta.removeValueMeta( data.indexSourceField );
+        // Get total previous fields minus one since we remove source field
+        data.totalpreviousfields = data.inputRowMeta.size() - 1;
+      } else {
+        // Get total previous fields
+        data.totalpreviousfields = data.inputRowMeta.size();
+      }
+    }
+    meta.getFields( data.outputRowMeta, getStepname(), null, null, this, repository, metaStore );
+
+    // Create convert meta-data objects that will contain Date & Number formatters
+    data.convertRowMeta = data.outputRowMeta.cloneToType( ValueMetaInterface.TYPE_STRING );
+    data.inputs = new InputsReader( this, meta, data, new InputErrorHandler() ).iterator();
+    // data.recordnr = 0;
+    data.readerRowSet = new QueueRowSet();
+    data.readerRowSet.setDone();
+    this.rowOutputConverter = new RowOutputConverter( getLogChannel() );
+  }
+
+  private void addFileToResultFilesname( FileObject file ) {
     if ( meta.addResultFile() ) {
       // Add this to the result file names...
       ResultFile resultFile =
@@ -184,377 +219,267 @@ public class JsonInput extends BaseStep implements StepInterface {
     }
   }
 
-  private boolean openNextFile() {
-    try {
-      if ( data.filenr >= data.files.nrOfFiles() ) {
-        if ( log.isDetailed() ) {
-          logDetailed( BaseMessages.getString( PKG, "JsonInput.Log.FinishedProcessing" ) );
-        }
-        return false;
-      }
-      // Close previous file if needed
-      if ( data.file != null ) {
-        data.file.close();
-      }
-      // get file
-      data.file = data.files.getFile( data.filenr );
-      if ( meta.isIgnoreEmptyFile() && data.file.getContent().getSize() == 0 ) {
-        // log only basic as a warning (was before logError)
-        logBasic( BaseMessages.getString( PKG, "JsonInput.Error.FileSizeZero", "" + data.file.getName() ) );
-        openNextFile();
-      }
-      readFileOrString();
-    } catch ( Exception e ) {
-      logError( BaseMessages.getString( PKG, "JsonInput.Log.UnableToOpenFile", "" + data.filenr, data.file
-        .toString(), e.toString() ) );
-      stopAll();
-      setErrors( 1 );
+  public boolean onNewFile( FileObject file ) throws FileSystemException {
+    if ( file == null ) {
+      String errMsg = BaseMessages.getString( PKG, "JsonInput.Log.IsNotAFile", "null" );
+      logError( errMsg );
+      inputError( errMsg );
+      return false;
+    } else if ( !file.exists() ) {
+      String errMsg = BaseMessages.getString( PKG, "JsonInput.Log.IsNotAFile", file.getName().getFriendlyURI() );
+      logError( errMsg );
+      inputError( errMsg );
       return false;
     }
+    if ( hasAdditionalFileFields() ) {
+      fillFileAdditionalFields( data, file );
+    }
+    if ( file.getContent().getSize() == 0 ) {
+      // log only basic as a warning (was before logError)
+      if ( meta.isIgnoreEmptyFile() ) {
+        logBasic( BaseMessages.getString( PKG, "JsonInput.Error.FileSizeZero", "" + file.getName() ) );
+      } else {
+        logError( BaseMessages.getString( PKG, "JsonInput.Error.FileSizeZero", "" + file.getName() ) );
+        incrementErrors();
+        return false;
+      }
+    }
     return true;
   }
 
-  private void readFileOrString() throws Exception {
-    if ( data.file != null ) {
-      data.filename = KettleVFS.getFilename( data.file );
-      // Add additional fields?
-      if ( meta.getShortFileNameField() != null && meta.getShortFileNameField().length() > 0 ) {
-        data.shortFilename = data.file.getName().getBaseName();
-      }
-      if ( meta.getPathField() != null && meta.getPathField().length() > 0 ) {
-        data.path = KettleVFS.getFilename( data.file.getParent() );
-      }
-      if ( meta.isHiddenField() != null && meta.isHiddenField().length() > 0 ) {
-        data.hidden = data.file.isHidden();
-      }
-      if ( meta.getExtensionField() != null && meta.getExtensionField().length() > 0 ) {
-        data.extension = data.file.getName().getExtension();
-      }
-      if ( meta.getLastModificationDateField() != null && meta.getLastModificationDateField().length() > 0 ) {
-        data.lastModificationDateTime = new Date( data.file.getContent().getLastModifiedTime() );
-      }
-      if ( meta.getUriField() != null && meta.getUriField().length() > 0 ) {
-        data.uriName = data.file.getName().getURI();
-      }
-      if ( meta.getRootUriField() != null && meta.getRootUriField().length() > 0 ) {
-        data.rootUriName = data.file.getName().getRootURI();
-      }
-      // Check if file is empty
-      long fileSize = data.file.getContent().getSize();
-
-      if ( meta.getSizeField() != null && meta.getSizeField().length() > 0 ) {
-        data.size = fileSize;
-      }
-      // Move file pointer ahead!
-      data.filenr++;
-
-      if ( log.isDetailed() ) {
-        logDetailed( BaseMessages.getString( PKG, "JsonInput.Log.OpeningFile", data.file.toString() ) );
-      }
-
-      addFileToResultFilesname( data.file );
-    }
-
-    parseJson();
-
-  }
-
-  private void parseJson() throws Exception {
-
-    // Read JSON source
-    if ( data.file != null ) {
-      data.jsonReader.readFile( data.filename );
-    } else {
-      if ( meta.isReadUrl() ) {
-        data.jsonReader.readUrl( data.stringToParse );
-      } else {
-        // read string
-        data.jsonReader.readString( data.stringToParse );
-      }
-    }
-    List<NJSONArray> resultList = new ArrayList<NJSONArray>();
-    data.nrrecords = -1;
-    data.recordnr = 0;
-    String prevPath = "";
-    for ( int i = 0; i < data.nrInputFields; i++ ) {
-      String path = meta.getInputFields()[i].getPath();
-      NJSONArray ja = data.jsonReader.getPath( path );
-      if ( data.nrrecords != -1 && data.nrrecords != ja.size() && !ja.isNull() ) {
-        throw new KettleException( BaseMessages.getString(
-          PKG, "JsonInput.Error.BadStructure", ja.size(), path, prevPath, data.nrrecords ) );
-      }
-      resultList.add( ja );
-      if ( data.nrrecords == -1 && !ja.isNull() ) {
-        data.nrrecords = ja.size();
-      }
-      prevPath = path;
-    }
-
-    data.resultList = new ArrayList<NJSONArray>();
-
-    Iterator<NJSONArray> it = resultList.iterator();
-
-    while ( it.hasNext() ) {
-      NJSONArray j = it.next();
-      if ( j.isNull() ) {
-        if ( data.nrrecords == -1 ) {
-          data.nrrecords = 1;
-        }
-        // The object is empty means that we do not
-        // find Json path
-        // We need here to create a dummy structure
-        j = new NJSONArray();
-        for ( int i = 0; i < data.nrrecords; i++ ) {
-          j.add( null );
-        }
-      }
-      data.resultList.add( j );
-    }
-    resultList = null;
-
+  @Override
+  protected void fillFileAdditionalFields( JsonInputData data, FileObject file ) throws FileSystemException {
+    super.fillFileAdditionalFields( data, file );
+    data.filename = KettleVFS.getFilename( file );
+    data.filenr++;
     if ( log.isDetailed() ) {
-      logDetailed( BaseMessages.getString( PKG, "JsonInput.Log.NrRecords", data.nrrecords ) );
+      logDetailed( BaseMessages.getString( PKG, "JsonInput.Log.OpeningFile", file.toString() ) );
     }
-
+    addFileToResultFilesname( file );
   }
 
-  public boolean processRow( StepMetaInterface smi, StepDataInterface sdi ) throws KettleException {
-    if ( first && !meta.isInFields() ) {
-      first = false;
-
-      data.files = meta.getFiles( this );
-
-      if ( !meta.isdoNotFailIfNoFile() && data.files.nrOfFiles() == 0 ) {
-        throw new KettleException( BaseMessages.getString( PKG, "JsonInput.Log.NoFiles" ) );
-      }
-
-      handleMissingFiles();
-
-      // Create the output row meta-data
-      data.outputRowMeta = new RowMeta();
-
-      meta.getFields( data.outputRowMeta, getStepname(), null, null, this, repository, metaStore );
-
-      // Create convert meta-data objects that will contain Date & Number formatters
-      data.convertRowMeta = data.outputRowMeta.cloneToType( ValueMetaInterface.TYPE_STRING );
-    }
-    Object[] r = null;
+  private void parseNextInputToRowSet( InputStream input ) throws KettleException {
     try {
-      // Grab a row
-      r = getOneRow();
-      if ( r == null ) {
-        setOutputDone(); // signal end to receiver(s)
-        return false; // end of data or error.
-      }
-
-      if ( log.isRowLevel() ) {
-        logRowlevel( BaseMessages.getString( PKG, "JsonInput.Log.ReadRow", data.outputRowMeta.getString( r ) ) );
-      }
-      incrementLinesInput();
-      data.rownr++;
-
-      putRow( data.outputRowMeta, r ); // copy row to output rowset(s);
-
-      if ( meta.getRowLimit() > 0 && data.rownr > meta.getRowLimit() ) {
-        // limit has been reached: stop now.
-        setOutputDone();
-        return false;
-      }
-
+      data.readerRowSet = data.reader.parse( input );
+      input.close();
+    } catch ( KettleException ke ) {
+      logInputError( ke );
+      throw new JsonInputException( ke );
     } catch ( Exception e ) {
-      boolean sendToErrorRow = false;
-      String errorMessage = null;
-      if ( getStepMeta().isDoingErrorHandling() ) {
-        sendToErrorRow = true;
-        errorMessage = e.toString();
+      logInputError( e );
+      throw new JsonInputException( e );
+    }
+  }
+
+  private void logInputError( KettleException e ) {
+    logError( e.getLocalizedMessage(), e );
+    inputError( e.getLocalizedMessage() );
+  }
+
+  private void logInputError( Exception e ) {
+    String errMsg = ( !meta.isInFields() || meta.getIsAFile() )
+      ? BaseMessages.getString( PKG, "JsonReader.Error.ParsingFile", data.filename )
+      : BaseMessages.getString( PKG, "JsonReader.Error.ParsingString", data.readrow[ data.indexSourceField ] );
+    logError( errMsg, e );
+    inputError( errMsg );
+  }
+
+  private void incrementErrors() {
+    setErrors( getErrors() + 1 );
+  }
+
+  private void inputError( String errorMsg ) {
+    if ( getStepMeta().isDoingErrorHandling() ) {
+      sendErrorRow( errorMsg );
+    } else {
+      incrementErrors();
+    }
+  }
+
+  private class InputErrorHandler implements InputsReader.ErrorHandler {
+
+    @Override
+    public void error( Exception e ) {
+      logError( BaseMessages.getString( PKG, "JsonInput.Log.UnexpectedError", e.toString() ) );
+      setErrors( getErrors() + 1 );
+    }
+
+    @Override
+    public void fileOpenError( FileObject file, FileSystemException e ) {
+      String msg = BaseMessages.getString(
+        PKG, "JsonInput.Log.UnableToOpenFile", "" + data.filenr, file.toString(), e.toString() );
+      logError( msg );
+      inputError( msg );
+    }
+
+    @Override
+    public void fileCloseError( FileObject file, FileSystemException e ) {
+      error( e );
+    }
+  }
+
+  /**
+   * get final row for output
+   */
+  private Object[] getOneOutputRow() throws KettleException {
+    if ( meta.isInFields() && !data.hasFirstRow ) {
+      return null;
+    }
+    Object[] rawReaderRow = null;
+    while ( ( rawReaderRow = data.readerRowSet.getRow() ) == null ) {
+      if ( data.inputs.hasNext() && data.readerRowSet.isDone() ) {
+        try ( InputStream nextIn = data.inputs.next() ) {
+
+          if ( nextIn != null ) {
+            parseNextInputToRowSet( nextIn );
+          } else {
+            parseNextInputToRowSet( new ByteArrayInputStream( EMPTY_JSON ) );
+          }
+
+        } catch ( IOException e ) {
+          logError( BaseMessages.getString( PKG, "JsonInput.Log.UnexpectedError", e.toString() ), e );
+          incrementErrors();
+        }
       } else {
-        logError( BaseMessages.getString( PKG, "JsonInput.ErrorInStepRunning", e.getMessage() ) );
-        setErrors( 1 );
-        stopAll();
-        setOutputDone(); // signal end to receiver(s)
-        return false;
-      }
-      if ( sendToErrorRow ) {
-        // Simply add this row to the error row
-        putError( getInputRowMeta(), r, 1, errorMessage, null, "JsonInput001" );
-      }
-
-    }
-    return true;
-  }
-
-  private Object[] getOneRow() throws KettleException {
-
-    if ( !meta.isInFields() ) {
-      while ( ( data.recordnr >= data.nrrecords || data.file == null ) ) {
-        if ( !openNextFile() ) {
-          return null;
+        if ( isDetailed() ) {
+          logDetailed( BaseMessages.getString( PKG, "JsonInput.Log.FinishedProcessing" ) );
         }
+        return null;
       }
+    }
+    boolean rowContainsData = Arrays.stream( rawReaderRow ).anyMatch( el -> el != null );
+    Object[] outputRow;
+    if ( rowContainsData ) {
+      outputRow = rowOutputConverter.getRow( buildBaseOutputRow(), rawReaderRow, data );
     } else {
-      while ( ( data.recordnr >= data.nrrecords || data.readrow == null ) ) {
-        if ( !ReadNextString() ) {
-          return null;
-        }
-        if ( data.readrow == null ) {
-          return null;
-        }
-      }
+      outputRow = buildBaseOutputRow();
     }
-
-    return buildRow();
+    addExtraFields( outputRow, data );
+    return outputRow;
   }
 
-  private Object[] buildRow() throws KettleException {
-    // Create new row...
-    Object[] outputRowData = null;
+  private void sendErrorRow( String errorMsg ) {
+    try {
+      // same error as before
+      String defaultErrCode = "JsonInput001";
+      if ( data.readrow != null ) {
+        putError( getInputRowMeta(), data.readrow, 1, errorMsg, meta.getFieldValue(), defaultErrCode );
+      } else {
+        // when no input only error fields are recognized
+        putError( new RowMeta(), new Object[ 0 ], 1, errorMsg, null, defaultErrCode );
+      }
+    } catch ( KettleStepException e ) {
+      logError( e.getLocalizedMessage(), e );
+    }
+  }
 
+  private boolean hasAdditionalFileFields() {
+    return data.file != null;
+  }
+
+  private boolean isEmpty( RowSet readerRowSet ) {
+    return readerRowSet.size() == 0 && readerRowSet.isDone();
+  }
+
+  /**
+   * allocates out row
+   */
+  private Object[] buildBaseOutputRow() {
+    Object[] outputRowData;
     if ( data.readrow != null ) {
-      outputRowData = data.readrow.clone();
+      if ( meta.isRemoveSourceField() && data.indexSourceField > -1 ) {
+        // skip the source field in the output array
+        int sz = data.readrow.length;
+        outputRowData = RowDataUtil.allocateRowData( data.outputRowMeta.size() );
+        int ii = 0;
+        for ( int i = 0; i < sz; i++ ) {
+          if ( i != data.indexSourceField ) {
+            outputRowData[ ii++ ] = data.readrow[ i ];
+          }
+        }
+      } else {
+        outputRowData = RowDataUtil.createResizedCopy( data.readrow, data.outputRowMeta.size() );
+      }
     } else {
-      outputRowData = buildEmptyRow();
+      outputRowData = RowDataUtil.allocateRowData( data.outputRowMeta.size() );
     }
-
-    // Read fields...
-    for ( int i = 0; i < data.nrInputFields; i++ ) {
-      // Get field
-      JsonInputField field = meta.getInputFields()[i];
-
-      // get json array for field
-      JSONArray jsona = data.resultList.get( i ).getJSONArray();
-      String nodevalue = null;
-      if ( jsona != null ) {
-        Object jo = jsona.get( data.recordnr );
-        if ( jo != null ) {
-          nodevalue = jo.toString();
-        }
-      }
-
-      // Do trimming
-      switch ( field.getTrimType() ) {
-        case JsonInputField.TYPE_TRIM_LEFT:
-          nodevalue = Const.ltrim( nodevalue );
-          break;
-        case JsonInputField.TYPE_TRIM_RIGHT:
-          nodevalue = Const.rtrim( nodevalue );
-          break;
-        case JsonInputField.TYPE_TRIM_BOTH:
-          nodevalue = Const.trim( nodevalue );
-          break;
-        default:
-          break;
-      }
-
-      if ( meta.isInFields() ) {
-        // Add result field to input stream
-        outputRowData = RowDataUtil.addValueData( outputRowData, data.totalpreviousfields + i, nodevalue );
-      }
-      // Do conversions
-      //
-      ValueMetaInterface targetValueMeta = data.outputRowMeta.getValueMeta( data.totalpreviousfields + i );
-      ValueMetaInterface sourceValueMeta = data.convertRowMeta.getValueMeta( data.totalpreviousfields + i );
-      outputRowData[data.totalpreviousfields + i] = targetValueMeta.convertData( sourceValueMeta, nodevalue );
-
-      // Do we need to repeat this field if it is null?
-      if ( meta.getInputFields()[i].isRepeated() ) {
-        if ( data.previousRow != null && Const.isEmpty( nodevalue ) ) {
-          outputRowData[data.totalpreviousfields + i] = data.previousRow[data.totalpreviousfields + i];
-        }
-      }
-    } // End of loop over fields...
-
-    // When we have an input stream
-    // the row index take care of previous fields
-    int rowIndex = data.totalpreviousfields + data.nrInputFields;
-
-    // See if we need to add the filename to the row...
-    if ( meta.includeFilename() && !Const.isEmpty( meta.getFilenameField() ) ) {
-      outputRowData[rowIndex++] = data.filename;
-    }
-    // See if we need to add the row number to the row...
-    if ( meta.includeRowNumber() && !Const.isEmpty( meta.getRowNumberField() ) ) {
-      outputRowData[rowIndex++] = new Long( data.rownr );
-    }
-    // Possibly add short filename...
-    if ( meta.getShortFileNameField() != null && meta.getShortFileNameField().length() > 0 ) {
-      outputRowData[rowIndex++] = data.shortFilename;
-    }
-    // Add Extension
-    if ( meta.getExtensionField() != null && meta.getExtensionField().length() > 0 ) {
-      outputRowData[rowIndex++] = data.extension;
-    }
-    // add path
-    if ( meta.getPathField() != null && meta.getPathField().length() > 0 ) {
-      outputRowData[rowIndex++] = data.path;
-    }
-    // Add Size
-    if ( meta.getSizeField() != null && meta.getSizeField().length() > 0 ) {
-      outputRowData[rowIndex++] = new Long( data.size );
-    }
-    // add Hidden
-    if ( meta.isHiddenField() != null && meta.isHiddenField().length() > 0 ) {
-      outputRowData[rowIndex++] = new Boolean( data.path );
-    }
-    // Add modification date
-    if ( meta.getLastModificationDateField() != null && meta.getLastModificationDateField().length() > 0 ) {
-      outputRowData[rowIndex++] = data.lastModificationDateTime;
-    }
-    // Add Uri
-    if ( meta.getUriField() != null && meta.getUriField().length() > 0 ) {
-      outputRowData[rowIndex++] = data.uriName;
-    }
-    // Add RootUri
-    if ( meta.getRootUriField() != null && meta.getRootUriField().length() > 0 ) {
-      outputRowData[rowIndex++] = data.rootUriName;
-    }
-    data.recordnr++;
-
-    RowMetaInterface irow = getInputRowMeta();
-
-    data.previousRow = irow == null ? outputRowData : irow.cloneRow( outputRowData ); // copy it to make
-    // surely the next step doesn't change it in between...
-
     return outputRowData;
   }
 
-  public boolean init( StepMetaInterface smi, StepDataInterface sdi ) {
-    meta = (JsonInputMeta) smi;
-    data = (JsonInputData) sdi;
+  // should be refactored
+  private void addExtraFields( Object[] outputRowData, JsonInputData data ) {
+    int rowIndex = data.totalpreviousfields + data.nrInputFields;
 
-    if ( super.init( smi, sdi ) ) {
-      data.rownr = 1L;
-      data.nrInputFields = meta.getInputFields().length;
-      // Take care of variable substitution
-      for ( int i = 0; i < data.nrInputFields; i++ ) {
-        JsonInputField field = meta.getInputFields()[i];
-        field.setPath( environmentSubstitute( field.getPath() ) );
-      }
-
-      try {
-        // Init a new JSON reader
-        data.jsonReader = new JsonReader();
-        data.jsonReader.SetIgnoreMissingPath( meta.isIgnoreMissingPath() );
-
-      } catch ( KettleException e ) {
-        logError( e.getMessage() );
-        return false;
-      }
-      return true;
+    // See if we need to add the filename to the row...
+    if ( meta.includeFilename() && !Utils.isEmpty( meta.getFilenameField() ) ) {
+      outputRowData[ rowIndex++ ] = data.filename;
     }
-    return false;
+    // See if we need to add the row number to the row...
+    if ( meta.includeRowNumber() && !Utils.isEmpty( meta.getRowNumberField() ) ) {
+      outputRowData[ rowIndex++ ] = new Long( data.rownr );
+    }
+    // Possibly add short filename...
+    if ( meta.getShortFileNameField() != null && meta.getShortFileNameField().length() > 0 ) {
+      outputRowData[ rowIndex++ ] = data.shortFilename;
+    }
+    // Add Extension
+    if ( meta.getExtensionField() != null && meta.getExtensionField().length() > 0 ) {
+      outputRowData[ rowIndex++ ] = data.extension;
+    }
+    // add path
+    if ( meta.getPathField() != null && meta.getPathField().length() > 0 ) {
+      outputRowData[ rowIndex++ ] = data.path;
+    }
+    // Add Size
+    if ( meta.getSizeField() != null && meta.getSizeField().length() > 0 ) {
+      outputRowData[ rowIndex++ ] = new Long( data.size );
+    }
+    // add Hidden
+    if ( meta.isHiddenField() != null && meta.isHiddenField().length() > 0 ) {
+      outputRowData[ rowIndex++ ] = new Boolean( data.path );
+    }
+    // Add modification date
+    if ( meta.getLastModificationDateField() != null && meta.getLastModificationDateField().length() > 0 ) {
+      outputRowData[ rowIndex++ ] = data.lastModificationDateTime;
+    }
+    // Add Uri
+    if ( meta.getUriField() != null && meta.getUriField().length() > 0 ) {
+      outputRowData[ rowIndex++ ] = data.uriName;
+    }
+    // Add RootUri
+    if ( meta.getRootUriField() != null && meta.getRootUriField().length() > 0 ) {
+      outputRowData[ rowIndex++ ] = data.rootUriName;
+    }
   }
 
+  private void createReader() throws KettleException {
+    data.reader = new FastJsonReader( meta.getInputFields(), log );
+    data.reader.setIgnoreMissingPath( meta.isIgnoreMissingPath() );
+  }
+
+  @Override
   public void dispose( StepMetaInterface smi, StepDataInterface sdi ) {
     meta = (JsonInputMeta) smi;
     data = (JsonInputData) sdi;
     if ( data.file != null ) {
-      try {
-        data.file.close();
-      } catch ( Exception e ) {
-        // Ignore errors
-      }
+      IOUtils.closeQuietly( data.file );
     }
-    data.resultList = null;
+    data.inputs = null;
+    data.reader = null;
+    data.readerRowSet = null;
+    data.repeatedFields = null;
     super.dispose( smi, sdi );
   }
+
+  /**
+   * Only to comply with super, does nothing good.
+   *
+   * @throws NotImplementedException everytime
+   */
+  @Override
+  protected IBaseFileInputReader createReader( JsonInputMeta meta, JsonInputData data, FileObject file )
+    throws Exception {
+    throw new NotImplementedException();
+  }
+
 }

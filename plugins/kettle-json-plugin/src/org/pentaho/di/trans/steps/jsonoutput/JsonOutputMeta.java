@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2015 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2016 by Pentaho : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -29,14 +29,15 @@ import java.util.List;
 import org.pentaho.di.core.CheckResult;
 import org.pentaho.di.core.CheckResultInterface;
 import org.pentaho.di.core.Const;
+import org.pentaho.di.core.util.Utils;
 import org.pentaho.di.core.annotations.Step;
 import org.pentaho.di.core.database.DatabaseMeta;
 import org.pentaho.di.core.exception.KettleException;
 import org.pentaho.di.core.exception.KettleStepException;
 import org.pentaho.di.core.exception.KettleXMLException;
 import org.pentaho.di.core.row.RowMetaInterface;
-import org.pentaho.di.core.row.ValueMeta;
 import org.pentaho.di.core.row.ValueMetaInterface;
+import org.pentaho.di.core.row.value.ValueMetaString;
 import org.pentaho.di.core.variables.VariableSpace;
 import org.pentaho.di.core.xml.XMLHandler;
 import org.pentaho.di.i18n.BaseMessages;
@@ -60,7 +61,8 @@ import org.w3c.dom.Node;
  * 
  */
 @Step( id = "JsonOutput", image = "JSO.svg", i18nPackageName = "org.pentaho.di.trans.steps.jsonoutput",
-    name = "JsonOutput.name", description = "JsonOutput.description", categoryDescription = "JsonOutput.category" )
+    name = "JsonOutput.name", description = "JsonOutput.description",
+    documentationUrl = "http://wiki.pentaho.com/display/EAI/JSON+output", categoryDescription = "JsonOutput.category" )
 public class JsonOutputMeta extends BaseStepMeta implements StepMetaInterface {
   private static Class<?> PKG = JsonOutputMeta.class; // for i18n purposes, needed by Translator2!!
 
@@ -392,7 +394,7 @@ public class JsonOutputMeta extends BaseStepMeta implements StepMetaInterface {
 
     if ( getOperationType() != OPERATION_TYPE_WRITE_TO_FILE ) {
       ValueMetaInterface v =
-          new ValueMeta( space.environmentSubstitute( this.getOutputValue() ), ValueMetaInterface.TYPE_STRING );
+          new ValueMetaString( space.environmentSubstitute( this.getOutputValue() ) );
       v.setOrigin( name );
       row.addValueMeta( v );
     }
@@ -587,14 +589,14 @@ public class JsonOutputMeta extends BaseStepMeta implements StepMetaInterface {
     CheckResult cr;
     if ( getOperationType() != JsonOutputMeta.OPERATION_TYPE_WRITE_TO_FILE ) {
       // We need to have output field name
-      if ( Const.isEmpty( transMeta.environmentSubstitute( getOutputValue() ) ) ) {
+      if ( Utils.isEmpty( transMeta.environmentSubstitute( getOutputValue() ) ) ) {
         cr =
             new CheckResult( CheckResult.TYPE_RESULT_ERROR, BaseMessages.getString( PKG,
                 "JsonOutput.Error.MissingOutputFieldName" ), stepMeta );
         remarks.add( cr );
       }
     }
-    if ( Const.isEmpty( transMeta.environmentSubstitute( getFileName() ) ) ) {
+    if ( Utils.isEmpty( transMeta.environmentSubstitute( getFileName() ) ) ) {
       cr =
           new CheckResult( CheckResult.TYPE_RESULT_ERROR, BaseMessages.getString( PKG,
               "JsonOutput.Error.MissingTargetFilename" ), stepMeta );

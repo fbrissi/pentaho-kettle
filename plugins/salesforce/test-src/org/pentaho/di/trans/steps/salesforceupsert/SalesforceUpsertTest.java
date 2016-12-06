@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2015 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2016 by Pentaho : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -19,9 +19,11 @@
  * limitations under the License.
  *
  ******************************************************************************/
+
 package org.pentaho.di.trans.steps.salesforceupsert;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.mockito.Matchers.any;
 import static org.mockito.Matchers.anyString;
@@ -30,24 +32,41 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import org.apache.axis.message.MessageElement;
+import java.util.UUID;
+
 import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Test;
+import org.pentaho.di.core.Const;
+import org.pentaho.di.core.encryption.Encr;
+import org.pentaho.di.core.encryption.TwoWayPasswordEncoderPluginType;
 import org.pentaho.di.core.exception.KettleException;
 import org.pentaho.di.core.logging.LoggingObjectInterface;
+import org.pentaho.di.core.plugins.PluginRegistry;
 import org.pentaho.di.core.row.RowMeta;
 import org.pentaho.di.core.row.value.ValueMetaBase;
 import org.pentaho.di.core.row.value.ValueMetaString;
+import org.pentaho.di.core.util.EnvUtil;
 import org.pentaho.di.trans.steps.mock.StepMockHelper;
-import org.pentaho.di.trans.steps.salesforceinput.SalesforceConnection;
+import org.pentaho.di.trans.steps.salesforce.SalesforceConnection;
 
 import com.sforce.soap.partner.sobject.SObject;
+import com.sforce.ws.wsdl.Constants;
 
 public class SalesforceUpsertTest {
 
   private static final String ACCOUNT_EXT_ID_ACCOUNT_ID_C_ACCOUNT = "Account:ExtID_AccountId__c/Account";
   private static final String ACCOUNT_ID = "AccountId";
   private StepMockHelper<SalesforceUpsertMeta, SalesforceUpsertData> smh;
+
+  @BeforeClass
+  public static void setUpBeforeClass() throws KettleException {
+    PluginRegistry.addPluginType( TwoWayPasswordEncoderPluginType.getInstance() );
+    PluginRegistry.init();
+    String passwordEncoderPluginID =
+        Const.NVL( EnvUtil.getSystemProperty( Const.KETTLE_PASSWORD_ENCODER_PLUGIN ), "Kettle" );
+    Encr.init( passwordEncoderPluginID );
+  }
 
   @Before
   public void setUp() throws Exception {
@@ -74,7 +93,7 @@ public class SalesforceUpsertTest {
     sfInputStep.writeToSalesForce( new Object[] { null } );
     assertEquals( 1, data.sfBuffer[0].getFieldsToNull().length );
     assertEquals( ACCOUNT_ID, data.sfBuffer[0].getFieldsToNull()[0] );
-    assertNull( data.sfBuffer[0].get_any() );
+    assertNull( SalesforceConnection.getChildren( data.sfBuffer[0] ) );
   }
 
   @Test
@@ -94,7 +113,7 @@ public class SalesforceUpsertTest {
     sfInputStep.writeToSalesForce( new Object[] { null } );
     assertEquals( 1, data.sfBuffer[0].getFieldsToNull().length );
     assertEquals( ACCOUNT_ID, data.sfBuffer[0].getFieldsToNull()[0] );
-    assertNull( data.sfBuffer[0].get_any() );
+    assertNull( SalesforceConnection.getChildren( data.sfBuffer[0] ) );
   }
 
   @Test
@@ -111,9 +130,13 @@ public class SalesforceUpsertTest {
     smh.initStepDataInterface.inputRowMeta = rowMeta;
 
     sfInputStep.writeToSalesForce( new Object[] { "001i000001c5Nv9AAE" } );
-    assertNull( data.sfBuffer[0].getFieldsToNull() );
-    assertEquals( 1, data.sfBuffer[0].get_any().length );
-    assertEquals( getExpectedMessageElement( ACCOUNT_ID, "001i000001c5Nv9AAE", false ), data.sfBuffer[0].get_any()[0] );
+    assertEquals( 0, data.sfBuffer[0].getFieldsToNull().length );
+    assertEquals( 1, SalesforceConnection.getChildren( data.sfBuffer[0] ).length );
+    assertEquals( Constants.PARTNER_SOBJECT_NS,
+      SalesforceConnection.getChildren( data.sfBuffer[0] )[0].getName().getNamespaceURI() );
+    assertEquals( ACCOUNT_ID, SalesforceConnection.getChildren( data.sfBuffer[0] )[0].getName().getLocalPart() );
+    assertEquals( "001i000001c5Nv9AAE", SalesforceConnection.getChildren( data.sfBuffer[0] )[0].getValue() );
+    assertFalse( SalesforceConnection.getChildren( data.sfBuffer[0] )[0].hasChildren() );
   }
 
   @Test
@@ -131,10 +154,13 @@ public class SalesforceUpsertTest {
     smh.initStepDataInterface.inputRowMeta = rowMeta;
 
     sfInputStep.writeToSalesForce( new Object[] { "tkas88" } );
-    assertNull( data.sfBuffer[0].getFieldsToNull() );
-    assertEquals( 1, data.sfBuffer[0].get_any().length );
-    assertEquals( getExpectedMessageElement( ACCOUNT_EXT_ID_ACCOUNT_ID_C_ACCOUNT, "tkas88", true ), data.sfBuffer[0]
-        .get_any()[0] );
+    assertEquals( 0, data.sfBuffer[0].getFieldsToNull().length );
+    assertEquals( 1, SalesforceConnection.getChildren( data.sfBuffer[0] ).length );
+    assertEquals( Constants.PARTNER_SOBJECT_NS,
+      SalesforceConnection.getChildren( data.sfBuffer[0] )[0].getName().getNamespaceURI() );
+    assertEquals( "Account", SalesforceConnection.getChildren( data.sfBuffer[0] )[0].getName().getLocalPart() );
+    assertNull( SalesforceConnection.getChildren( data.sfBuffer[0] )[0].getValue() );
+    assertFalse( SalesforceConnection.getChildren( data.sfBuffer[0] )[0].hasChildren() );
   }
 
   @Test
@@ -167,14 +193,13 @@ public class SalesforceUpsertTest {
 
   private SalesforceUpsertMeta generateSalesforceUpsertMeta( String[] updateLookup, Boolean[] useExternalId ) {
     SalesforceUpsertMeta meta = smh.initStepMetaInterface;
+    doReturn( UUID.randomUUID().toString() ).when( meta ).getTargetURL();
+    doReturn( UUID.randomUUID().toString() ).when( meta ).getUsername();
+    doReturn( UUID.randomUUID().toString() ).when( meta ).getPassword();
+    doReturn( UUID.randomUUID().toString() ).when( meta ).getModule();
     doReturn( 2 ).when( meta ).getBatchSizeInt();
     doReturn( updateLookup ).when( meta ).getUpdateLookup();
     doReturn( useExternalId ).when( meta ).getUseExternalId();
     return meta;
   }
-
-  private MessageElement getExpectedMessageElement( String name, String value, boolean isExternalId ) throws Exception {
-    return SalesforceConnection.createMessageElement( name, value, isExternalId );
-  }
-
 }
