@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2013 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2016 by Pentaho : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -42,6 +42,8 @@ import org.eclipse.swt.events.SelectionEvent;
 import org.eclipse.swt.widgets.Menu;
 import org.eclipse.swt.widgets.MenuItem;
 import org.pentaho.di.core.Const;
+import org.pentaho.di.core.util.EnvUtil;
+import org.pentaho.di.core.util.Utils;
 import org.pentaho.di.core.Props;
 import org.pentaho.di.core.logging.HasLogChannelInterface;
 import org.pentaho.di.core.logging.KettleLogLayout;
@@ -97,7 +99,7 @@ public class LogBrowser {
           public void run() {
             HasLogChannelInterface provider = logProvider.getLogChannelProvider();
 
-            if ( provider != null && !text.isDisposed() && !busy.get() && !paused.get() && text.isVisible() ) {
+            if ( provider != null && !text.isDisposed() && !busy.get() && !paused.get() ) {
               busy.set( true );
 
               LogChannelInterface logChannel = provider.getLogChannel();
@@ -123,7 +125,7 @@ public class LogBrowser {
                 int maxSize = Props.getInstance().getMaxNrLinesInLog() * 150;
 
                 // int position = text.getSelection().x;
-                // StringBuffer buffer = new StringBuffer(text.getText());
+                // StringBuilder buffer = new StringBuilder(text.getText());
 
                 synchronized ( text ) {
 
@@ -179,7 +181,9 @@ public class LogBrowser {
 
     // Refresh every often enough
     //
-    logRefreshTimer.schedule( timerTask, 1000, 1000 );
+    logRefreshTimer
+      .schedule( timerTask, Const.toInt( EnvUtil.getSystemProperty( Const.KETTLE_LOG_TAB_REFRESH_DELAY ), 1000 ),
+        Const.toInt( EnvUtil.getSystemProperty( Const.KETTLE_LOG_TAB_REFRESH_PERIOD ), 1000 ) );
 
     // Make sure the timer goes down when the widget is disposed
     //
@@ -195,7 +199,7 @@ public class LogBrowser {
     item.addSelectionListener( new SelectionAdapter() {
       public void widgetSelected( SelectionEvent event ) {
         String selection = text.getSelectionText();
-        if ( !Const.isEmpty( selection ) ) {
+        if ( !Utils.isEmpty( selection ) ) {
           GUIResource.getInstance().toClipboard( selection );
         }
       }

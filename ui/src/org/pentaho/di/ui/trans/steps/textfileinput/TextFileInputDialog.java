@@ -3,7 +3,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2013 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2016 by Pentaho : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -60,6 +60,7 @@ import org.eclipse.swt.widgets.Table;
 import org.eclipse.swt.widgets.TableItem;
 import org.eclipse.swt.widgets.Text;
 import org.pentaho.di.core.Const;
+import org.pentaho.di.core.util.Utils;
 import org.pentaho.di.core.Props;
 import org.pentaho.di.core.compress.CompressionInputStream;
 import org.pentaho.di.core.compress.CompressionProvider;
@@ -660,8 +661,7 @@ public class TextFileInputDialog extends BaseStepDialog implements StepDialogInt
     // Listen to the Browse... button
     wbbFilename.addSelectionListener( new SelectionAdapter() {
       public void widgetSelected( SelectionEvent e ) {
-        if ( wFilemask.getText() != null && wFilemask.getText().length() > 0 ) // A mask: a directory!
-        {
+        if ( wFilemask.getText() != null && wFilemask.getText().length() > 0 ) { // A mask: a directory!
           DirectoryDialog dialog = new DirectoryDialog( shell, SWT.OPEN );
           if ( wFilename.getText() != null ) {
             String fpath = transMeta.environmentSubstitute( wFilename.getText() );
@@ -680,7 +680,7 @@ public class TextFileInputDialog extends BaseStepDialog implements StepDialogInt
           List<String> filterExtensions = new ArrayList<String>();
           List<String> filterNames = new ArrayList<String>();
 
-          if ( !Const.isEmpty( provider.getDefaultExtension() ) && !Const.isEmpty( provider.getName() ) ) {
+          if ( !Utils.isEmpty( provider.getDefaultExtension() ) && !Utils.isEmpty( provider.getName() ) ) {
             filterExtensions.add( "*." + provider.getDefaultExtension() );
             filterNames.add( provider.getName() + " files" );
           }
@@ -2477,7 +2477,7 @@ public class TextFileInputDialog extends BaseStepDialog implements StepDialogInt
   }
 
   private void ok() {
-    if ( Const.isEmpty( wStepname.getText() ) ) {
+    if ( Utils.isEmpty( wStepname.getText() ) ) {
       return;
     }
 

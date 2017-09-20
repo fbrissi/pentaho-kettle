@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2013 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2016 by Pentaho : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -30,7 +30,10 @@ import org.pentaho.di.core.Const;
 import org.pentaho.di.core.exception.KettleEOFException;
 import org.pentaho.di.core.exception.KettleException;
 import org.pentaho.di.core.exception.KettleFileException;
+import org.pentaho.di.core.exception.KettlePluginException;
+import org.pentaho.di.core.exception.KettleValueException;
 import org.pentaho.di.core.row.value.ValueMetaBase;
+import org.pentaho.di.core.row.value.ValueMetaFactory;
 import org.pentaho.di.i18n.BaseMessages;
 import org.w3c.dom.Node;
 
@@ -77,10 +80,13 @@ public class ValueMeta extends ValueMetaBase {
     "ISO8859_15_FDIS", "MacCentralEurope", "MacCroatian", "MacCyrillic", "MacDingbat", "MacGreek", "MacHebrew",
     "MacIceland", "MacRoman", "MacRomania", "MacSymbol", "MacTurkish", "MacUkraine", };
 
+  private ValueMetaInterface nativeType; // Used only for getNativeDataTypeClass(), not a "deep" clone of this object
+
   public ValueMeta() {
     this( null, ValueMetaInterface.TYPE_NONE, -1, -1 );
   }
 
+  @Deprecated
   public ValueMeta( String name ) {
     this( name, ValueMetaInterface.TYPE_NONE, -1, -1 );
   }
@@ -89,10 +95,10 @@ public class ValueMeta extends ValueMetaBase {
     this( name, type, -1, -1 );
   }
 
+  @Deprecated
   public ValueMeta( String name, int type, int storageType ) {
     this( name, type, -1, -1 );
-    this.storageType = storageType;
-    setDefaultConversionMask();
+    setStorageType( storageType );
   }
 
   public ValueMeta( String name, int type, int length, int precision ) {
@@ -131,8 +137,9 @@ public class ValueMeta extends ValueMetaBase {
   /**
    * @param node
    * @throws KettleException
-   * @Deprecated
+   * @deprecated
    */
+  @Deprecated
   public ValueMeta( Node node ) throws KettleException {
     super( node );
   }
@@ -143,8 +150,18 @@ public class ValueMeta extends ValueMetaBase {
   @Override
   @Deprecated
   public void setType( int type ) {
-    // TODO Auto-generated method stub
     super.setType( type );
   }
 
+  @Override
+  public Class<?> getNativeDataTypeClass() throws KettleValueException {
+    if ( nativeType == null ) {
+      try {
+        nativeType = ValueMetaFactory.createValueMeta( getType() );
+      } catch ( KettlePluginException e ) {
+        throw new KettleValueException( e );
+      }
+    }
+    return nativeType.getNativeDataTypeClass();
+  }
 }

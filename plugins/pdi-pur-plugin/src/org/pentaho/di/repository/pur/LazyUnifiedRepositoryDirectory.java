@@ -29,6 +29,7 @@ import org.pentaho.di.repository.pur.model.RepositoryLock;
 import org.pentaho.di.ui.repository.pur.services.ILockService;
 import org.pentaho.platform.api.repository2.unified.IUnifiedRepository;
 import org.pentaho.platform.api.repository2.unified.RepositoryFile;
+import org.pentaho.platform.api.repository2.unified.RepositoryFileTree;
 import org.pentaho.platform.api.repository2.unified.RepositoryRequest;
 import org.pentaho.platform.repository2.ClientRepositoryPaths;
 import org.slf4j.Logger;
@@ -37,8 +38,6 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
-
-import static org.pentaho.di.repository.pur.PurRepository.getObjectType;
 
 /**
  * A version of RepositoryDirectoryInterface which only loads from the underlying repository as needed (Lazy)
@@ -66,6 +65,18 @@ public class LazyUnifiedRepositoryDirectory extends RepositoryDirectory {
     this.registry = registry;
   }
 
+  private String getParentPath( String absolutePath ) {
+    int parentEndIndex;
+    if ( absolutePath.endsWith( RepositoryDirectory.DIRECTORY_SEPARATOR ) ) {
+      parentEndIndex = absolutePath.lastIndexOf( RepositoryDirectory.DIRECTORY_SEPARATOR, absolutePath.length() - 2 );
+    } else {
+      parentEndIndex = absolutePath.lastIndexOf( RepositoryDirectory.DIRECTORY_SEPARATOR );
+    }
+    if ( parentEndIndex < 0 ) {
+      return null;
+    }
+    return absolutePath.substring( 0, parentEndIndex );
+  }
 
   @Override public RepositoryDirectory findDirectory( String path ) {
     if ( StringUtils.isEmpty( path ) ) {
@@ -90,12 +101,28 @@ public class LazyUnifiedRepositoryDirectory extends RepositoryDirectory {
     if ( file == null || !file.isFolder() ) {
       return null;
     }
-    return new LazyUnifiedRepositoryDirectory( file, this, repository, registry );
+    if ( isRoot() && RepositoryDirectory.DIRECTORY_SEPARATOR.equals( absolutePath ) ) {
+      return this;
+    }
+
+    // Verifies if this is the parent directory of file and if so passes this as parent argument
+    String parentPath = getParentPath( absolutePath );
+    if ( self.getPath().endsWith( RepositoryDirectory.DIRECTORY_SEPARATOR ) ) {
+      if ( parentPath.equals( self.getPath().substring( 0, self.getPath().length() - 1 ) ) ) {
+        return new LazyUnifiedRepositoryDirectory( file, this, repository, registry );
+      }
+    } else {
+      if ( parentPath.equals( self.getPath() ) ) {
+        return new LazyUnifiedRepositoryDirectory( file, this, repository, registry );
+      }
+    }
+
+    return new LazyUnifiedRepositoryDirectory( file, findDirectory( parentPath ), repository, registry );
 
   }
 
   @Override public RepositoryDirectory findChild( String name ) {
-    return findDirectory( getPath() + RepositoryDirectory.DIRECTORY_SEPARATOR + name );
+    return findDirectory( name );
   }
 
   @Override public RepositoryDirectory findDirectory( String[] path ) {
@@ -126,28 +153,26 @@ public class LazyUnifiedRepositoryDirectory extends RepositoryDirectory {
         UnifiedRepositoryLockService lockService =
             (UnifiedRepositoryLockService) registry.getService( ILockService.class );
 
-        RepositoryRequest repositoryRequest = new RepositoryRequest();
-        repositoryRequest.setTypes( RepositoryRequest.FILES_TYPE_FILTER.FILES );
-        repositoryRequest.setPath( this.self.getId().toString() );
-        List<RepositoryFile> children = repository.getChildren( repositoryRequest );
-        for ( RepositoryFile child : children ) {
+        RepositoryFileTree tree = repository.getTree( new RepositoryRequest( this.self.getPath(), true, 1, null ) );
 
-          RepositoryLock lock = null;
-          try {
-            lock = lockService.getLock( child );
-            RepositoryObjectType objectType = getObjectType( child.getName() );
-            EERepositoryObject repositoryObject =
-                new EERepositoryObject( child, this, null, objectType, null, lock, false );
+        for ( RepositoryFileTree tchild : tree.getChildren() ) {
+          RepositoryFile child = tchild.getFile();
+          if ( !child.isFolder() ) {
 
-            // TODO: We have no access to this information outside of RepositoryFileTree
+            RepositoryLock lock = null;
+            try {
+              lock = lockService.getLock( child );
+              RepositoryObjectType objectType = PurRepository.getObjectType( child.getName() );
+              EERepositoryObject repositoryObject =
+                  new EERepositoryObject( child, this, null, objectType, null, lock, false );
 
-
-            repositoryObject.setVersioningEnabled( true );
-            repositoryObject.setVersionCommentEnabled( true );
-            fileChildren.add( repositoryObject );
-          } catch ( KettleException e ) {
-            logger.error( "Error converting Unified Repository file to PDI RepositoryObject: " + child.getPath()
-                + ". File will be skipped", e );
+              repositoryObject.setVersioningEnabled( tchild.getVersioningEnabled() );
+              repositoryObject.setVersionCommentEnabled( tchild.getVersionCommentEnabled() );
+              fileChildren.add( repositoryObject );
+            } catch ( KettleException e ) {
+              logger.error( "Error converting Unified Repository file to PDI RepositoryObject: " + child.getPath()
+                  + ". File will be skipped", e );
+            }
           }
         }
       }
@@ -174,21 +199,26 @@ public class LazyUnifiedRepositoryDirectory extends RepositoryDirectory {
   }
 
   @Override public RepositoryDirectory getSubdirectory( int i ) {
-    List<RepositoryFile> children = getAllURChildrenFiles();
-    if ( i > children.size() || i < 0 ) {
-      return null;
+    if ( subdirectories == null ) {
+      getChildren();
     }
 
-    RepositoryFile child = children.get( i );
-    LazyUnifiedRepositoryDirectory dir = new LazyUnifiedRepositoryDirectory( child, this, repository, registry );
-    dir.setObjectId( new StringObjectId( child.getId().toString() ) );
-    this.addSubdirectory( dir );
-    return dir;
-
+    if ( i >= subdirectories.size() || i < 0 ) {
+      return null;
+    }
+    RepositoryDirectoryInterface directoryInterface = subdirectories.get( i );
+    // Have to cast due to bad interface
+    if ( directoryInterface instanceof RepositoryDirectory ) {
+      return (RepositoryDirectory) directoryInterface;
+    }
+    throw new IllegalStateException(
+        "Bad Repository interface expects RepositoryDirectoryInterface to be an instance of"
+            + " RepositoryDirectory. This class is not: " + directoryInterface.getClass().getName() );
   }
 
   private List<RepositoryFile> getAllURChildrenFiles() {
     RepositoryRequest repositoryRequest = new RepositoryRequest();
+    repositoryRequest.setShowHidden( true );
     repositoryRequest.setTypes( RepositoryRequest.FILES_TYPE_FILTER.FOLDERS );
     repositoryRequest.setPath( this.self.getId().toString() );
     List<RepositoryFile> children = repository.getChildren( repositoryRequest );
@@ -254,9 +284,11 @@ public class LazyUnifiedRepositoryDirectory extends RepositoryDirectory {
     if ( subdirectories == null ) {
       subdirectories = new ArrayList<>();
     }
-    synchronized ( subdirectories ) {
-      subdirectories.clear();
-      subdirectories.addAll( list );
+    if ( !subdirectories.equals( list ) ) {
+      synchronized ( subdirectories ) {
+        subdirectories.clear();
+        subdirectories.addAll( list );
+      }
     }
   }
 

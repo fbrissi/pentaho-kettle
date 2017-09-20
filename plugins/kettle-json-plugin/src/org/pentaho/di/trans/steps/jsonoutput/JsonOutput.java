@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2015 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2016 by Pentaho : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -30,11 +30,11 @@ import org.apache.commons.vfs2.FileObject;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.pentaho.di.core.Const;
+import org.pentaho.di.core.util.Utils;
 import org.pentaho.di.core.ResultFile;
 import org.pentaho.di.core.exception.KettleException;
 import org.pentaho.di.core.exception.KettleStepException;
 import org.pentaho.di.core.row.RowDataUtil;
-import org.pentaho.di.core.row.ValueMeta;
 import org.pentaho.di.core.row.ValueMetaInterface;
 import org.pentaho.di.core.vfs.KettleVFS;
 import org.pentaho.di.i18n.BaseMessages;
@@ -75,16 +75,16 @@ public class JsonOutput extends BaseStep implements StepInterface {
         JSONObject jo = new JSONObject();
 
         switch ( v.getType() ) {
-          case ValueMeta.TYPE_BOOLEAN:
+          case ValueMetaInterface.TYPE_BOOLEAN:
             jo.put( outputField.getElementName(), data.inputRowMeta.getBoolean( row, data.fieldIndexes[i] ) );
             break;
-          case ValueMeta.TYPE_INTEGER:
+          case ValueMetaInterface.TYPE_INTEGER:
             jo.put( outputField.getElementName(), data.inputRowMeta.getInteger( row, data.fieldIndexes[i] ) );
             break;
-          case ValueMeta.TYPE_NUMBER:
+          case ValueMetaInterface.TYPE_NUMBER:
             jo.put( outputField.getElementName(), data.inputRowMeta.getNumber( row, data.fieldIndexes[i] ) );
             break;
-          case ValueMeta.TYPE_BIGNUMBER:
+          case ValueMetaInterface.TYPE_BIGNUMBER:
             jo.put( outputField.getElementName(), data.inputRowMeta.getBigNumber( row, data.fieldIndexes[i] ) );
             break;
           default:
@@ -120,16 +120,16 @@ public class JsonOutput extends BaseStep implements StepInterface {
         ValueMetaInterface v = data.inputRowMeta.getValueMeta( data.fieldIndexes[i] );
 
         switch ( v.getType() ) {
-          case ValueMeta.TYPE_BOOLEAN:
+          case ValueMetaInterface.TYPE_BOOLEAN:
             jo.put( outputField.getElementName(), data.inputRowMeta.getBoolean( row, data.fieldIndexes[i] ) );
             break;
-          case ValueMeta.TYPE_INTEGER:
+          case ValueMetaInterface.TYPE_INTEGER:
             jo.put( outputField.getElementName(), data.inputRowMeta.getInteger( row, data.fieldIndexes[i] ) );
             break;
-          case ValueMeta.TYPE_NUMBER:
+          case ValueMetaInterface.TYPE_NUMBER:
             jo.put( outputField.getElementName(), data.inputRowMeta.getNumber( row, data.fieldIndexes[i] ) );
             break;
-          case ValueMeta.TYPE_BIGNUMBER:
+          case ValueMetaInterface.TYPE_BIGNUMBER:
             jo.put( outputField.getElementName(), data.inputRowMeta.getBigNumber( row, data.fieldIndexes[i] ) );
             break;
           default:
@@ -261,7 +261,7 @@ public class JsonOutput extends BaseStep implements StepInterface {
 
       if ( data.outputValue ) {
         // We need to have output field name
-        if ( Const.isEmpty( environmentSubstitute( meta.getOutputValue() ) ) ) {
+        if ( Utils.isEmpty( environmentSubstitute( meta.getOutputValue() ) ) ) {
           logError( BaseMessages.getString( PKG, "JsonOutput.Error.MissingOutputFieldName" ) );
           stopAll();
           setErrors( 1 );
@@ -270,7 +270,7 @@ public class JsonOutput extends BaseStep implements StepInterface {
       }
       if ( data.writeToFile ) {
         // We need to have output field name
-        if ( !meta.isServletOutput() && Const.isEmpty( meta.getFileName() ) ) {
+        if ( !meta.isServletOutput() && Utils.isEmpty( meta.getFileName() ) ) {
           logError( BaseMessages.getString( PKG, "JsonOutput.Error.MissingTargetFilename" ) );
           stopAll();
           setErrors( 1 );
@@ -366,7 +366,7 @@ public class JsonOutput extends BaseStep implements StepInterface {
         OutputStream fos = KettleVFS.getOutputStream( filename, getTransMeta(), meta.isFileAppended() );
         outputStream = fos;
 
-        if ( !Const.isEmpty( meta.getEncoding() ) ) {
+        if ( !Utils.isEmpty( meta.getEncoding() ) ) {
           data.writer =
             new OutputStreamWriter( new BufferedOutputStream( outputStream, 5000 ), environmentSubstitute( meta
               .getEncoding() ) );

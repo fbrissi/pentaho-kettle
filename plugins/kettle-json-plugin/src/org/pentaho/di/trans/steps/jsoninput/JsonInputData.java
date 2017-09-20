@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2015 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2016 by Pentaho : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -22,66 +22,46 @@
 
 package org.pentaho.di.trans.steps.jsoninput;
 
-import java.io.BufferedInputStream;
-import java.io.FileInputStream;
-import java.util.Date;
-import java.util.List;
+import java.io.InputStream;
+import java.util.BitSet;
+import java.util.Iterator;
 
-import org.apache.commons.vfs2.FileObject;
-import org.pentaho.di.core.fileinput.FileInputList;
+import org.pentaho.di.core.RowSet;
 import org.pentaho.di.core.row.RowMetaInterface;
-import org.pentaho.di.trans.step.BaseStepData;
 import org.pentaho.di.trans.step.StepDataInterface;
+import org.pentaho.di.trans.steps.fileinput.BaseFileInputStepData;
+import org.pentaho.di.trans.steps.jsoninput.reader.IJsonReader;
 
 /**
  * @author Samatar
  * @since 21-06-2010
  */
-public class JsonInputData extends BaseStepData implements StepDataInterface {
+public class JsonInputData extends BaseFileInputStepData implements StepDataInterface {
   public Object[] previousRow;
   public RowMetaInterface inputRowMeta;
-  public RowMetaInterface outputRowMeta;
-  public RowMetaInterface convertRowMeta;
-  public int nr_repeats;
+
+  public boolean hasFirstRow;
 
   public int nrInputFields;
-  public int recordnr;
-  public int nrrecords;
+
+  /**
+   * last row read
+   */
   public Object[] readrow;
   public int totalpreviousfields;
 
-  /**
-   * The XML files to read
-   */
-  public FileInputList files;
-
-  public FileObject file;
   public int filenr;
 
-  public FileInputStream fr;
-  public BufferedInputStream is;
-  public String itemElement;
-  public int itemCount;
-  public int itemPosition;
+  /**
+   * output row counter
+   */
   public long rownr;
   public int indexSourceField;
 
-  RowMetaInterface outputMeta;
-
-  public String filename;
-  public String shortFilename;
-  public String path;
-  public String extension;
-  public boolean hidden;
-  public Date lastModificationDateTime;
-  public String uriName;
-  public String rootUriName;
-  public long size;
-
-  public JsonReader jsonReader;
-  public List<NJSONArray> resultList;
-
-  public String stringToParse;
+  public Iterator<InputStream> inputs;
+  public IJsonReader reader;
+  public RowSet readerRowSet;
+  public BitSet repeatedFields;
 
   public JsonInputData() {
     super();
@@ -89,13 +69,9 @@ public class JsonInputData extends BaseStepData implements StepDataInterface {
     previousRow = null;
     filenr = 0;
 
-    fr = null;
-    is = null;
     indexSourceField = -1;
 
     nrInputFields = -1;
-    recordnr = 0;
-    nrrecords = 0;
 
     readrow = null;
     totalpreviousfields = 0;

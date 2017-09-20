@@ -34,6 +34,7 @@ import org.pentaho.di.core.gui.TextFileInputFieldInterface;
 import org.pentaho.di.core.injection.Injection;
 import org.pentaho.di.core.row.ValueMeta;
 import org.pentaho.di.core.row.ValueMetaInterface;
+import org.pentaho.di.core.row.value.ValueMetaString;
 
 
 /**
@@ -44,6 +45,7 @@ import org.pentaho.di.core.row.ValueMetaInterface;
  *
  * @deprecated replaced by implementation in the ...steps.fileinput.text package
  */
+@Deprecated
 public class TextFileInputField implements Cloneable, TextFileInputFieldInterface {
 
   @Injection( name = "INPUT_NAME", group = "INPUT_FIELDS" )
@@ -134,6 +136,7 @@ public class TextFileInputField implements Cloneable, TextFileInputFieldInterfac
     return position - field.getPosition();
   }
 
+  @Override
   public int compareTo( TextFileInputFieldInterface field ) {
     return position - field.getPosition();
   }
@@ -144,6 +147,7 @@ public class TextFileInputField implements Cloneable, TextFileInputFieldInterfac
     return ( position == field.getPosition() );
   }
 
+  @Override
   public Object clone() {
     try {
       Object retval = super.clone();
@@ -153,6 +157,7 @@ public class TextFileInputField implements Cloneable, TextFileInputFieldInterfac
     }
   }
 
+  @Override
   public int getPosition() {
     return position;
   }
@@ -161,14 +166,17 @@ public class TextFileInputField implements Cloneable, TextFileInputFieldInterfac
     this.position = position;
   }
 
+  @Override
   public int getLength() {
     return length;
   }
 
+  @Override
   public void setLength( int length ) {
     this.length = length;
   }
 
+  @Override
   public String getName() {
     return name;
   }
@@ -213,16 +221,20 @@ public class TextFileInputField implements Cloneable, TextFileInputFieldInterfac
     this.samples = samples;
   }
 
+  public String[] getSamples( ) {
+    return this.samples;
+  }
+
   public int getTrimType() {
     return trimtype;
   }
 
   public String getTrimTypeCode() {
-    return ValueMeta.getTrimTypeCode( trimtype );
+    return ValueMetaString.getTrimTypeCode( trimtype );
   }
 
   public String getTrimTypeDesc() {
-    return ValueMeta.getTrimTypeDesc( trimtype );
+    return ValueMetaString.getTrimTypeDesc( trimtype );
   }
 
   public void setTrimType( int trimtype ) {
@@ -289,6 +301,7 @@ public class TextFileInputField implements Cloneable, TextFileInputFieldInterfac
     this.ifNullValue = ifNullValue;
   }
 
+  @Override
   public String toString() {
     return name + "@" + position + ":" + length;
   }
@@ -616,6 +629,7 @@ public class TextFileInputField implements Cloneable, TextFileInputFieldInterfac
     }
   }
 
+  @Override
   public TextFileInputFieldInterface createNewInstance( String newFieldname, int x, int newlength ) {
     return new TextFileInputField( newFieldname, x, newlength );
   }
