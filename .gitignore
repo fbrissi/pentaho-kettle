@@ -23,7 +23,10 @@ build-res/module-scripts/
 *.war
 *.ear
 *.iml
+*.ipr
+*.iws
 *.db
 *.tmp
 *~
 /*.launch
+.idea/
