@@ -28,6 +28,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -42,8 +43,6 @@ import org.pentaho.di.core.Props;
 import org.pentaho.di.core.exception.KettleException;
 import org.pentaho.di.core.exception.KettleMissingPluginsException;
 import org.pentaho.di.core.exception.KettleXMLException;
-import org.pentaho.di.core.osgi.api.NamedClusterOsgi;
-import org.pentaho.di.core.osgi.api.NamedClusterServiceOsgi;
 import org.pentaho.di.core.plugins.PluginRegistry;
 import org.pentaho.di.core.plugins.StepPluginType;
 import org.pentaho.di.core.variables.Variables;
@@ -54,17 +53,18 @@ import org.pentaho.di.engine.api.model.Transformation;
 import org.pentaho.di.repository.Repository;
 import org.pentaho.di.repository.RepositoryDirectory;
 import org.pentaho.di.repository.RepositoryDirectoryInterface;
+import org.pentaho.di.trans.Trans;
 import org.pentaho.di.trans.TransHopMeta;
 import org.pentaho.di.trans.TransMeta;
+import org.pentaho.di.trans.step.BaseStepMeta;
+import org.pentaho.di.trans.step.StepDataInterface;
+import org.pentaho.di.trans.step.StepInterface;
 import org.pentaho.di.trans.step.StepMeta;
 import org.pentaho.di.trans.step.StepMetaInterface;
 import org.pentaho.di.trans.steps.csvinput.CsvInputMeta;
 import org.pentaho.di.trans.steps.dummytrans.DummyTransMeta;
-import org.pentaho.di.trans.steps.fileinput.text.TextFileInputMeta;
-import org.pentaho.di.trans.steps.named.cluster.NamedClusterEmbedManager;
 import org.pentaho.di.trans.steps.tableinput.TableInputMeta;
-import org.pentaho.di.trans.steps.textfileoutput.TextFileOutputMeta;
-import org.pentaho.metastore.api.IMetaStore;
+import org.pentaho.di.workarounds.ResolvableResource;
 import org.pentaho.metastore.api.exceptions.MetaStoreException;
 import org.w3c.dom.Document;
 import org.w3c.dom.Node;
@@ -76,7 +76,6 @@ import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.startsWith;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.mockito.Matchers.eq;
 import static org.mockito.Mockito.doAnswer;
@@ -405,85 +404,46 @@ public class TransMetaConverterTest {
     verify( originalTransMeta, never() ).getXML();
     verify( cloneTransMeta ).getXML();
   }
-
   @Test
-  public void testReplaceHadoopClusterToFileSystemURL() throws KettleException, MetaStoreException {
-    TransMeta origTransMeta = new TransMeta();
+  public void testResolveStepMetaResources() throws KettleException, MetaStoreException {
     Variables variables = new Variables();
-    String inputUrl = "hc://CDH511Unsecure/tmp/small.csv";
-    String outputUrl = "hc://CDH511Unsecure/tmp";
-    TransMeta transMeta = spy( origTransMeta );
-    IMetaStore metaStore = mock( IMetaStore.class );
-    NamedClusterServiceOsgi namedClusterServiceOsgi = mock( NamedClusterServiceOsgi.class );
-    NamedClusterOsgi namedClusterOsgi = mock( NamedClusterOsgi.class );
-    NamedClusterEmbedManager namedClusterEmbedManager = mock( NamedClusterEmbedManager.class );
-
+    TransMeta transMeta = spy( new TransMeta() );
     transMeta.setParentVariableSpace( variables );
-    transMeta.setMetaStore( metaStore );
-    transMeta.setNamedClusterServiceOsgi( namedClusterServiceOsgi );
 
     doReturn( transMeta ).when( transMeta ).realClone( false );
-    doReturn( namedClusterEmbedManager ).when( transMeta ).getNamedClusterEmbedManager( );
-    doReturn( namedClusterOsgi ).when( namedClusterServiceOsgi ).read( "CDH511Unsecure", metaStore );
-    doReturn( null ).when( namedClusterServiceOsgi ).read( "CDH512Unsecure", metaStore );
 
-    when( namedClusterOsgi.processURLsubstitution( inputUrl, metaStore,
-        variables ) ).thenReturn( "hdfs://user:password@svqxbdcn6cdh511n1.server.com:8020/tmp/small.csv" );
-    when( namedClusterOsgi.processURLsubstitution( outputUrl, metaStore,
-        variables ) ).thenReturn( "hdfs://user:password@svqxbdcn6cdh511n1.server.com:8020/tmp" );
+    TestMetaResolvableResource testMetaResolvableResource = spy( new TestMetaResolvableResource() );
+    TestMetaResolvableResource testMetaResolvableResourceTwo = spy( new TestMetaResolvableResource() );
 
-    TextFileInputMeta textFileInputMeta = new TextFileInputMeta();
+    StepMeta testMeta = new StepMeta( "TestMeta", testMetaResolvableResource );
+    StepMeta testMetaTwo = new StepMeta( "TestMeta2", testMetaResolvableResourceTwo );
 
-    String[] inputFiles = new String[6];
-    inputFiles[0] = "hc://CDH511Unsecure/tmp/small.csv";
-    inputFiles[1] = "hc://CDH512Unsecure/tmp/small.csv";
-    inputFiles[2] = "hdfs://user:password@mycluster.domain.com:8020/myfolder/test/testfile";
-    inputFiles[3] = "hdfs://HACluster/tmp/TestJob.kjb";
-    inputFiles[4] = "C:/Users/testuser/Downloads/testfile";
-    inputFiles[5] = "file:///C:/Users/testuser/Downloads/testtrans.ktr";
+    transMeta.addStep( testMeta );
+    transMeta.addStep( testMetaTwo );
+    transMeta.addTransHop( new TransHopMeta( testMeta, testMetaTwo ) );
+    TransMetaConverter.convert( transMeta );
 
-    textFileInputMeta.setFileNameForTest( inputFiles );
-
-    TextFileOutputMeta textFileOutputMeta = new TextFileOutputMeta();
-    textFileOutputMeta.setFileName( "hc://CDH511Unsecure/tmp" );
-    textFileOutputMeta.allocate( 0 );
-    StepMeta textFileInput = new StepMeta( "TextFileInput", textFileInputMeta );
-    StepMeta textFileOutput = new StepMeta( "TextFileOutput", textFileOutputMeta );
-
-    transMeta.addStep( textFileInput );
-    transMeta.addStep( textFileOutput );
-    transMeta.addTransHop( new TransHopMeta( textFileInput, textFileOutput ) );
-    TransMeta cloneMeta = getTransMetaFromTrans( TransMetaConverter.convert( transMeta ) );
-
-    for ( StepMeta stepMeta : cloneMeta.getSteps() ) {
-      if ( stepMeta.getStepMetaInterface() instanceof TextFileInputMeta ) {
-        TextFileInputMeta meta = (TextFileInputMeta) stepMeta.getStepMetaInterface();
-        String[] files = meta.getFileName();
-        for ( int i = 0; i < files.length; i++ ) {
-          if ( files[i] != null ) {
-            assertFalse( files[i].contains( "hc://CDH511Unsecure" ) );
-          }
-        }
-      } else if ( stepMeta.getStepMetaInterface() instanceof TextFileOutputMeta ) {
-        TextFileOutputMeta meta = (TextFileOutputMeta) stepMeta.getStepMetaInterface();
-        String filename = meta.getFileName();
-        if ( filename != null ) {
-          assertFalse( filename.contains( "hc://" ) );
-        }
-      }
-    }
+    verify( testMetaResolvableResource ).resolve();
+    verify( testMetaResolvableResourceTwo ).resolve();
   }
+  private static class TestMetaResolvableResource extends BaseStepMeta
+    implements StepMetaInterface, ResolvableResource {
 
+    @Override public void resolve() {
+    }
 
-  private TransMeta getTransMetaFromTrans( Transformation trans ) {
-    String transMetaXml = (String) trans.getConfig().get( TransMetaConverter.TRANS_META_CONF_KEY );
-    Document doc;
-    try {
-      doc = XMLHandler.loadXMLString( transMetaXml );
-      Node stepNode = XMLHandler.getSubNode( doc, "transformation" );
-      return new TransMeta( stepNode, null );
-    } catch ( KettleXMLException | KettleMissingPluginsException e ) {
-      throw new RuntimeException( e );
+    @Override public void setDefault() {
+    }
+
+    @Override
+    public StepInterface getStep( StepMeta stepMeta, StepDataInterface stepDataInterface, int copyNr,
+                                  TransMeta transMeta,
+                                  Trans trans ) {
+      return null;
+    }
+
+    @Override public StepDataInterface getStepData() {
+      return null;
     }
   }
 }

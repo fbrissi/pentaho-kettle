@@ -46,7 +46,6 @@ import java.util.Dictionary;
  */
 public class SparkRunConfigurationExecutor implements RunConfigurationExecutor {
 
-  public static String ZOOKEEPER_CAPABILITY_ID = "aries-rsa-discovery-zookeeper";
   public static String PENTAHO_SERVER_CAPABILITY_ID = "pentaho-server";
   public static String CONFIG_KEY = "org.apache.aries.rsa.discovery.zookeeper";
   public static String JAAS_CAPABILITY_ID = "pentaho-kerberos-jaas";
@@ -68,9 +67,9 @@ public class SparkRunConfigurationExecutor implements RunConfigurationExecutor {
    * Sets the appropriate variables on the transMeta for the spark engine
    *
    * @param runConfiguration The configuration for running on Spark
-   * @param configuration The configuration for executing a transformation
-   * @param meta Unused in this implementation
-   * @param variableSpace The variableSpace used to set the engine runtime values
+   * @param configuration    The configuration for executing a transformation
+   * @param meta             Unused in this implementation
+   * @param variableSpace    The variableSpace used to set the engine runtime values
    */
   @Override public void execute( RunConfiguration runConfiguration, ExecutionConfiguration configuration,
                                  AbstractMeta meta, VariableSpace variableSpace, Repository repository ) {
@@ -78,23 +77,18 @@ public class SparkRunConfigurationExecutor implements RunConfigurationExecutor {
     // Check to see if the ael-security feature is installed. If it is, then install the jaas capability if it is
     // not already installed
     ICapability securityCapability = capabilityManager.getCapabilityById( AEL_SECURITY_CAPABILITY_ID );
-    ICapability jaasCapability = capabilityManager.getCapabilityById( JAAS_CAPABILITY_ID  );
+    ICapability jaasCapability = capabilityManager.getCapabilityById( JAAS_CAPABILITY_ID );
     if ( securityCapability != null && securityCapability.isInstalled() ) {
       if ( jaasCapability != null && !jaasCapability.isInstalled() ) {
         jaasCapability.install();
       }
     }
 
-    // Check to see if the aries-rsa-discovery-zookeeper feature is installed and install if not
-    ICapability capability = capabilityManager.getCapabilityById( ZOOKEEPER_CAPABILITY_ID );
-    if ( capability != null && !capability.isInstalled() ) {
-      capability.install();
-    }
-
     SparkRunConfiguration sparkRunConfiguration = (SparkRunConfiguration) runConfiguration;
 
+    String runConfigSchema = Const.NVL( sparkRunConfiguration.getSchema(), "" );
     String runConfigURL = Const.NVL( sparkRunConfiguration.getUrl(), "" );
-    URI uri = URI.create( runConfigURL.trim() );
+    URI uri = URI.create( runConfigSchema.trim() + runConfigURL.trim() );
     String protocol = uri.getScheme();
     String host = uri.getHost();
     String port = uri.getPort() == -1 ? null : String.valueOf( uri.getPort() );

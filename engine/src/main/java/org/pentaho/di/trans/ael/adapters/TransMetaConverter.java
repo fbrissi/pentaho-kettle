@@ -38,8 +38,6 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import org.pentaho.di.core.exception.KettleException;
-import org.pentaho.di.core.osgi.api.NamedClusterOsgi;
-import org.pentaho.di.core.osgi.api.NamedClusterServiceOsgi;
 import org.pentaho.di.core.util.Utils;
 import org.pentaho.di.engine.api.model.Hop;
 import org.pentaho.di.engine.api.model.Operation;
@@ -50,12 +48,10 @@ import org.pentaho.di.resource.ResourceEntry;
 import org.pentaho.di.trans.TransHopMeta;
 import org.pentaho.di.trans.TransMeta;
 import org.pentaho.di.trans.step.StepMeta;
+import org.pentaho.di.trans.step.StepMetaInterface;
 import org.pentaho.di.trans.steps.csvinput.CsvInputMeta;
-import org.pentaho.di.trans.steps.fileinput.text.TextFileInputMeta;
 import org.pentaho.di.trans.steps.tableinput.TableInputMeta;
-import org.pentaho.di.trans.steps.textfileoutput.TextFileOutputMeta;
-import org.pentaho.metastore.api.IMetaStore;
-import org.pentaho.metastore.api.exceptions.MetaStoreException;
+import org.pentaho.di.workarounds.ResolvableResource;
 
 import static java.util.stream.Collectors.toMap;
 
@@ -79,7 +75,7 @@ public class TransMetaConverter {
       // Turn off lazy conversion for AEL for now
       disableLazyConversion( copyTransMeta );
 
-      searchAndReplaceHadoopClusterWithFileSystemURL( copyTransMeta );
+      resolveStepMetaResources( copyTransMeta );
 
       copyTransMeta.getSteps().forEach( createOperation( transformation ) );
       findHops( copyTransMeta, hop -> true ).forEach( createHop( transformation ) );
@@ -237,56 +233,14 @@ public class TransMetaConverter {
     return ( nrEnabledOutHops == 0 && nrDisabledOutHops > 0 && nrInputHops == 0 );
   }
 
-  private static void searchAndReplaceHadoopClusterWithFileSystemURL( TransMeta transMeta ) {
+  private static void resolveStepMetaResources( TransMeta transMeta ) {
     for ( StepMeta stepMeta : transMeta.getSteps() ) {
-      if ( stepMeta.getStepMetaInterface() instanceof TextFileInputMeta ) {
-        TextFileInputMeta textFileInputMeta = (TextFileInputMeta) stepMeta.getStepMetaInterface();
-        String[] files = textFileInputMeta.getFileName();
-        for ( int i = 0; i < files.length; i++ ) {
-          String transformedURL = generateFileSystemURL( files[i], transMeta );
-          if ( transformedURL != null ) {
-            files[i] = transformedURL;
-          }
-        }
-        textFileInputMeta.setFileName( files );
-      } else if ( stepMeta.getStepMetaInterface() instanceof TextFileOutputMeta ) {
-        TextFileOutputMeta textFileOutputMeta = (TextFileOutputMeta) stepMeta.getStepMetaInterface();
-        String transformedURL = generateFileSystemURL( textFileOutputMeta.getFileName(), transMeta );
-        if ( transformedURL != null ) {
-          textFileOutputMeta.setFileName( transformedURL );
-        }
+      StepMetaInterface smi = stepMeta.getStepMetaInterface();
+      if ( smi instanceof ResolvableResource ) {
+        ResolvableResource resolvableMeta = (ResolvableResource) smi;
+        resolvableMeta.resolve();
       }
     }
   }
 
-  private static String generateFileSystemURL( String url, TransMeta transMeta ) {
-    IMetaStore metaStore = transMeta.getMetaStore();
-    NamedClusterServiceOsgi namedClusterService = transMeta.getNamedClusterServiceOsgi();
-    NamedClusterOsgi namedCluster;
-    if ( metaStore != null ) {
-      try {
-        String clusterName = extractHadoopClusterName( url );
-        if ( clusterName != null ) {
-          namedCluster = namedClusterService.read( clusterName, metaStore );
-          if ( namedCluster != null ) {
-            return namedCluster.processURLsubstitution( url, metaStore, transMeta.getParentVariableSpace() );
-          }
-        }
-      } catch ( MetaStoreException e ) {
-        return url;
-      }
-    }
-    return url;
-  }
-  private static String extractHadoopClusterName( String url ) {
-    final String HC = "hc://";
-    if ( url != null && url.length() > 0 ) {
-      if ( url.contains( HC ) ) {
-        int start = url.indexOf( HC ) + HC.length();
-        int end = url.indexOf( '/', start );
-        return url.substring( start, end );
-      }
-    }
-    return null;
-  }
 }
