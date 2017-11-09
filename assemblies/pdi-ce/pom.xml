@@ -102,6 +102,7 @@
     <gp-bulk-loader-plugin.version>${project.version}</gp-bulk-loader-plugin.version>
     <elasticsearch-bulk-insert-plugin.version>${project.version}</elasticsearch-bulk-insert-plugin.version>
     <pdi-xml-plugin.version>${project.version}</pdi-xml-plugin.version>
+    <pdi-html-plugin.version>${project.version}</pdi-html-plugin.version>
     <kettle-json-plugin.version>${project.version}</kettle-json-plugin.version>
     <kettle-sap-plugin.version>${project.version}</kettle-sap-plugin.version>
     <pentaho-big-data-plugin.version>${project.version}</pentaho-big-data-plugin.version>
@@ -932,6 +933,12 @@
                   <groupId>org.pentaho.di.plugins</groupId>
                   <artifactId>pdi-xml-plugin</artifactId>
                   <version>${pdi-xml-plugin.version}</version>
+                  <type>zip</type>
+                </artifactItem>
+                <artifactItem>
+                  <groupId>org.pentaho.di.plugins</groupId>
+                  <artifactId>pdi-html-plugin</artifactId>
+                  <version>${pdi-html-plugin.version}</version>
                   <type>zip</type>
                 </artifactItem>
                 <artifactItem>
