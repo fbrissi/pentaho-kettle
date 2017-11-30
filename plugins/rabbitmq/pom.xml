@@ -48,6 +48,7 @@
         <junit.version>4.7</junit.version>
         <kettle.version>${project.version}</kettle.version>
         <mockito.version>1.9.5</mockito.version>
+        <amqp.version>5.0.0</amqp.version>
     </properties>
 
     <dependencyManagement>
@@ -100,6 +101,11 @@
                 <artifactId>jface</artifactId>
                 <version>${jface.version}</version>
                 <scope>provided</scope>
+            </dependency>
+            <dependency>
+                <groupId>com.rabbitmq</groupId>
+                <artifactId>amqp-client</artifactId>
+                <version>${amqp.version}</version>
             </dependency>
             <!-- test dependencies -->
             <dependency>
