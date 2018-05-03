@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2013 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2017 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -77,6 +77,12 @@ public class XMLHandlerCacheEntry {
 
   @Override
   public boolean equals( Object object ) {
+    if ( this == object ) {
+      return true;
+    }
+    if ( object == null || getClass() != object.getClass() ) {
+      return false;
+    }
     XMLHandlerCacheEntry entry = (XMLHandlerCacheEntry) object;
 
     return parentNode.equals( entry.getParentNode() ) && tag.equals( entry.getTag() );

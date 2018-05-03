@@ -1,5 +1,5 @@
 /*!
- * Copyright 2010 - 2015 Pentaho Corporation.  All rights reserved.
+ * Copyright 2010 - 2017 Hitachi Vantara.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -296,8 +296,9 @@ public class SpoonLockController extends AbstractXulEventHandler implements java
         lockMenuItem.setSelected( true );
         // Permit locking/unlocking if the user owns the lock
         if ( Spoon.getInstance().getRepository() instanceof PurRepository ) {
-          setLockingAllowed( new UnifiedRepositoryLockService( ( (PurRepository) Spoon.getInstance().getRepository() )
-              .getPur() ).canUnlockFileById( workingMeta.getObjectId() ) );
+          setLockingAllowed( new UnifiedRepositoryLockService(
+              ( (PurRepository) Spoon.getInstance().getRepository() ).getUnderlyingRepository() )
+                  .canUnlockFileById( workingMeta.getObjectId() ) );
         } else {
           setLockingAllowed( repoLock.getLogin().equalsIgnoreCase(
               Spoon.getInstance().getRepository().getUserInfo().getLogin() ) );

@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Pentaho Corporation. All rights reserved.
+ * Copyright 2017-2018 Hitachi Vantara. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,23 +15,31 @@
 
 package org.pentaho.di.ui.core;
 
-import org.pentaho.di.repository.RepositoryObject;
+import org.pentaho.di.repository.Repository;
+import org.pentaho.di.repository.RepositoryObjectInterface;
 
 /**
  * Created by bmorrise on 8/17/17.
  */
 public class FileDialogOperation {
 
+  public static String SELECT_FOLDER = "selectFolder";
   public static String OPEN = "open";
   public static String SAVE = "save";
   public static String ORIGIN_SPOON = "spoon";
   public static String ORIGIN_OTHER = "other";
+  public static String TRANSFORMATION = "transformation";
+  public static String JOB = "job";
 
+  private Repository repository;
   private String command;
   private String filter;
   private String origin;
-  private RepositoryObject repositoryObject;
+  private RepositoryObjectInterface repositoryObject;
   private String startDir;
+  private String title;
+  private String filename;
+  private String fileType;
 
   public FileDialogOperation( String command ) {
     this.command = command;
@@ -66,11 +74,11 @@ public class FileDialogOperation {
     this.origin = origin;
   }
 
-  public RepositoryObject getRepositoryObject() {
+  public RepositoryObjectInterface getRepositoryObject() {
     return repositoryObject;
   }
 
-  public void setRepositoryObject( RepositoryObject repositoryObject ) {
+  public void setRepositoryObject( RepositoryObjectInterface repositoryObject ) {
     this.repositoryObject = repositoryObject;
   }
 
@@ -82,4 +90,35 @@ public class FileDialogOperation {
     this.startDir = startDir;
   }
 
+  public Repository getRepository() {
+    return repository;
+  }
+
+  public void setRepository( Repository repository ) {
+    this.repository = repository;
+  }
+
+  public String getTitle() {
+    return title;
+  }
+
+  public void setTitle( String title ) {
+    this.title = title;
+  }
+
+  public String getFilename() {
+    return filename;
+  }
+
+  public void setFilename( String filename ) {
+    this.filename = filename;
+  }
+
+  public String getFileType() {
+    return fileType;
+  }
+
+  public void setFileType( String fileType ) {
+    this.fileType = fileType;
+  }
 }

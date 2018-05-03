@@ -1,22 +1,22 @@
 /*!
- * PENTAHO CORPORATION PROPRIETARY AND CONFIDENTIAL
+ * HITACHI VANTARA PROPRIETARY AND CONFIDENTIAL
  *
- * Copyright 2017 Pentaho Corporation (Pentaho). All rights reserved.
+ * Copyright 2017 Hitachi Vantara. All rights reserved.
  *
  * NOTICE: All information including source code contained herein is, and
- * remains the sole property of Pentaho and its licensors. The intellectual
+ * remains the sole property of Hitachi Vantara and its licensors. The intellectual
  * and technical concepts contained herein are proprietary and confidential
- * to, and are trade secrets of Pentaho and may be covered by U.S. and foreign
+ * to, and are trade secrets of Hitachi Vantara and may be covered by U.S. and foreign
  * patents, or patents in process, and are protected by trade secret and
  * copyright laws. The receipt or possession of this source code and/or related
  * information does not convey or imply any rights to reproduce, disclose or
  * distribute its contents, or to manufacture, use, or sell anything that it
  * may describe, in whole or in part. Any reproduction, modification, distribution,
  * or public display of this information without the express written authorization
- * from Pentaho is strictly prohibited and in violation of applicable laws and
+ * from Hitachi Vantara is strictly prohibited and in violation of applicable laws and
  * international treaties. Access to the source code contained herein is strictly
  * prohibited to anyone except those individuals and entities who have executed
- * confidentiality and non-disclosure agreements or other agreements with Pentaho,
+ * confidentiality and non-disclosure agreements or other agreements with Hitachi Vantara,
  * explicitly covering such access.
  */
 
@@ -39,16 +39,17 @@ define([
 
   var options = {
     bindings: {
+      files: "<",
       folder: "<",
       search: "<",
+      loading: "<",
       onClick: "&",
       onSelect: "&",
       onError: "&",
       onRename: "&",
       onEditStart: "&",
       onEditComplete: "&",
-      selectedFile: "<",
-      wrapper: "<"
+      selectedFile: "<"
     },
     template: filesTemplate,
     controllerAs: "vm",
@@ -75,7 +76,6 @@ define([
     vm.selectFile = selectFile;
     vm.commitFile = commitFile;
     vm.rename = rename;
-    vm.getFiles = getFiles;
     vm.sortFiles = sortFiles;
     vm.compareFiles = compareFiles;
     vm.onStart = onStart;
@@ -86,7 +86,6 @@ define([
      * bindings initialized. We use this hook to put initialization code for our controller.
      */
     function onInit() {
-      vm.wrapperClass = vm.wrapper;
       vm.nameHeader = i18n.get("file-open-save-plugin.files.name.header");
       vm.typeHeader = i18n.get("file-open-save-plugin.files.type.header");
       vm.modifiedHeader = i18n.get("file-open-save-plugin.files.modified.header");
@@ -133,45 +132,6 @@ define([
     }
 
     /**
-     * If not search, get all the files in the elements object.
-     * If it's search, get all files from search.
-     *
-     * @param {Array} elements - file structure
-     * @return {Array} - file structure with all resulting elements
-     */
-    function getFiles(elements) {
-      vm.numResults = 0;
-      var files = [];
-      if (vm.search.length > 0) {
-        resolveChildren(elements, files);
-      } else {
-        files = elements;
-        vm.numResults = (files ? files.length : 0);
-      }
-      return files;
-    }
-
-    /**
-     * Sets the files array with files that are "inResult" from search.
-     *
-     * @param {Array} elements - files to check if in search results.
-     * @param {Array} files - files in search results.
-     */
-    function resolveChildren(elements, files) {
-      if (elements) {
-        for (var i = 0; i < elements.length; i++) {
-          files.push(elements[i]);
-          if (elements[i].inResult) {
-            vm.numResults++;
-          }
-          if (elements[i].children.length > 0) {
-            resolveChildren(elements[i].children, files);
-          }
-        }
-      }
-    }
-
-    /**
      * Rename the selected file.
      *
      * @param {Object} file - File Object
@@ -213,7 +173,7 @@ define([
         var oldPath = file.path;
         var newPath = file.path.substr(0, index) + "/" + newName;
         var id = response.data.objectId;
-        vm.onRename({oldPath: oldPath, newPath: newPath, newName: newName, id: id});
+        vm.onRename({file: file, oldPath: oldPath, newPath: newPath});
         file.objectId = id;
         file.parent = response.data.parent;
         file.path = response.data.path;
@@ -240,7 +200,7 @@ define([
           var index = file.path.lastIndexOf("/");
           var oldPath = file.path;
           var newPath = file.path.substr(0, index) + "/" + current;
-          vm.onRename({oldPath: oldPath, newPath: newPath, newName: current});
+          vm.onRename({file: file, oldPath: oldPath, newPath: newPath});
         }
       }, function(response) {
         file.newName = current;
@@ -254,7 +214,7 @@ define([
             _doError(file.type === "folder" ? 10 : 11);
           }
         } else if (response.status === 406) {
-          _doError(12);
+          _doError(file.type === "folder" ? 15 : 12);
         } else {
           _doError(file.type === "folder" ? 10 : 11);
         }
@@ -273,14 +233,14 @@ define([
     /**
      * Checks for a duplicate name
      *
-     * @param {String} name - file name to check if it already exists within vm.folder.children
+     * @param {String} name - file name to check if it already exists within vm.files
      * @param {Object} file - File Object
-     * @return {Boolean} true if it vm.folder.children already has a file named "name", false otherwise
+     * @return {Boolean} true if it vm.files already has a file named "name", false otherwise
      * @private
      */
     function _hasDuplicate(name, file) {
-      for (var i = 0; i < vm.folder.children.length; i++) {
-        var check = vm.folder.children[i];
+      for (var i = 0; i < vm.files.length; i++) {
+        var check = vm.files[i];
         if (check !== file) {
           if (check.name.toLowerCase() === name.toLowerCase() && check.type === file.type) {
             return true;

@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2013 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2017 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -30,6 +30,7 @@ import java.lang.reflect.Method;
 
 import junit.framework.Assert;
 
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.pentaho.di.core.logging.LoggingObjectInterface;
@@ -54,6 +55,11 @@ public class SetValueConstantTest {
             SetValueConstantData.class );
     when( smh.logChannelInterfaceFactory.create( any(), any( LoggingObjectInterface.class ) ) ).thenReturn(
         smh.logChannelInterface );
+  }
+
+  @After
+  public void cleanUp() {
+    smh.cleanUp();
   }
 
   @Test

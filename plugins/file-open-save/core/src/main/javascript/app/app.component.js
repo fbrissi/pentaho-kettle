@@ -1,22 +1,22 @@
 /*!
- * PENTAHO CORPORATION PROPRIETARY AND CONFIDENTIAL
+ * HITACHI VANTARA PROPRIETARY AND CONFIDENTIAL
  *
- * Copyright 2017 Pentaho Corporation (Pentaho). All rights reserved.
+ * Copyright 2017-2018 Hitachi Vantara. All rights reserved.
  *
  * NOTICE: All information including source code contained herein is, and
- * remains the sole property of Pentaho and its licensors. The intellectual
+ * remains the sole property of Hitachi Vantara and its licensors. The intellectual
  * and technical concepts contained herein are proprietary and confidential
- * to, and are trade secrets of Pentaho and may be covered by U.S. and foreign
+ * to, and are trade secrets of Hitachi Vantara and may be covered by U.S. and foreign
  * patents, or patents in process, and are protected by trade secret and
  * copyright laws. The receipt or possession of this source code and/or related
  * information does not convey or imply any rights to reproduce, disclose or
  * distribute its contents, or to manufacture, use, or sell anything that it
  * may describe, in whole or in part. Any reproduction, modification, distribution,
  * or public display of this information without the express written authorization
- * from Pentaho is strictly prohibited and in violation of applicable laws and
+ * from Hitachi Vantara is strictly prohibited and in violation of applicable laws and
  * international treaties. Access to the source code contained herein is strictly
  * prohibited to anyone except those individuals and entities who have executed
- * confidentiality and non-disclosure agreements or other agreements with Pentaho,
+ * confidentiality and non-disclosure agreements or other agreements with Hitachi Vantara,
  * explicitly covering such access.
  */
 
@@ -45,7 +45,7 @@ define([
     controller: appController
   };
 
-  appController.$inject = [dataService.name, "$location", "$scope", "$timeout"];
+  appController.$inject = [dataService.name, "$location", "$scope", "$timeout", "$state"];
 
   /**
    * The App Controller.
@@ -57,39 +57,45 @@ define([
    * @param {Object} $scope - Application model
    * @param {Object} $timeout - Angular wrapper around window.setTimeout
    */
-  function appController(dt, $location, $scope, $timeout) {
+  function appController(dt, $location, $scope, $timeout, $state) {
     var vm = this;
     vm.$onInit = onInit;
     vm.selectFolder = selectFolder;
     vm.selectFile = selectFile;
     vm.selectFolderByPath = selectFolderByPath;
     vm.doSearch = doSearch;
-    vm.resetSearch = resetSearch;
     vm.addFolder = addFolder;
     vm.openClicked = openClicked;
     vm.saveClicked = saveClicked;
+    vm.okClicked = okClicked;
     vm.cancel = cancel;
     vm.highlightFile = highlightFile;
     vm.remove = remove;
-    vm.setState = setState;
     vm.confirmError = confirmError;
     vm.cancelError = cancelError;
     vm.storeRecentSearch = storeRecentSearch;
     vm.updateDirectories = updateDirectories;
     vm.renameError = renameError;
-    vm.displayRecentSearches = displayRecentSearches;
-    vm.focusSearchBox = focusSearchBox;
-    vm.setTooltip = setTooltip;
     vm.recentsHasScrollBar = recentsHasScrollBar;
-    vm.addDeleteDisabled = addDeleteDisabled;
+    vm.addDisabled = addDisabled;
+    vm.deleteDisabled = deleteDisabled;
     vm.onKeyUp = onKeyUp;
     vm.getPlaceholder = getPlaceholder;
+    vm.isPentahoRepo = isPentahoRepo;
+    vm.getSelectedFolderName = getSelectedFolderName;
+    vm.isSaveEnabled = isSaveEnabled;
+    vm.isShowRecents = isShowRecents;
+    vm.getFiles = getFiles;
+    vm.currentRepo = "";
     vm.selectedFolder = "";
     vm.fileToSave = "";
-    vm.searchString = "";
     vm.showError = false;
     vm.errorType = 0;
     vm.loading = true;
+    vm.fileLoading = false;
+    vm.searching = false;
+    vm.state = $state;
+    vm.searchResults = [];
 
     /**
      * The $onInit hook of components lifecycle which is called on each controller
@@ -97,35 +103,49 @@ define([
      * bindings initialized. We use this hook to put initialization code for our controller.
      */
     function onInit() {
-      vm.wrapperClass = "save";
-      vm.headerTitle = i18n.get("file-open-save-plugin.app.header.save.title");
       vm.searchPlaceholder = i18n.get("file-open-save-plugin.app.header.search.placeholder");
       vm.saveFileNameLabel = i18n.get("file-open-save-plugin.app.save.file-name.label");
       vm.openButton = i18n.get("file-open-save-plugin.app.open.button");
       vm.cancelButton = i18n.get("file-open-save-plugin.app.cancel.button");
       vm.saveButton = i18n.get("file-open-save-plugin.app.save.button");
+      vm.okButton = i18n.get("file-open-save-plugin.app.ok.button");
       vm.confirmButton = i18n.get("file-open-save-plugin.app.save.button");
       vm.saveFileNameLabel = i18n.get("file-open-save-plugin.app.save.file-name.label");
       vm.addFolderText = i18n.get("file-open-save-plugin.app.add-folder.button");
       vm.removeText = i18n.get("file-open-save-plugin.app.delete.button");
-      vm.isInSearch = false;
-      vm.showRecents = true;
+      vm.loadingTitle = i18n.get("file-open-save-plugin.loading.title");
+      vm.loadingMessage = i18n.get("file-open-save-plugin.loading.message");
+      vm.showRecents = false;
       vm.folder = {name: "Recents", path: "Recents"};
       vm.selectedFolder = vm.folder.name;
       vm.file = null;
       vm.includeRoot = false;
       vm.autoExpand = false;
       vm.didDeleteFolder = false;
+      vm.searchString = "";
       _resetFileAreaMessage();
-      dt.getDirectoryTree($location.search().filter).then(_populateTree);
-      dt.getRecentFiles().then(_populateRecentFiles);
-      dt.getRecentSearches().then(_populateRecentSearches);
 
-      var state = $location.search().state;
+      vm.filename = $location.search().filename;
+      vm.fileType = $location.search().fileType;
       vm.origin = $location.search().origin;
-      if (state) {
-        vm.setState(state);
-      }
+      $timeout(function() {
+        if ($state.is('open')) {
+          vm.headerTitle = i18n.get("file-open-save-plugin.app.header.open.title");
+        }
+        if ($state.is('save')) {
+          vm.headerTitle = i18n.get("file-open-save-plugin.app.header.save.title");
+        }
+        if ($state.is('selectFolder')) {
+          vm.headerTitle = i18n.get("file-open-save-plugin.app.header.select.title");
+        }
+        if (!$state.is('selectFolder')) {
+          dt.getDirectoryTree($location.search().filter).then(_populateTree);
+          dt.getRecentFiles().then(_populateRecentFiles);
+        } else {
+          dt.getDirectoryTree("false").then(_populateTree);
+        }
+        dt.getRecentSearches().then(_populateRecentSearches);
+      });
     }
 
     /**
@@ -135,22 +155,36 @@ define([
      * @private
      */
     function _populateTree(response) {
-      vm.folders = response.data;
-      for (var i = 0; i < vm.folders.length; i++) {
-        if (vm.folders[i].depth === 0) {
-          vm.folders[i].visible = true;
-        }
-      }
+      vm.tree = response.data;
       var path = $location.search().path;
       if (path) {
-        selectFolderByPath(path);
         vm.autoExpand = true;
+        selectFolderByPath(path);
+      } else {
+        if ($state.is('selectFolder')) {
+          if (isPentahoRepo()) {
+            selectFolderByPath("/home");
+          } else {
+            selectFolderByPath("/");
+          }
+        }
+        vm.showRecents = true;
       }
-      if (vm.folders[0].path === "/") {
-        vm.includeRoot = true;
-      }
-      vm.loading = false;
+      dt.getCurrentRepo().then(function(response) {
+        vm.currentRepo = response.data.name;
+        vm.loading = false;
+      });
       _setFileToSaveName();
+    }
+
+    /**
+     * Determines whether or no this is a pentaho repository
+     *
+     * @returns {boolean}
+     * @private
+     */
+    function isPentahoRepo() {
+      return vm.tree.children[0].children.length === 2 && vm.tree.children[0].children[0].name === "home";
     }
 
     /**
@@ -161,22 +195,6 @@ define([
      */
     function _populateRecentFiles(response) {
       vm.recentFiles = response.data;
-    }
-
-    /**
-     * Sets the wrapper class, title, and open/save button according to open or save option
-     *
-     * @param {String} state - "open" or "save" state
-     */
-    function setState(state) {
-      if (state === "open") {
-        vm.wrapperClass = "open";
-        vm.headerTitle = i18n.get("file-open-save-plugin.app.header.open.title");
-      }
-      if (state === "save") {
-        vm.wrapperClass = "save";
-        vm.headerTitle = i18n.get("file-open-save-plugin.app.header.save.title");
-      }
     }
 
     /**
@@ -193,12 +211,16 @@ define([
      * @private
      */
     function _setFileToSaveName() {
-      if (vm.wrapperClass === "save") {
-        dt.getActiveFileName().then(function(response) {
-          vm.fileToSave = response.data.fileName;
-        }, function() {
-          vm.fileToSave = "";
-        });
+      if ($state.is("save")) {
+        if (vm.filename !== undefined) {
+          vm.fileToSave = vm.filename;
+        } else {
+          dt.getActiveFileName().then(function (response) {
+            vm.fileToSave = response.data.fileName;
+          }, function () {
+            vm.fileToSave = "";
+          });
+        }
       }
     }
 
@@ -206,21 +228,63 @@ define([
      * Sets variables showRecents, folder, and selectedFolder according to the contents of parameter
      *
      * @param {Object} folder - folder object
+     * @param {Function} callback - an optional callback for when selection completes
      */
-    function selectFolder(folder) {
+    function selectFolder(folder, callback) {
       vm.searchString = "";
+      if (vm.searching) {
+        _clearSearch();
+      }
       _resetFileAreaMessage();
       vm.file = null;
+      if ( folder === vm.folder ) {
+        return;
+      }
       if (folder) {
-        vm.showRecents = false;
         vm.folder = folder;
-        vm.selectedFolder = ((vm.folder.name === "home" || vm.folder.name === "public") && vm.folder.parent === "/") ?
-          _capsFirstLetter(folder.name) : folder.name;
+        vm.showRecents = false;
+        if (!vm.folder.loaded && vm.folder.subfoldersLoaded) {
+          vm.fileLoading = true;
+          vm.folder.loaded = true;
+          dt.getFiles(vm.folder.path).then(function(response) {
+            var loadedFolder = response.data;
+            vm.folder.children = vm.folder.children.concat(loadedFolder.children);
+            vm.fileLoading = false;
+            _updateDisplay(vm.folder);
+            if (callback) {
+              callback();
+            }
+          });
+        } else if (!vm.folder.loaded && !vm.folder.subfoldersLoaded) {
+          vm.fileLoading = true;
+          vm.folder.subfoldersLoaded = true;
+          vm.folder.loaded = true;
+          dt.getFilesAndFolders(vm.folder.path).then(function(response) {
+            var loadedFolder = response.data;
+            vm.folder.children = loadedFolder.children;
+            vm.fileLoading = false;
+            _updateDisplay(vm.folder);
+            if (callback) {
+              callback();
+            }
+          });
+        } else {
+          _updateDisplay(folder);
+          if (callback) {
+            callback();
+          }
+        }
       } else {
         vm.showRecents = true;
         vm.folder = {name: "Recents", path: "Recents"};
         vm.selectedFolder = "Recents";
       }
+    }
+
+    function _updateDisplay(folder) {
+      vm.showRecents = false;
+      vm.selectedFolder = ((vm.folder.name === "home" || vm.folder.name === "public") && vm.folder.parent === "/") ?
+          _capsFirstLetter(folder.name) : folder.name;
     }
 
     /**
@@ -229,10 +293,11 @@ define([
      * @param {String} path - path to file
      */
     function selectFolderByPath(path) {
-      for (var i = 0; i < vm.folders.length; i++) {
-        if (vm.folders[i].path === path) {
-          selectFolder(vm.folders[i]);
-        }
+      var folder = _findFolderByPath(path);
+      if (folder) {
+        $timeout(function() {
+          vm.folder = folder;
+        });
       }
     }
 
@@ -244,37 +309,130 @@ define([
      */
     function selectFile(file) {
       if (file.type === "folder") {
+        vm.searchString = "";
         selectFolder(file);
-      } else if (vm.wrapperClass === "open") {
+      } else if ($state.is("open")) {
         _open(file);
       }
     }
 
+    function getFiles() {
+      if (vm.searchString !== "") {
+        return vm.searchResults;
+      }
+      return vm.folder.children;
+    }
+
+    var searchPaths = [];
+    var maxSearching = 2;
+    var currentSearches = [];
+    var searchInterval;
+    var checkInterval;
+    var start;
+
     /**
      * Calls a filter for either recent files or files/folders in current folder
      */
-    function doSearch() {
-      vm.isInSearch = false;
-      vm.showMessage = true;
-      if (vm.showRecents === true) {
-        _filter(vm.recentFiles, vm.searchString);
+    function doSearch(searchValue) {
+      if (searchValue) {
+        _initSearch();
+        start = (new Date()).getTime();
+        if (vm.showRecents === true) {
+          selectFolder(vm.tree.children[0], function() {
+            $timeout(function() {
+              _doSearch(searchValue);
+            })
+          });
+        } else {
+          _doSearch(searchValue);
+        }
       } else {
-        _filter(vm.folder.children, vm.searchString);
+        _clearSearch();
+        _setSearchState();
       }
-      _setFileAreaMessage();
+    }
+
+    function _setSearchState() {
+      if (isPentahoRepo() && vm.searchString === "" && vm.selectedFolder === "/") {
+        vm.showRecents = true;
+        vm.folder = {name: "Recents", path: "Recents"};
+        vm.selectedFolder = vm.folder.name;
+        _resetFileAreaMessage();
+      } else if (vm.searchString === "") {
+        _resetFileAreaMessage();
+      }
+    }
+
+    function _initSearch() {
+      vm.searchResults = [];
+      searchPaths = [];
+      currentSearches = [];
+    }
+
+    function _completeSearch() {
+      clearInterval(searchInterval);
+      clearInterval(checkInterval);
+      $timeout(function() {
+        vm.searching = false;
+      });
     }
 
     /**
      * Resets the search string and runs search against that string (which returns normal dir structure).
      */
-    function resetSearch() {
-      if (vm.searchString !== "") {
-        vm.searchString = "";
-        vm.doSearch();
-        _resetFileAreaMessage();
-      } else {
-        vm.focusSearchBox();
+    function _clearSearch() {
+      dt.cancelSearch();
+      _completeSearch();
+      vm.searchResults = [];
+      vm.searchString = "";
+      _resetFileAreaMessage();
+    }
+
+    function _doSearch(searchValue) {
+      vm.searching = true;
+      vm.showMessage = true;
+      vm.searchString = searchValue;
+      _setFileAreaMessage();
+      _loadSearchPaths(vm.folder, searchValue);
+      searchInterval = setInterval(function() {
+        if (currentSearches.length <= maxSearching) {
+          var path = searchPaths.pop();
+          if (path) {
+            _loadSearchResults(path, searchValue);
+          }
+        }
+      });
+      checkInterval = setInterval(function() {
+        if (currentSearches.length === 0) {
+          _completeSearch();
+        }
+      }, 1000);
+    }
+
+    function _loadSearchPaths(folder, searchValue) {
+      dt.search(folder.path, searchValue).then(function(response) {
+        vm.searchResults = vm.searchResults.concat(response.data);
+        if (vm.searchResults.length > 0) {
+          vm.showMessage = false;
+        }
+      });
+      for (var i = 0; i < folder.children.length; i++) {
+        if (folder.children[i].type === "folder") {
+          searchPaths.push(folder.children[i].path);
+        }
       }
+    }
+
+    function _loadSearchResults(path, searchValue) {
+      currentSearches.push(path);
+      dt.getFolders(path).then(function(response) {
+        _loadSearchPaths(response.data, searchValue);
+        var index = currentSearches.indexOf(path);
+        currentSearches.splice(index, 1);
+      }, function() {
+        var index = currentSearches.indexOf(path);
+        currentSearches.splice(index, 1);
+      });
     }
 
     /**
@@ -333,6 +491,7 @@ define([
      */
     function openClicked() {
       if (vm.file && vm.file.type === "folder") {
+        vm.searchString = "";
         selectFolder(vm.file);
       } else {
         _open(vm.file);
@@ -357,6 +516,8 @@ define([
           dt.openRecent(file.repository + ":" + (file.username ? file.username : ""),
             file.objectId.id).then(function(response) {
               _closeBrowser();
+            }, function(response) {
+              _triggerError(16);
             });
         } else {
           select(file.objectId.id, file.name, file.path, file.type);
@@ -366,6 +527,8 @@ define([
           dt.openRecent(file.repository + ":" + (file.username ? file.username : ""),
             file.objectId.id).then(function(response) {
               _closeBrowser();
+            }, function(response) {
+              _triggerError(16);
             });
         } else {
           dt.openFile(file.objectId.id, file.type).then(function(response) {
@@ -381,21 +544,33 @@ define([
      * @private
      */
     function _save(override) {
-      if (!_isDuplicate() || override) {
+      if (override || !_isDuplicate()) {
         try {
-          select("", vm.fileToSave, vm.folder.path, "");
+          dt.checkForSecurityOrDupeIssues(vm.folder.path, vm.fileToSave, vm.file === null ? null : vm.file.name,
+            override).then(function(response) {
+              if (response.status === 200) {
+                select("", vm.fileToSave, vm.folder.path, "");
+              } else {
+                _triggerError(3);
+              }
+            });
         } catch (e) {
-          dt.saveFile(vm.folder.path, vm.fileToSave).then(function(response) {
-            if (response.status === 200) {
-              _closeBrowser();
-            } else {
-              _triggerError(3);
-            }
-          });
+          dt.saveFile(vm.folder.path, vm.fileToSave, vm.file === null ? null : vm.file.name, override)
+            .then(function(response) {
+              if (response.status === 200) {
+                _closeBrowser();
+              } else {
+                _triggerError(3);
+              }
+            });
         }
       } else {
         _triggerError(1);
       }
+    }
+
+    function okClicked() {
+      select(vm.file.objectId.id, vm.file.name, vm.file.path, vm.file.type);
     }
 
     /**
@@ -463,14 +638,6 @@ define([
       if (file) {
         var index = vm.folder.children.indexOf(file);
         vm.folder.children.splice(index, 1);
-        if (vm.file.type === "folder") {
-          for (var i = 0; i < vm.folders.length; i++) {
-            if (vm.folders[i].path === vm.file.path) {
-              vm.folders.splice(i, 1);
-              break;
-            }
-          }
-        }
       }
       $timeout(function() {
         _triggerError(errorType);
@@ -481,45 +648,57 @@ define([
      * Stores the most recent search
      */
     function storeRecentSearch() {
-      vm.isInSearch = false;
       if (vm.searchString !== "") {
-        dt.storeRecentSearch(vm.searchString).then(_populateRecentSearches);
+        if (vm.recentSearches.indexOf(vm.searchString) === -1) {
+          vm.recentSearches.push(vm.searchString);
+          dt.storeRecentSearch(vm.searchString).then(_populateRecentSearches);
+        }
       }
     }
 
     /**
-     * Determines if there are recent searches to show
+     * Determines if add button is to be disabled
+     * @return {boolean} - True if no folder is selected or if Recents is selected, false otherwise
      */
-    function displayRecentSearches() {
-      if (vm.recentSearches.length !== 0) {
-        vm.isInSearch = true;
-      }
+    function addDisabled() {
+      return addDeleteDisabled() || vm.searchString !== "";
+    }
+
+    /**
+     * Determines if delete button is to be disabled
+     * @return {boolean} - True if no folder is selected, if Recents is selected,
+     * or if root folder/file is selected, false otherwise
+     */
+    function deleteDisabled() {
+      return addDeleteDisabled() || isRoot();
     }
 
     /**
      * Determines if add or delete button is to be disabled
-     * @return {boolean} - True if no folder is selected or if Recents is selected, false otherwise
+     * @return {boolean} - True if no folder is selected, if Recents is selected, or if a message is showing.
+     * False otherwise
      */
     function addDeleteDisabled() {
-      return (vm.folder === null || vm.folder.path === "Recents");
+      return (vm.folder === null || vm.folder.path === "Recents" || vm.showMessage);
     }
 
     /**
-     * Sets focus on the search box
+     * Determines if (selected folder is a root folder according to repository type AND if no file is selected) OR
+     * if the selected file is a root folder
+     * @return {boolean} - True if root folder is selected and no file is selected, false otherwise
      */
-    function focusSearchBox() {
-      document.getElementById("searchBoxId").focus();
-    }
-
-    /**
-     * Sets the tooltip of a recent search in the search dropdown if it is wider than its container
-     * @param {String} id - the suffix of an element id
-     * @param {String} tooltip - the tooltip to add if necessary
-     */
-    function setTooltip(id, tooltip) {
-      if (utils.getTextWidth(tooltip) - 1 > 247) {
-        document.getElementById("search-item-index-" + id).title = tooltip;
+    function isRoot() {
+      var isFileNull = vm.file === null;
+      if (isPentahoRepo()) {
+        if (isFileNull) {
+          return vm.folder.path === "/home" || vm.folder.path === "/home/admin" || vm.folder.path === "/";
+        }
+        return vm.file.type === "folder" && (vm.file.path === "/home" || vm.file.path === "/home/admin");
       }
+      if (isFileNull) {
+        return vm.folder.path === "/";
+      }
+      return vm.file.type === "folder" && vm.file.path === "/";
     }
 
     /**
@@ -542,6 +721,46 @@ define([
       }
     }
 
+    function _findFolderByTraverse(children, path) {
+      for (var i = 0; i < children.length; i++) {
+        if (children[i].path === path) {
+          return children[i];
+        }
+        if (children[i].children.length > 0) {
+          return _findFolderByTraverse(children[i].children, path);
+        }
+      }
+      return null;
+    }
+
+    function _findFolderByPath(path) {
+      path = path === "/" ? "" : path;
+      var parts = path.split("/");
+      var folder = _findFolder(vm.tree.children, parts, 0);
+      return folder;
+    }
+
+    function _findFolder(children, parts, index) {
+      for (var i = 0; i < children.length; i++) {
+        if (children[i].name === parts[index]) {
+          if (index < parts.length - 1) {
+            return _findFolder(children[i].children, parts, ++index);
+          } else {
+            return children[i];
+          }
+        }
+      }
+
+      var folder = {name: parts[index], path: parts.slice(0, index+1).join("/"), children: []};
+      children.push(folder);
+      if (index < parts.length - 1) {
+        return _findFolder(folder.children, parts, ++index);
+      } else {
+        return folder;
+      }
+    }
+
+
     /**
      * Calls the service for removing the file
      */
@@ -549,29 +768,10 @@ define([
       if (vm.file === null) {// delete folder from directory tree panel
         dt.remove(vm.folder.objectId ? vm.folder.objectId.id : "", vm.folder.name, vm.folder.path, vm.folder.type)
           .then(function() {
-            var parent = vm.folder;
-            for (var i = 0; i < vm.folders.length; i++) {
-              if (vm.folders[i].path === vm.folder.parent) {
-                parent = vm.folders[i];
-                var numChildrenFolders = 0;
-                for (var j = 0; j < vm.folders[i].children.length; j++) {
-                  if (vm.folders[i].children[j].type === "folder") {
-                    numChildrenFolders++;
-                  }
-                  if (vm.folders[i].children[j].path === vm.folder.path) {
-                    vm.folders[i].children.splice(j, 1);
-                    numChildrenFolders--;
-                    j--;
-                  }
-                }
-                vm.folders[i].hasChildren = numChildrenFolders > 0;
-              }
-              if (vm.folders[i].parent === vm.folder.path || vm.folders[i].path === vm.folder.path) {
-                vm.folders.splice(i, 1);
-                i--;
-              }
-            }
-            vm.folder = parent;
+            var parentFolder = _findFolderByTraverse(vm.tree.children, vm.folder.parent);
+            var index = parentFolder.children.indexOf(vm.folder);
+            parentFolder.children.splice(index, 1);
+            selectFolder(parentFolder);
             vm.selectedFolder = vm.folder.name;
             vm.file = null;
             vm.searchString = "";
@@ -581,41 +781,27 @@ define([
           }, function(response) {
             if (response.status === 406) {// folder has open file
               _triggerError(13);
+            } else {
+              _triggerError(8);
             }
-            _triggerError(8);
           });
       } else {// delete file or folder from files list panel
         dt.remove(vm.file.objectId.id, vm.file.name, vm.file.path, vm.file.type)
           .then(function() {
             var index = vm.folder.children.indexOf(vm.file);
             vm.folder.children.splice(index, 1);
-            if (vm.file.type === "folder") {
-              for (var i = 0; i < vm.folders.length; i++) {
-                if (vm.folders[i].path.indexOf(vm.file.path) === 0) {
-                  vm.folders.splice(i, 1);
-                  i--;
-                }
-              }
-            }
-            var hasChildFolders = false;
-            for (var j = 0; j < vm.folder.children.length; j++) {
-              if (vm.folder.children[j].type === "folder") {
-                hasChildFolders = true;
-              }
-            }
-            vm.folder.hasChildren = hasChildFolders;
             vm.file = null;
             dt.getRecentFiles().then(_populateRecentFiles);
           }, function(response) {
             if (vm.file.type === "folder") {
               if (response.status === 406) {// folder has open file
                 _triggerError(13);
+              } else {
+                _triggerError(8);
               }
-              _triggerError(8);
+            } else if (response.status === 406) {// file is open
+              _triggerError(14);
             } else {
-              if (response.status === 406) {// file is open
-                _triggerError(14);
-              }
               _triggerError(9);
             }
           });
@@ -627,47 +813,24 @@ define([
      */
     function addFolder() {
       if (vm.selectedFolder !== "Recents") {
-        vm.folder.hasChildren = true;
         var folder = {};
         var name = _getFolderName();
         folder.parent = vm.folder.path;
         folder.path = vm.folder.path + (vm.folder.path.charAt(vm.folder.path.length - 1) === "/" ? "" : "/") + name;
         folder.name = name;
         folder.visible = vm.folder.open;
-        folder.depth = vm.folder.depth + 1;
-        folder.indent = folder.depth * 27;
         folder.new = true;
         folder.autoEdit = true;
         folder.type = "folder";
-        folder.hasChildren = false;
         folder.children = [];
         vm.folder.children.splice(0, 0, folder);
-        for (var i = 0; i < vm.folders.length; i++) {
-          if (vm.folders[i].path === folder.parent) {
-            var copy = angular.copy(folder);
-            vm.folders.splice(i + 1, 0, copy);
-            break;
-          }
-        }
       }
     }
 
-    /**
-     * Updates the directories with a new name for a file
-     * @param {string} oldPath - String path of old directory path
-     * @param {string} newPath - String path of new directory path
-     * @param {string} newName - New file name
-     * @param {object} id - objectId
-     */
-    function updateDirectories(oldPath, newPath, newName, id) {
-      for (var i = 0; i < vm.folders.length; i++) {
-        if (vm.folders[i].path === oldPath) {
-          vm.folders[i].name = newName;
-          vm.folders[i].objectId = id;
-        }
-      }
-      for (var j = 0; j < vm.folders.length; j++) {
-        _updateDirectories(vm.folders[j], oldPath, newPath);
+    function updateDirectories(folder, oldPath, newPath) {
+      folder.path = newPath;
+      for (var i = 0; i < folder.children.length; i++) {
+        _updateDirectories(folder.children[i], oldPath, newPath);
       }
       for (var k = 0; k < vm.recentFiles.length; k++) {
         if ((vm.recentFiles[k].path + "/").lastIndexOf(oldPath + "/", 0) === 0) {
@@ -682,20 +845,16 @@ define([
     /**
      * Update all child folder paths on parent rename
      *
-     * @param {Object} folder - Folder Object
+     * @param {Object} child - Folder Object
      * @param {String} oldPath - String path of old directory path
      * @param {String} newPath - String path of new directory path
      * @private
      */
-    function _updateDirectories(folder, oldPath, newPath) {
-      if (folder.path.indexOf(oldPath) === 0) {
-        folder.path = folder.path.replace(oldPath, newPath);
-        if (folder.parent !== null) {
-          folder.parent = folder.parent.replace(oldPath, newPath);
-        }
-      }
-      for (var i = 0; i < folder.children.length; i++) {
-        _updateDirectories(folder.children[i], oldPath, newPath);
+    function _updateDirectories(child, oldPath, newPath) {
+      child.parent = child.parent.replace(oldPath, newPath);
+      child.path = child.path.replace(oldPath, newPath);
+      for (var i = 0; i < child.children.length; i++) {
+        _updateDirectories(child.children[i], oldPath, newPath);
       }
     }
 
@@ -731,13 +890,14 @@ define([
 
     /**
      * Checks to see if the user has entered a file to save the same as a file already in current directory
+     * NOTE: does not check for hidden files. That is done in the checkForSecurityOrDupeIssues rest call
      * @return {boolean} - true if duplicate, false otherwise
      * @private
      */
     function _isDuplicate() {
       if (vm.folder && vm.folder.children) {
         for (var i = 0; i < vm.folder.children.length; i++) {
-          if (vm.fileToSave === vm.folder.children[i].name) {
+          if (vm.fileToSave === vm.folder.children[i].name && vm.fileType === vm.folder.children[i].type) {
             vm.file = vm.folder.children[i];
             return true;
           }
@@ -753,11 +913,11 @@ define([
      */
     function onKeyUp(event) {
       if (event.keyCode === 13 && event.target.id !== "searchBoxId") {
-        if (vm.wrapperClass === "open") {
+        if ($state.is("open")) {
           if (vm.file !== null) {
             selectFile(vm.file);
           }
-        } else {
+        } else if (!vm.showRecents) {
           _save(false);
         }
       }
@@ -774,7 +934,12 @@ define([
      */
     function getPlaceholder() {
       var isIE = navigator.userAgent.indexOf("Trident") !== -1 && Boolean(document.documentMode);
-      var retVal = vm.searchPlaceholder + " " + vm.selectedFolder;
+      var retVal = vm.searchPlaceholder;
+      if (vm.folder.path !== "Recents") {
+        retVal += " " + vm.selectedFolder;
+      } else {
+        retVal += " " + vm.currentRepo;
+      }
       if (isIE && utils.getTextWidth(retVal) > 210) {
         var tmp = "";
         for (var i = 0; i < retVal.length; i++) {
@@ -796,6 +961,46 @@ define([
     */
     function _capsFirstLetter(input) {
       return input.charAt(0).toUpperCase() + input.slice(1);
+    }
+
+    /**
+     * Returns the name of the selected folder
+     *
+     * @return {String} - "Search results in "<The name of the selected folder>", truncating with ellipsis accordingly
+     */
+    function getSelectedFolderName() {
+      var retVal = i18n.get("file-open-save-plugin.app.search-results-in.label");
+      if (vm.selectedFolder === "" && isPentahoRepo()) {
+        retVal += "\"" + vm.currentRepo;
+      } else {
+        retVal += "\"" + vm.selectedFolder;
+      }
+      if ($state.is("open") && utils.getTextWidth(retVal) > 435) {
+        retVal = utils.truncateString(retVal, 426) + "...";
+      } else if ($state.is("save") && utils.getTextWidth(retVal) > 395) {
+        retVal = utils.truncateString(retVal, 386) + "...";
+      }
+      return retVal + "\"";
+    }
+
+    /**
+     * Returns whether or not the save button should be enabled
+     *
+     * @returns {boolean} - true if the save button should be enabled
+     */
+    function isSaveEnabled() {
+      return vm.fileToSave === '' || vm.folder.path === 'Recents';
+    }
+
+    /**
+     * Returns whether or not the recents panel should be shown
+     *
+     * @returns {boolean} - true if recents should be shown
+     */
+    function isShowRecents() {
+      if (vm.recentFiles) {
+        return !vm.showMessage && vm.showRecents && vm.recentFiles.length > 0 && !$state.is('selectFolder');
+      }
     }
   }
 

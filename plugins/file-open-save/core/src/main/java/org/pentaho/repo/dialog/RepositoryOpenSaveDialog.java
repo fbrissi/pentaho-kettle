@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Pentaho Corporation. All rights reserved.
+ * Copyright 2017-2018 Hitachi Vantara. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,10 +22,17 @@ import org.eclipse.swt.graphics.Image;
 import org.eclipse.swt.widgets.Shell;
 import org.pentaho.di.core.exception.KettleException;
 import org.pentaho.di.core.util.Utils;
+import org.pentaho.di.repository.Repository;
 import org.pentaho.di.ui.core.dialog.ThinDialog;
 import org.pentaho.di.ui.core.gui.GUIResource;
 import org.pentaho.platform.settings.ServerPort;
 import org.pentaho.platform.settings.ServerPortRegistry;
+import org.pentaho.repo.controller.RepositoryBrowserController;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.URLEncoder;
+import java.util.Properties;
 
 /**
  * Created by bmorrise on 5/23/17.
@@ -34,9 +41,9 @@ public class RepositoryOpenSaveDialog extends ThinDialog {
 
   public static final String STATE_SAVE = "save";
   public static final String STATE_OPEN = "open";
+  public static final String SELECT_FOLDER = "selectFolder";
   private static final Image LOGO = GUIResource.getInstance().getImageLogoSmall();
   private static final String OSGI_SERVICE_PORT = "OSGI_SERVICE_PORT";
-  private static final String CLIENT_PATH = "/@PROJECT_ARTIFACT_ID@/@PROJECT_VERSION@/index.html";
   private static final int OPTIONS = SWT.APPLICATION_MODAL | SWT.DIALOG_TRIM | SWT.RESIZE | SWT.MAX;
   private static final String THIN_CLIENT_HOST = "THIN_CLIENT_HOST";
   private static final String THIN_CLIENT_PORT = "THIN_CLIENT_PORT";
@@ -46,22 +53,38 @@ public class RepositoryOpenSaveDialog extends ThinDialog {
   private String objectName;
   private String objectDirectory;
   private String objectType;
+  private Repository repository;
 
   public RepositoryOpenSaveDialog( Shell shell, int width, int height ) {
     super( shell, width, height );
   }
 
-  public void open( String directory, String state, String filter, String origin ) {
+  public void open( Repository repository, String directory, String state, String title, String filter, String origin ) {
+    open( repository, directory, state, title, filter, origin, null, "" );
+  }
+
+  public void open( Repository repository, String directory, String state, String title, String filter, String origin,
+                    String filename, String fileType ) {
+    try {
+      directory = URLEncoder.encode( directory, "UTF-8" );
+    } catch ( Exception e ) {
+      // ignore if fails
+    }
+    RepositoryBrowserController.repository = repository;
     StringBuilder clientPath = new StringBuilder();
-    clientPath.append( CLIENT_PATH );
-    clientPath.append( !Utils.isEmpty( directory ) ? "#?path=" + directory : "#?" );
+    clientPath.append( getClientPath() );
+    clientPath.append( !Utils.isEmpty( state ) ? "#/" + state : "" );
+    clientPath.append( !Utils.isEmpty( directory ) ? "?path=" + directory : "?" );
     clientPath.append( !Utils.isEmpty( directory ) ? "&" : "" );
-    clientPath.append( !Utils.isEmpty( state ) ? "state=" + state : "" );
-    clientPath.append( !Utils.isEmpty( state ) ? "&" : "" );
     clientPath.append( !Utils.isEmpty( filter ) ? "filter=" + filter : "" );
     clientPath.append( !Utils.isEmpty( filter ) ? "&" : "" );
     clientPath.append( !Utils.isEmpty( origin ) ? "origin=" + origin : "" );
-    super.createDialog( StringUtils.capitalize( state ), getRepoURL( clientPath.toString() ), OPTIONS, LOGO );
+    clientPath.append( !Utils.isEmpty( origin ) ? "&" : "" );
+    clientPath.append( null != filename ? "filename=" + filename : "" );
+    clientPath.append( null != filename ? "&" : "" );
+    clientPath.append( null != fileType ? "fileType=" + fileType : "" );
+    super.createDialog( title != null ? title : StringUtils.capitalize( state ), getRepoURL( clientPath.toString() ),
+      OPTIONS, LOGO );
     super.dialog.setMinimumSize( 545, 458 );
 
     new BrowserFunction( browser, "close" ) {
@@ -92,6 +115,18 @@ public class RepositoryOpenSaveDialog extends ThinDialog {
         display.sleep();
       }
     }
+  }
+
+  private static String getClientPath() {
+    Properties properties = new Properties();
+    try {
+      InputStream inputStream =
+        RepositoryOpenSaveDialog.class.getClassLoader().getResourceAsStream( "project.properties" );
+      properties.load( inputStream );
+    } catch ( IOException e ) {
+      e.printStackTrace();
+    }
+    return properties.getProperty( "CLIENT_PATH" );
   }
 
   private static Integer getOsgiServicePort() {

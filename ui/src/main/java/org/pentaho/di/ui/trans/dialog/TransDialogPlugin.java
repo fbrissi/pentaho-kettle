@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2013 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2017 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -29,7 +29,7 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * The class painted with this annotation is providing an additional user-interface in the transformation setting dialog
+ * The class painted with this annotation is providing an additional user-interface in the transformation settings dialog
  * in the form of a new tab.
  *
  * @author matt

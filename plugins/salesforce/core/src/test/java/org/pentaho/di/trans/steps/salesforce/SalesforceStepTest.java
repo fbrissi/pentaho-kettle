@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2016 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2017 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -31,20 +31,34 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.when;
 
+import org.junit.After;
+import org.junit.Assert;
 import org.junit.Before;
 import org.junit.BeforeClass;
+import org.junit.ClassRule;
 import org.junit.Test;
 import org.mockito.Mockito;
 import org.pentaho.di.core.KettleEnvironment;
 import org.pentaho.di.core.exception.KettleException;
+import org.pentaho.di.core.exception.KettleValueException;
 import org.pentaho.di.core.logging.LoggingObjectInterface;
+import org.pentaho.di.core.row.ValueMetaInterface;
+import org.pentaho.di.junit.rules.RestorePDIEngineEnvironment;
 import org.pentaho.di.trans.Trans;
 import org.pentaho.di.trans.TransMeta;
 import org.pentaho.di.trans.step.StepDataInterface;
 import org.pentaho.di.trans.step.StepMeta;
 import org.pentaho.di.trans.steps.mock.StepMockHelper;
 
+import java.text.DateFormat;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.util.Calendar;
+import java.util.Date;
+import java.util.TimeZone;
+
 public class SalesforceStepTest {
+  @ClassRule public static RestorePDIEngineEnvironment env = new RestorePDIEngineEnvironment();
 
   private StepMockHelper<SalesforceStepMeta, SalesforceStepData> smh;
 
@@ -61,6 +75,11 @@ public class SalesforceStepTest {
     when( smh.logChannelInterfaceFactory.create( any(), any( LoggingObjectInterface.class ) ) ).thenReturn(
       smh.logChannelInterface );
     when( smh.trans.isRunning() ).thenReturn( true );
+  }
+
+  @After
+  public void cleanUp() {
+    smh.cleanUp();
   }
 
   @Test
@@ -115,4 +134,33 @@ public class SalesforceStepTest {
       super( stepMeta, stepDataInterface, copyNr, transMeta, trans );
     }
   }
+
+  @Test
+  public void createIntObjectTest() throws KettleValueException {
+    SalesforceStep step =
+      spy( new MockSalesforceStep( smh.stepMeta, smh.stepDataInterface, 0, smh.transMeta, smh.trans ) );
+    ValueMetaInterface valueMeta = Mockito.mock( ValueMetaInterface.class );
+    Mockito.when( valueMeta.getType() ).thenReturn( ValueMetaInterface.TYPE_INTEGER );
+    Object value = step.normalizeValue( valueMeta, 100L );
+    Assert.assertTrue( value instanceof Integer );
+  }
+
+  @Test
+  public void createDateObjectTest() throws KettleValueException, ParseException {
+    SalesforceStep step =
+      spy( new MockSalesforceStep( smh.stepMeta, smh.stepDataInterface, 0, smh.transMeta, smh.trans ) );
+    ValueMetaInterface valueMeta = Mockito.mock( ValueMetaInterface.class );
+    DateFormat dateFormat = new SimpleDateFormat( "dd-MM-yyyy hh:mm:ss" );
+    Date date = dateFormat.parse( "12-10-2017 15:10:25" );
+    Mockito.when( valueMeta.isDate() ).thenReturn( true );
+    Mockito.when( valueMeta.getDateFormatTimeZone() ).thenReturn( TimeZone.getTimeZone( "UTC" ) );
+    Mockito.when( valueMeta.getDate( Mockito.eq( date ) ) ).thenReturn( date );
+    Object value = step.normalizeValue( valueMeta, date );
+    Assert.assertTrue( value instanceof Calendar );
+    DateFormat minutesDateFormat = new SimpleDateFormat( "mm:ss" );
+    //check not missing minutes and seconds
+    Assert.assertEquals( minutesDateFormat.format( date ), minutesDateFormat.format( ( (Calendar) value ).getTime() ) );
+
+  }
+
 }

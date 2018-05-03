@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2015 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2017 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -78,7 +78,7 @@ public class SpoonFilterMatchingTest {
   public void specialCharsMatching() {
     when( spoon.selectionFilter.getText() ).thenReturn( "qw*y" );
     assertFalse( spoon.filterMatch( "qwerty" ) );
-    assertTrue( spoon.filterMatch( "qwy" ) );
-    assertTrue( spoon.filterMatch( "qwwwwy" ) );
+    assertTrue( spoon.filterMatch( "qw*y" ) );
+    assertFalse( spoon.filterMatch( "qwwwwy" ) );
   }
 }

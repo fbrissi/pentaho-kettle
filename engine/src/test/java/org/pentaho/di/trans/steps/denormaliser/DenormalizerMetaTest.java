@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2016 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -31,10 +31,12 @@ import java.util.UUID;
 
 import org.apache.commons.lang.builder.EqualsBuilder;
 import org.junit.Before;
+import org.junit.ClassRule;
 import org.junit.Test;
 import org.pentaho.di.core.KettleEnvironment;
 import org.pentaho.di.core.exception.KettleException;
 import org.pentaho.di.core.plugins.PluginRegistry;
+import org.pentaho.di.junit.rules.RestorePDIEngineEnvironment;
 import org.pentaho.di.trans.step.StepMetaInterface;
 import org.pentaho.di.trans.steps.loadsave.LoadSaveTester;
 import org.pentaho.di.trans.steps.loadsave.initializer.InitializerInterface;
@@ -45,20 +47,23 @@ import org.pentaho.di.trans.steps.loadsave.validator.StringLoadSaveValidator;
 public class DenormalizerMetaTest implements InitializerInterface<StepMetaInterface> {
   LoadSaveTester loadSaveTester;
   Class<DenormaliserMeta> testMetaClass = DenormaliserMeta.class;
+  @ClassRule public static RestorePDIEngineEnvironment env = new RestorePDIEngineEnvironment();
 
   @Before
   public void setUpLoadSave() throws Exception {
     KettleEnvironment.init();
-    PluginRegistry.init( true );
+    PluginRegistry.init( false );
     List<String> attributes =
         Arrays.asList( "groupField", "keyField", "denormaliserTargetField" );
 
     Map<String, String> getterMap = new HashMap<String, String>() {
+      //CHECKSTYLE IGNORE EmptyBlock FOR NEXT 3 LINES
       {
         // put( "fieldName", "getFieldName" );
       }
     };
     Map<String, String> setterMap = new HashMap<String, String>() {
+      //CHECKSTYLE IGNORE EmptyBlock FOR NEXT 3 LINES
       {
         // put( "fieldName", "setFieldName" );
       }

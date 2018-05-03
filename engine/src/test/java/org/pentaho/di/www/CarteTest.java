@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2016 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2016 - 2017 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -21,23 +21,28 @@
  ******************************************************************************/
 package org.pentaho.di.www;
 
+import org.junit.ClassRule;
 import org.junit.Ignore;
 import org.junit.Test;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
 import org.pentaho.di.cluster.SlaveServer;
 import org.pentaho.di.core.Const;
+import org.pentaho.di.junit.rules.RestorePDIEngineEnvironment;
 
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.Assert.assertEquals;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.RETURNS_MOCKS;
+import static org.mockito.Mockito.when;
 
 /**
  * Created by ccaspanello on 5/31/2016.
  */
 public class CarteTest {
+  @ClassRule public static RestorePDIEngineEnvironment env = new RestorePDIEngineEnvironment();
 
   // this test isn't consistent/doesn't work.
   @Ignore

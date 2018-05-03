@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2016 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2017 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -33,9 +33,12 @@ import java.util.Calendar;
 import java.util.TimeZone;
 import java.util.UUID;
 
+import com.sforce.ws.bind.XmlObject;
+import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.BeforeClass;
+import org.junit.ClassRule;
 import org.junit.Test;
 import org.pentaho.di.core.Const;
 import org.pentaho.di.core.encryption.Encr;
@@ -47,6 +50,7 @@ import org.pentaho.di.core.row.RowMeta;
 import org.pentaho.di.core.row.ValueMetaInterface;
 import org.pentaho.di.core.row.value.ValueMetaDate;
 import org.pentaho.di.core.util.EnvUtil;
+import org.pentaho.di.junit.rules.RestorePDIEngineEnvironment;
 import org.pentaho.di.trans.steps.mock.StepMockHelper;
 import org.pentaho.di.trans.steps.salesforce.SalesforceConnection;
 
@@ -59,6 +63,7 @@ import com.sforce.soap.partner.sobject.SObject;
  * @see SalesforceInsert
  */
 public class PDI_10836_Test {
+  @ClassRule public static RestorePDIEngineEnvironment env = new RestorePDIEngineEnvironment();
   private StepMockHelper<SalesforceInsertMeta, SalesforceInsertData> smh;
 
   @BeforeClass
@@ -77,6 +82,11 @@ public class PDI_10836_Test {
             SalesforceInsertData.class );
     when( smh.logChannelInterfaceFactory.create( any(), any( LoggingObjectInterface.class ) ) ).thenReturn(
         smh.logChannelInterface );
+  }
+
+  @After
+  public void cleanUp() {
+    smh.cleanUp();
   }
 
   @Test
@@ -118,7 +128,8 @@ public class PDI_10836_Test {
     DateFormat utc = new SimpleDateFormat( "yyyy-MM-dd" );
     utc.setTimeZone( TimeZone.getTimeZone( "UTC" ) );
 
+    XmlObject xmlObject = SalesforceConnection.getChildren( data.sfBuffer[ 0 ] )[ 0 ];
     Assert.assertEquals( "2013-10-16",
-      utc.format( SalesforceConnection.getChildren( data.sfBuffer[0] )[0].getValue() ) );
+      utc.format( ( (Calendar) xmlObject.getValue() ).getTime() ) );
   }
 }

@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2013 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -23,12 +23,22 @@
 package org.pentaho.di.trans.steps.databaselookup;
 
 import static org.mockito.Matchers.any;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.anyInt;
+import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.doCallRealMethod;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.when;
 
 import java.util.Arrays;
 
+import org.junit.After;
+import org.junit.AfterClass;
 import org.junit.Assert;
 import org.junit.Before;
+import org.junit.BeforeClass;
+import org.junit.ClassRule;
 import org.junit.Test;
 import org.pentaho.di.core.KettleEnvironment;
 import org.pentaho.di.core.QueueRowSet;
@@ -44,6 +54,7 @@ import org.pentaho.di.core.row.RowMetaInterface;
 import org.pentaho.di.core.row.ValueMetaInterface;
 import org.pentaho.di.core.row.value.ValueMetaString;
 import org.pentaho.di.core.variables.VariableSpace;
+import org.pentaho.di.junit.rules.RestorePDIEngineEnvironment;
 import org.pentaho.di.repository.Repository;
 import org.pentaho.di.trans.step.StepDataInterface;
 import org.pentaho.di.trans.step.StepMeta;
@@ -59,6 +70,17 @@ import org.pentaho.metastore.api.IMetaStore;
  */
 public class PDI5436Test {
   private StepMockHelper<DatabaseLookupMeta, DatabaseLookupData> smh;
+  @ClassRule public static RestorePDIEngineEnvironment env = new RestorePDIEngineEnvironment();
+
+  @BeforeClass
+  public static void setupClass() throws KettleException {
+    KettleEnvironment.init();
+  }
+
+  @AfterClass
+  public static void tearDown() {
+    KettleEnvironment.reset();
+  }
 
   @Before
   public void setUp() {
@@ -68,6 +90,11 @@ public class PDI5436Test {
     when( smh.logChannelInterfaceFactory.create( any(), any( LoggingObjectInterface.class ) ) ).thenReturn(
         smh.logChannelInterface );
     when( smh.trans.isRunning() ).thenReturn( true );
+  }
+
+  @After
+  public void cleanUp() {
+    smh.cleanUp();
   }
 
   private RowMeta mockInputRowMeta() {
@@ -129,16 +156,16 @@ public class PDI5436Test {
 
   @Test
   public void testCacheAllTable() throws KettleException {
-    KettleEnvironment.init();
     DatabaseLookup stepSpy =
         spy( new DatabaseLookup( smh.stepMeta, smh.stepDataInterface, 0, smh.transMeta, smh.trans ) );
 
-    doReturn( mockDatabase() ).when( stepSpy ).getDatabase( any( DatabaseMeta.class ) );
+    Database database = mockDatabase();
+    doReturn( database ).when( stepSpy ).getDatabase( any( DatabaseMeta.class ) );
 
-    stepSpy.getInputRowSets().add( mockInputRowSet() );
+    stepSpy.addRowSetToInputRowSets( mockInputRowSet() );
     stepSpy.setInputRowMeta( mockInputRowMeta() );
     RowSet outputRowSet = new QueueRowSet();
-    stepSpy.getOutputRowSets().add( outputRowSet );
+    stepSpy.addRowSetToOutputRowSets( outputRowSet );
 
     StepMetaInterface meta = mockStepMeta();
     StepDataInterface data = smh.initStepDataInterface;

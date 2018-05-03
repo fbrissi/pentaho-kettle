@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2013 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -37,6 +37,7 @@ import org.pentaho.di.core.logging.ConsoleLoggingEventListener;
 import org.pentaho.di.core.logging.KettleLogStore;
 import org.pentaho.di.core.logging.LoggingPluginInterface;
 import org.pentaho.di.core.logging.LoggingPluginType;
+import org.pentaho.di.core.logging.Slf4jLoggingEventListener;
 import org.pentaho.di.core.plugins.DatabasePluginType;
 import org.pentaho.di.core.plugins.PluginInterface;
 import org.pentaho.di.core.plugins.PluginRegistry;
@@ -61,9 +62,9 @@ public class KettleClientEnvironment {
   private static Boolean initialized;
 
   public enum ClientType {
-    SPOON, PAN, KITCHEN, CARTE, DI_SERVER, OTHER;
-    public String getID(){
-      if( this != OTHER ) {
+    SPOON, PAN, KITCHEN, CARTE, DI_SERVER, SCALE, OTHER;
+    public String getID() {
+      if ( this != OTHER ) {
         return this.name();
       }
       return instance.clientID;
@@ -108,11 +109,12 @@ public class KettleClientEnvironment {
     if ( !"Y".equalsIgnoreCase( System.getProperty( Const.KETTLE_DISABLE_CONSOLE_LOGGING, "N" ) ) ) {
       KettleLogStore.getAppender().addLoggingEventListener( new ConsoleLoggingEventListener() );
     }
+    KettleLogStore.getAppender().addLoggingEventListener( new Slf4jLoggingEventListener() );
 
     // Load plugins
     //
     pluginsToLoad.forEach( PluginRegistry::addPluginType );
-    PluginRegistry.init( true );
+    PluginRegistry.init();
 
     List<PluginInterface> logginPlugins = PluginRegistry.getInstance().getPlugins( LoggingPluginType.class );
     initLogginPlugins( logginPlugins );
@@ -209,7 +211,7 @@ public class KettleClientEnvironment {
   }
 
   /**
-   * Return this singleton. Craete it if it hasn't been.
+   * Return this singleton. Create it if it hasn't been.
    *
    * @return
    */
@@ -220,5 +222,13 @@ public class KettleClientEnvironment {
     }
 
     return KettleClientEnvironment.instance;
+  }
+
+  public static void reset() {
+    if ( KettleLogStore.isInitialized() ) {
+      KettleLogStore.getInstance().reset();
+    }
+    PluginRegistry.getInstance().reset();
+    initialized = null;
   }
 }

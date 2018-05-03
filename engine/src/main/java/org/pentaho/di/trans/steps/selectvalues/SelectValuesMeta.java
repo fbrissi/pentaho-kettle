@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2017 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -383,7 +383,7 @@ public class SelectValuesMeta extends BaseStepMeta implements StepMetaInterface 
     }
   }
 
-  // Not called anywhere else in Pentaho. It's important to call the method below passing in the VariableSpace
+  // Not called anywhere else in Hitachi Vantara. It's important to call the method below passing in the VariableSpace
   @Deprecated
   public void getMetadataFields( RowMetaInterface inputRowMeta, String name ) throws KettlePluginException {
     getMetadataFields( inputRowMeta, name, null );
@@ -922,11 +922,11 @@ public class SelectValuesMeta extends BaseStepMeta implements StepMetaInterface 
 
     /** Select: length of field */
     @Injection( name = "FIELD_LENGTH", group = "FIELDS" )
-    private int length;
+    private int length = UNDEFINED;
 
     /** Select: Precision of field (for numbers) */
     @Injection( name = "FIELD_PRECISION", group = "FIELDS" )
-    private int precision;
+    private int precision = UNDEFINED;
 
     public String getName() {
       return name;

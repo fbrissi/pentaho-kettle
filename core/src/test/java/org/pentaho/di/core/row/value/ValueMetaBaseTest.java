@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2017 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -27,6 +27,7 @@ import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.BeforeClass;
+import org.junit.ClassRule;
 import org.junit.Test;
 import org.mockito.Mockito;
 import org.owasp.encoder.Encode;
@@ -50,6 +51,8 @@ import org.pentaho.di.core.plugins.PluginRegistry;
 import org.pentaho.di.core.row.ValueMetaInterface;
 import org.pentaho.di.core.xml.XMLHandler;
 import org.pentaho.di.i18n.BaseMessages;
+import org.pentaho.di.junit.rules.RestorePDIEnvironment;
+import org.w3c.dom.Node;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -75,27 +78,28 @@ import java.util.GregorianCalendar;
 import java.util.List;
 import java.util.TimeZone;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertArrayEquals;
 
 public class ValueMetaBaseTest {
+  @ClassRule public static RestorePDIEnvironment env = new RestorePDIEnvironment();
 
   private static final String TEST_NAME = "TEST_NAME";
   private static final String LOG_FIELD = "LOG_FIELD";
   public static final int MAX_TEXT_FIELD_LEN = 5;
 
   // Get PKG from class under test
-  private static Class<?> PKG = ( new ValueMetaBase() {
-    public Class<?> getPackage() {
-      return PKG;
-    }
-  } ).getPackage();
+  private Class<?> PKG = ValueMetaBase.PKG;
   private StoreLoggingEventListener listener;
 
   @BeforeClass
   public static void setUpBeforeClass() throws KettleException {
     PluginRegistry.addPluginType( ValueMetaPluginType.getInstance() );
     PluginRegistry.addPluginType( DatabasePluginType.getInstance() );
-    PluginRegistry.init( true );
+    PluginRegistry.init();
     KettleLogStore.init();
   }
 
@@ -857,11 +861,6 @@ public class ValueMetaBaseTest {
   @Test
   public void testConvertBigNumberToBoolean() {
     ValueMetaBase vmb = new ValueMetaBase();
-    System.out.println( vmb.convertBigNumberToBoolean( new BigDecimal( "-234" ) ) );
-    System.out.println( vmb.convertBigNumberToBoolean( new BigDecimal( "234" ) ) );
-    System.out.println( vmb.convertBigNumberToBoolean( new BigDecimal( "0" ) ) );
-    System.out.println( vmb.convertBigNumberToBoolean( new BigDecimal( "1.7976E308" ) ) );
-
     Assert.assertTrue( vmb.convertBigNumberToBoolean( new BigDecimal( "-234" ) ) );
     Assert.assertTrue( vmb.convertBigNumberToBoolean( new BigDecimal( "234" ) ) );
     Assert.assertFalse( vmb.convertBigNumberToBoolean( new BigDecimal( "0" ) ) );
@@ -891,4 +890,65 @@ public class ValueMetaBaseTest {
     Assert.assertTrue( binaryValueMeta.isBinary() );
   }
 
+  @Test
+  public void testGetValueFromNode() throws Exception {
+
+    ValueMetaBase valueMetaBase = null;
+    Node xmlNode = null;
+
+    valueMetaBase = new ValueMetaBase( "test", ValueMetaInterface.TYPE_STRING );
+    xmlNode = XMLHandler.loadXMLString( "<value-data>String val</value-data>" ).getFirstChild();
+    Assert.assertEquals( "String val", valueMetaBase.getValue( xmlNode ) );
+
+    valueMetaBase = new ValueMetaBase( "test", ValueMetaInterface.TYPE_NUMBER );
+    xmlNode = XMLHandler.loadXMLString( "<value-data>689.2</value-data>" ).getFirstChild();
+    Assert.assertEquals( 689.2, valueMetaBase.getValue( xmlNode ) );
+
+    valueMetaBase = new ValueMetaBase( "test", ValueMetaInterface.TYPE_NUMBER );
+    xmlNode = XMLHandler.loadXMLString( "<value-data>689.2</value-data>" ).getFirstChild();
+    Assert.assertEquals( 689.2, valueMetaBase.getValue( xmlNode ) );
+
+    valueMetaBase = new ValueMetaBase( "test", ValueMetaInterface.TYPE_INTEGER );
+    xmlNode = XMLHandler.loadXMLString( "<value-data>68933</value-data>" ).getFirstChild();
+    Assert.assertEquals( 68933l, valueMetaBase.getValue( xmlNode ) );
+
+    valueMetaBase = new ValueMetaBase( "test", ValueMetaInterface.TYPE_DATE );
+    xmlNode = XMLHandler.loadXMLString( "<value-data>2017/11/27 08:47:10.000</value-data>" ).getFirstChild();
+    Assert.assertEquals( XMLHandler.stringToDate( "2017/11/27 08:47:10.000" ), valueMetaBase.getValue( xmlNode ) );
+
+    valueMetaBase = new ValueMetaBase( "test", ValueMetaInterface.TYPE_TIMESTAMP );
+    xmlNode = XMLHandler.loadXMLString( "<value-data>2017/11/27 08:47:10.123456789</value-data>" ).getFirstChild();
+    Assert.assertEquals( XMLHandler.stringToTimestamp( "2017/11/27 08:47:10.123456789" ), valueMetaBase.getValue( xmlNode ) );
+
+    valueMetaBase = new ValueMetaBase( "test", ValueMetaInterface.TYPE_BOOLEAN );
+    xmlNode = XMLHandler.loadXMLString( "<value-data>Y</value-data>" ).getFirstChild();
+    Assert.assertEquals( true, valueMetaBase.getValue( xmlNode ) );
+
+    valueMetaBase = new ValueMetaBase( "test", ValueMetaInterface.TYPE_BINARY );
+    byte[] bytes = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
+    String s = XMLHandler.encodeBinaryData( bytes );
+    xmlNode = XMLHandler.loadXMLString( "<value-data>test<binary-value>" + s + "</binary-value></value-data>" ).getFirstChild();
+    Assert.assertArrayEquals( bytes, (byte[]) valueMetaBase.getValue( xmlNode ) );
+
+    valueMetaBase = new ValueMetaBase( "test", ValueMetaInterface.TYPE_STRING );
+    xmlNode = XMLHandler.loadXMLString( "<value-data></value-data>" ).getFirstChild();
+    Assert.assertNull( valueMetaBase.getValue( xmlNode ) );
+  }
+
+  @Test( expected = KettleException.class )
+  public void testGetValueUnknownType() throws Exception {
+    ValueMetaBase valueMetaBase = new ValueMetaBase( "test", ValueMetaInterface.TYPE_NONE );
+    valueMetaBase.getValue( XMLHandler.loadXMLString( "<value-data>not empty</value-data>" ).getFirstChild() );
+  }
+
+  @Test
+  public void testConvertStringToTimestampType() throws KettleValueException {
+    String timestampStringRepresentation = "2018/04/11 16:45:15.000000000";
+    Timestamp expectedTimestamp = Timestamp.valueOf( "2018-04-11 16:45:15.000000000" );
+
+    ValueMetaBase base = new ValueMetaString( "ValueMetaStringColumn" );
+    base.setConversionMetadata( new ValueMetaTimestamp( "ValueMetaTimestamp" ) );
+    Timestamp timestamp = ( Timestamp ) base.convertDataUsingConversionMetaData( timestampStringRepresentation );
+    assertEquals( expectedTimestamp, timestamp );
+  }
 }

@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2017 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2017 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -23,8 +23,8 @@
 package org.pentaho.di.trans.steps.salesforceupsert;
 
 import java.util.ArrayList;
+import java.util.Iterator;
 
-import com.google.common.primitives.Ints;
 import org.pentaho.di.core.util.Utils;
 import org.pentaho.di.core.exception.KettleException;
 import org.pentaho.di.core.exception.KettleStepException;
@@ -43,6 +43,8 @@ import org.pentaho.di.trans.steps.salesforceutils.SalesforceUtils;
 import com.google.common.annotations.VisibleForTesting;
 import com.sforce.soap.partner.sobject.SObject;
 import com.sforce.ws.bind.XmlObject;
+
+import javax.xml.namespace.QName;
 
 /**
  * Read data from Salesforce module, convert them to rows and writes these to one or more output streams.
@@ -140,17 +142,7 @@ public class SalesforceUpsert extends SalesforceStep {
             fieldsToNull.add( SalesforceUtils.getFieldToNullName( log, meta.getUpdateLookup()[i], meta
                 .getUseExternalId()[i] ) );
           } else {
-            Object normalObject = valueMeta.convertToNormalStorageType( object );
-            if ( ValueMetaInterface.TYPE_INTEGER == valueMeta.getType() ) {
-              // Salesforce integer values can be only http://www.w3.org/2001/XMLSchema:int
-              // see org.pentaho.di.ui.trans.steps.salesforceinput.SalesforceInputDialog#addFieldToTable
-              // So we need convert Pentaho integer (real java Long value) to real int.
-              // It will be sent correct as http://www.w3.org/2001/XMLSchema:int
-
-              // use checked cast for prevent losing data
-              normalObject = Ints.checkedCast( (Long) normalObject );
-            }
-
+            Object normalObject = normalizeValue( valueMeta, rowData[data.fieldnrs[i]] );
             upsertfields.add( SalesforceConnection.createMessageElement( meta.getUpdateLookup()[i], normalObject, meta
                 .getUseExternalId()[i] ) );
           }
@@ -161,7 +153,7 @@ public class SalesforceUpsert extends SalesforceStep {
         sobjPass.setType( data.connection.getModule() );
         if ( upsertfields.size() > 0 ) {
           for ( XmlObject element : upsertfields ) {
-            sobjPass.setSObjectField( element.getName().getLocalPart(), element.getValue() );
+            setFieldInSObject( sobjPass, element );
           }
         }
         if ( fieldsToNull.size() > 0 ) {
@@ -184,6 +176,21 @@ public class SalesforceUpsert extends SalesforceStep {
       throw ke;
     } catch ( Exception e ) {
       throw new KettleException( BaseMessages.getString( PKG, "SalesforceUpsert.FailedInWrite", e.toString() ) );
+    }
+  }
+
+  void setFieldInSObject( SObject sobjPass, XmlObject element ) {
+    Iterator<XmlObject> children = element.getChildren();
+    String name = element.getName().getLocalPart();
+    if ( !children.hasNext() ) {
+      sobjPass.setSObjectField( name, element.getValue() );
+    } else {
+      SObject child = new SObject();
+      child.setName( new QName( name ) );
+      while ( children.hasNext() ) {
+        setFieldInSObject( child, children.next() );
+      }
+      sobjPass.setSObjectField( name, child );
     }
   }
 

@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2016 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2017 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -29,8 +29,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import org.junit.ClassRule;
 import org.junit.Test;
 import org.pentaho.di.core.exception.KettleException;
+import org.pentaho.di.junit.rules.RestorePDIEngineEnvironment;
 import org.pentaho.di.trans.step.StepMeta;
 import org.pentaho.di.trans.step.StepMetaInterface;
 import org.pentaho.di.trans.steps.dummytrans.DummyTransMeta;
@@ -43,6 +45,7 @@ import org.pentaho.di.trans.steps.loadsave.validator.ListLoadSaveValidator;
  * @author nhudak
  */
 public class SwitchCaseMetaTest {
+  @ClassRule public static RestorePDIEngineEnvironment env = new RestorePDIEngineEnvironment();
 
   LoadSaveTester<SwitchCaseMeta> loadSaveTester;
 

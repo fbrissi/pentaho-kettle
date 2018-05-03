@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2017 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -22,14 +22,13 @@
 
 package org.pentaho.di.trans.steps.jsoninput;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 import static org.mockito.Matchers.any;
 import static org.mockito.Mockito.when;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -43,13 +42,14 @@ import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import junit.framework.ComparisonFailure;
 
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.vfs2.FileObject;
 import org.apache.commons.vfs2.FileSystemException;
-import org.codehaus.jackson.JsonNode;
-import org.codehaus.jackson.map.ObjectMapper;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -84,14 +84,71 @@ public class JsonInputTest {
   protected StepMockHelper<JsonInputMeta, JsonInputData> helper;
 
   protected static final String getBasicTestJson() {
-    try {
-      // Load from src/test/resources/sample.json
-      ClassLoader classLoader = JsonInputTest.class.getClassLoader();
-      InputStream is = classLoader.getResourceAsStream( "sample.json" );
-      return IOUtils.toString( is );
-    } catch ( IOException e ) {
-      throw new RuntimeException( "Unable to read sample JSON file.", e );
-    }
+    return "{\n"
+        + "  \"home\": {},\n"
+        + "  \"store\": {\n"
+        + "    \"book\": [\n"
+        + "      {\n"
+        + "        \"category\": \"reference\",\n"
+        + "        \"author\": \"Nigel Rees\",\n"
+        + "        \"title\": \"Sayings of the Century\",\n"
+        + "        \"price\": 8.95\n"
+        + "      },\n"
+        + "      {\n"
+        + "        \"category\": \"fiction\",\n"
+        + "        \"author\": \"Evelyn Waugh\",\n"
+        + "        \"title\": \"Sword of Honour\",\n"
+        + "        \"price\": 12.99\n"
+        + "      },\n"
+        + "      {\n"
+        + "        \"category\": \"fiction\",\n"
+        + "        \"author\": \"Herman Melville\",\n"
+        + "        \"title\": \"Moby Dick\",\n"
+        + "        \"isbn\": \"0-553-21311-3\",\n"
+        + "        \"price\": 8.99\n"
+        + "      },\n"
+        + "      {\n"
+        + "        \"category\": \"fiction\",\n"
+        + "        \"author\": \"J. R. R. Tolkien\",\n"
+        + "        \"title\": \"The Lord of the Rings\",\n"
+        + "        \"isbn\": \"0-395-19395-8\",\n"
+        + "        \"price\": 22.99\n"
+        + "      }\n"
+        + "    ],\n"
+        + "    \"bicycle\": {\n"
+        + "      \"color\": \"red\",\n"
+        + "      \"price\": 19.95\n"
+        + "    }\n"
+        + "  }\n"
+        + "}";
+  }
+
+  private static final String getPDI17060Json() {
+    return "{"
+        + " \"path\": \"/board/offer-sources/phases/current/cards/acquisitions\","
+        + " \"id\": \"acquisitions\","
+        + " \"template\": \"offer-sources\","
+        + " \"creator\": \"admin\","
+        + " \"created\": 1491703768197,"
+        + " \"modifiedby\": null,"
+        + " \"modified\": null,"
+        + " \"color\": \"blue\","
+        + " \"fields\": {"
+        + "   \"group-detail\": \"Offer Source Details\","
+        + "   \"name\": \"Acquisitions\""
+        + " },"
+        + " \"tasks\": 0,"
+        + " \"history\": 1,"
+        + " \"attachments\": 0,"
+        + " \"comments\": 0,"
+        + " \"alerts\": 0,"
+        + " \"title\": \"Acquisitions\","
+        + " \"lock\": null,"
+        + " \"completeTasks\": null,"
+        + " \"phase\": \"current\","
+        + " \"errors\": null,"
+        + " \"board\": \"offer-sources\""
+        + "}";
   }
 
   @BeforeClass
@@ -375,6 +432,57 @@ public class JsonInputTest {
     Assert.assertEquals( 5, jsonInput.getLinesWritten() );
   }
 
+  // There are tests for PDI-17060 below
+  @Test
+  public void testDefaultLeafToNullChangedToFalse_NoNullInOutput() throws Exception {
+    JsonInputField id = new JsonInputField( "id" );
+    id.setPath( "$..id" );
+    id.setType( ValueMetaInterface.TYPE_STRING );
+    JsonInputField name = new JsonInputField( "name" );
+    name.setPath( "$..name" );
+    name.setType( ValueMetaInterface.TYPE_STRING );
+
+    ByteArrayOutputStream out = new ByteArrayOutputStream();
+    helper.redirectLog( out, LogLevel.ERROR );
+
+    JsonInputMeta meta = createSimpleMeta( "json", id, name );
+    // For these user who wanted to have "old" behavior
+    meta.setDefaultPathLeafToNull( false );
+    meta.setIgnoreMissingPath( true );
+    final String input = getPDI17060Json();
+
+    JsonInput jsonInput = createJsonInput( "json", meta, new Object[] { input } );
+    jsonInput.addRowListener( new RowComparatorListener( new Object[] { input, "acquisitions", "Acquisitions" } ) );
+    processRows( jsonInput, 8 );
+    disposeJsonInput( jsonInput );
+
+    Assert.assertEquals( 1, jsonInput.getLinesWritten() );
+  }
+
+  @Test
+  public void testDefaultLeafToNullTrue_NullsInOutput() throws Exception {
+    JsonInputField id = new JsonInputField( "id" );
+    id.setPath( "$..id" );
+    id.setType( ValueMetaInterface.TYPE_STRING );
+    JsonInputField name = new JsonInputField( "name" );
+    name.setPath( "$..name" );
+    name.setType( ValueMetaInterface.TYPE_STRING );
+
+    ByteArrayOutputStream out = new ByteArrayOutputStream();
+    helper.redirectLog( out, LogLevel.ERROR );
+
+    JsonInputMeta meta = createSimpleMeta( "json", id, name );
+    meta.setIgnoreMissingPath( true );
+    final String input = getPDI17060Json();
+
+    JsonInput jsonInput = createJsonInput( "json", meta, new Object[] { input } );
+    jsonInput.addRowListener( new RowComparatorListener( new Object[] { input, "acquisitions", null }, new Object[] { input, null, "Acquisitions" } ) );
+    processRows( jsonInput, 8 );
+    disposeJsonInput( jsonInput );
+
+    Assert.assertEquals( 2, jsonInput.getLinesWritten() );
+  }
+
   @Test
   public void testIfIgnorePathDoNotSkipRowIfInputIsNullOrFieldNotFound() throws Exception {
 
@@ -412,9 +520,9 @@ public class JsonInputTest {
              new Object[] { input6 }
             );
     step.addRowListener(
-            new RowComparatorListener(
-                     new Object[]{ input1, "1", "2" }, new Object[]{ input2, "3", null }, new Object[]{ input3, null, "4" },
-                     new Object[]{ input4, null, null }, new Object[]{ input5, null, null }, new Object[]{ input6, null, null }   ) );
+      new RowComparatorListener(
+        new Object[]{ input1, "1", "2" }, new Object[]{ input2, "3", null }, new Object[]{ input3, null, "4" },
+        new Object[]{ input4, null, null }, new Object[]{ input5, null, null }, new Object[]{ input6, null, null } ) );
     processRows( step, 5 );
   }
 
@@ -1071,7 +1179,7 @@ public class JsonInputTest {
     RowSet input = helper.getMockInputRowSet( inputRows );
     RowMetaInterface rowMeta = createRowMeta( new ValueMetaString( inCol ) );
     input.setRowMeta( rowMeta );
-    jsonInput.getInputRowSets().add( input );
+    jsonInput.addRowSetToInputRowSets( input );
     jsonInput.setInputRowMeta( rowMeta );
     jsonInput.initializeVariablesFrom( variables );
     jsonInput.init( meta, data );
@@ -1104,7 +1212,7 @@ public class JsonInputTest {
     @Override
     public void rowWrittenEvent( RowMetaInterface rowMeta, Object[] row ) throws KettleStepException {
       if ( rowNbr >= data.length ) {
-        throw new ComparisonFailure( "too many output rows", "" + data.length, "" + rowNbr + 1 );
+        throw new ComparisonFailure( "too many output rows", "" + data.length, "" + (rowNbr + 1) );
       } else {
         for ( int i = 0; i < data[ rowNbr ].length; i++ ) {
           try {
@@ -1119,8 +1227,8 @@ public class JsonInputTest {
               eq = valueMeta.compare( data[ rowNbr ][ i ], row[ i ] ) == 0;
             }
             if ( !eq ) {
-              throw new ComparisonFailure( String.format( "Mismatch row %d, column %d", rowNbr, i ), rowMeta
-                .getString( data[ rowNbr ] ), rowMeta.getString( row ) );
+              throw new ComparisonFailure( String.format( "Mismatch row %d, column %d", rowNbr, i ),
+                rowMeta.getString( data[ rowNbr ] ), rowMeta.getString( row ) );
             }
           } catch ( Exception e ) {
             throw new AssertionError( String.format( "Value type at row %d, column %d", rowNbr, i ), e );
@@ -1186,4 +1294,5 @@ public class JsonInputTest {
     processRows( jsonInput, 2 );
     assertEquals( "Meta input fields paths should be the same after processRows", PATH, inputMeta.getInputFields()[0].getPath() );
   }
+
 }

@@ -3,7 +3,7 @@
  *
  *  Pentaho Data Integration
  *
- *  Copyright (C) 2002-2017 by Pentaho : http://www.pentaho.com
+ *  Copyright (C) 2002-2017 by Hitachi Vantara : http://www.pentaho.com
  *
  * ******************************************************************************
  *
@@ -40,8 +40,13 @@ import org.pentaho.di.trans.ael.websocket.handler.MessageEventHandler;
 import org.pentaho.di.trans.step.BaseStep;
 import org.pentaho.di.trans.step.StepDataInterface;
 import org.pentaho.di.trans.step.StepMeta;
+import org.pentaho.di.trans.step.StepMetaDataCombi;
+import org.pentaho.di.trans.step.StepStatus;
 
+import java.util.Collection;
 import java.util.Collections;
+import java.util.List;
+import java.util.stream.Collectors;
 
 import static org.pentaho.di.engine.api.model.Rows.TYPE.OUT;
 
@@ -57,13 +62,16 @@ public class StepInterfaceWebSocketEngineAdapter extends BaseStep {
 
   private final Operation operation;
   private final MessageEventService messageEventService;
+  private List<StepMetaDataCombi> subSteps;
 
   public StepInterfaceWebSocketEngineAdapter( Operation op, MessageEventService messageEventService, StepMeta stepMeta,
-                                              TransMeta transMeta, StepDataInterface dataInterface, Trans trans )
+                                              TransMeta transMeta, StepDataInterface dataInterface, Trans trans,
+                                              List<StepMetaDataCombi> subSteps )
     throws KettleException {
     super( stepMeta, dataInterface, 0, transMeta, trans );
     operation = op;
     this.messageEventService = messageEventService;
+    this.subSteps = subSteps;
     setInputRowSets( Collections.emptyList() );
     setOutputRowSets( Collections.emptyList() );
     init();
@@ -71,6 +79,10 @@ public class StepInterfaceWebSocketEngineAdapter extends BaseStep {
 
   @Override public void dispatch() {
     // No thanks. I'll take it from here.
+  }
+
+  @Override public Collection<StepStatus> subStatuses() {
+    return subSteps.stream().map( combi -> new StepStatus( combi.step ) ).collect( Collectors.toList() );
   }
 
   private void init() throws KettleException {
@@ -135,8 +147,12 @@ public class StepInterfaceWebSocketEngineAdapter extends BaseStep {
         public void execute( Message message ) throws MessageEventHandlerExecutionException {
           PDIEvent<RemoteSource, Metrics> data = (PDIEvent<RemoteSource, Metrics>) message;
 
-          StepInterfaceWebSocketEngineAdapter.this.setLinesRead( data.getData().getIn() );
-          StepInterfaceWebSocketEngineAdapter.this.setLinesWritten( data.getData().getOut() );
+          if ( data.getData().getIn() > 0 ) {
+            StepInterfaceWebSocketEngineAdapter.this.setLinesRead( data.getData().getIn() );
+          }
+          if ( data.getData().getOut() > 0 ) {
+            StepInterfaceWebSocketEngineAdapter.this.setLinesWritten( data.getData().getOut() );
+          }
         }
 
         @Override

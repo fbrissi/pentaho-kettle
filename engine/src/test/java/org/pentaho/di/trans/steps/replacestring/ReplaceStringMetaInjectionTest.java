@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2016 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2017 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -23,13 +23,16 @@
 package org.pentaho.di.trans.steps.replacestring;
 
 import org.junit.Before;
+import org.junit.ClassRule;
 import org.junit.Test;
 import org.pentaho.di.core.injection.BaseMetadataInjectionTest;
+import org.pentaho.di.junit.rules.RestorePDIEngineEnvironment;
 
 /**
  * Created by bmorrise on 3/21/16.
  */
 public class ReplaceStringMetaInjectionTest extends BaseMetadataInjectionTest<ReplaceStringMeta> {
+  @ClassRule public static RestorePDIEngineEnvironment env = new RestorePDIEngineEnvironment();
 
   @Before
   public void setup() {
@@ -81,6 +84,11 @@ public class ReplaceStringMetaInjectionTest extends BaseMetadataInjectionTest<Re
     check( "CASE_SENSITIVE", new IntGetter() {
       @Override public int get() {
         return meta.getCaseSensitive()[ 0 ];
+      }
+    } );
+    check( "IS_UNICODE", new IntGetter() {
+      @Override public int get() {
+        return meta.isUnicode()[ 0 ];
       }
     } );
   }

@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2017 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2017 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -161,6 +161,11 @@ public class JobEntryDummy extends JobEntryBase implements Cloneable, JobEntryIn
    */
   public void setTargetDirectory( String targetDirectory ) {
     this.targetDirectory = targetDirectory;
+  }
+
+  @Override
+  public String getDialogClassName() {
+    return JobEntryDummyDialog.class.getName();
   }
 
   @Override

@@ -3,7 +3,7 @@
  *
  *  Pentaho Data Integration
  *
- *  Copyright (C) 2002-2017 by Pentaho : http://www.pentaho.com
+ *  Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
  *
  * ******************************************************************************
  *
@@ -24,6 +24,7 @@
 
 package org.pentaho.di.trans.ael.websocket;
 
+import com.google.common.collect.Maps;
 import org.pentaho.di.core.Result;
 import org.pentaho.di.core.exception.KettleException;
 import org.pentaho.di.core.logging.LogChannelInterface;
@@ -38,6 +39,7 @@ import org.pentaho.di.engine.api.reporting.LogEntry;
 import org.pentaho.di.engine.api.reporting.LogLevel;
 import org.pentaho.di.engine.api.reporting.Status;
 import org.pentaho.di.engine.model.ActingPrincipal;
+import org.pentaho.di.resource.ResourceEntry;
 import org.pentaho.di.trans.RowProducer;
 import org.pentaho.di.trans.Trans;
 import org.pentaho.di.trans.TransMeta;
@@ -48,19 +50,22 @@ import org.pentaho.di.trans.ael.websocket.handler.MessageEventHandler;
 import org.pentaho.di.trans.step.StepInterface;
 import org.pentaho.di.trans.step.StepMeta;
 import org.pentaho.di.trans.step.StepMetaDataCombi;
+import org.pentaho.di.trans.step.StepMetaInterface;
 
 import java.security.Principal;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
-import java.util.Collection;
+import java.util.stream.Collectors;
 
 import static java.util.stream.Collectors.toMap;
 
@@ -74,7 +79,6 @@ public class TransWebSocketEngineAdapter extends Trans {
   private static final String TRANSFORMATION_STATUS = "TRANSFORMATION_STATUS_TRANS_WEBSOCK";
   private static final String TRANSFORMATION_ERROR = "TRANSFORMATION_ERROR_TRANS_WEBSOCK";
   private static final String TRANSFORMATION_STOP = "TRANSFORMATION_STOP_TRANS_WEBSOCK";
-  private static final String SPARK_SESSION_KILLED_MSG = "Spark session was killed";
 
   //session monitor properties
   private static final int SLEEP_TIME_MS = 10000;
@@ -90,6 +94,7 @@ public class TransWebSocketEngineAdapter extends Trans {
   private final String host;
   private final String port;
   private final boolean ssl;
+  private boolean cancelling = false;
 
   //completion signal used to wait until Transformation is finished
   private CountDownLatch transFinishedSignal = new CountDownLatch( 1 );
@@ -116,7 +121,7 @@ public class TransWebSocketEngineAdapter extends Trans {
     this.ssl = ssl;
   }
 
-  private DaemonMessagesClientEndpoint getDaemonEndpoint() throws KettleException {
+  DaemonMessagesClientEndpoint getDaemonEndpoint() throws KettleException {
     try {
       if ( daemonMessagesClientEndpoint == null ) {
         daemonMessagesClientEndpoint = new DaemonMessagesClientEndpoint( host, port, ssl, messageEventService );
@@ -139,6 +144,7 @@ public class TransWebSocketEngineAdapter extends Trans {
 
   @Override public void stopAll() {
     try {
+      cancelling = true;
       getDaemonEndpoint().sendMessage( new StopMessage( getErrors() == 0 ? "User Request" : "Error reported" ) );
       if ( getErrors() == 0 ) {
         waitUntilFinished();
@@ -146,6 +152,29 @@ public class TransWebSocketEngineAdapter extends Trans {
       }
     } catch ( KettleException e ) {
       getLogChannel().logDebug( e.getMessage() );
+    } finally {
+      cancelling = false;
+    }
+  }
+
+  @Override public void safeStop() {
+    try {
+      getDaemonEndpoint().sendMessage(
+        StopMessage.builder()
+          .reasonPhrase( "User Request" )
+          .safeStop( true )
+          .build() );
+
+      //stopped but still running will yield status Halting
+      getSteps().stream().map( stepMetaDataCombi -> stepMetaDataCombi.step )
+        .filter( stepInterface -> stepInterface.getInputRowSets().isEmpty() )
+        .forEach( step -> step.setStopped( true ) );
+      Executors.newSingleThreadExecutor().submit( () -> {
+        waitUntilFinished();
+        finishProcess( true );
+      } );
+    } catch ( KettleException e ) {
+      getLogChannel().logDebug( e.getMessage(), e );
     }
   }
 
@@ -160,7 +189,7 @@ public class TransWebSocketEngineAdapter extends Trans {
     this.executionRequest = new ExecutionRequest( new HashMap<>(), env, transformation, new HashMap<>(), logLevel,
       getActingPrincipal( transMeta ) );
 
-    setSteps( new ArrayList<>( opsToSteps() ) );
+    setSteps( opsToSteps() );
     wireStatusToTransListeners();
 
     subscribeToOpLogging();
@@ -301,17 +330,19 @@ public class TransWebSocketEngineAdapter extends Trans {
       .addHandler( Util.getStopMessage(), new MessageEventHandler() {
         @Override
         public void execute( Message message ) throws MessageEventHandlerExecutionException {
-          String stopMessage = ((StopMessage) message ).getReasonPhrase();
-          if ( SPARK_SESSION_KILLED_MSG.equals( stopMessage ) ) {
-            errors.incrementAndGet();
-            getLogChannel().logError( "Finalizing execution: " + stopMessage );
+          StopMessage stopMessage = (StopMessage) message;
+
+          if ( stopMessage.sessionWasKilled() || stopMessage.operationFailed() ) {
+            getLogChannel().logError( "Finalizing execution: " + stopMessage.getReasonPhrase() );
           } else {
-            getLogChannel().logBasic( "Finalizing execution: " + stopMessage );
+            getLogChannel().logBasic( "Finalizing execution: " + stopMessage.getReasonPhrase() );
           }
 
-          finishProcess( false );
+          if ( !cancelling ) {
+            finishProcess( false );
+          }
           try {
-            getDaemonEndpoint().close( stopMessage );
+            getDaemonEndpoint().close( stopMessage.getReasonPhrase() );
           } catch ( KettleException e ) {
             getLogChannel().logError( "Error finalizing", e );
           }
@@ -330,7 +361,11 @@ public class TransWebSocketEngineAdapter extends Trans {
 
   }
 
-  private Collection<StepMetaDataCombi> opsToSteps() {
+  private List<StepMetaDataCombi> opsToSteps() {
+    return opsToSteps( transformation );
+  }
+
+  private List<StepMetaDataCombi> opsToSteps( Transformation transformation ) {
     Map<Operation, StepMetaDataCombi> operationToCombi = transformation.getOperations().stream()
       .collect( toMap( Function.identity(),
         op -> {
@@ -338,8 +373,9 @@ public class TransWebSocketEngineAdapter extends Trans {
           combi.stepMeta = StepMeta.fromXml( (String) op.getConfig().get( TransMetaConverter.STEP_META_CONF_KEY ) );
           try {
             combi.data = new StepDataInterfaceWebSocketEngineAdapter( op, messageEventService );
-            combi.step = new StepInterfaceWebSocketEngineAdapter( op, messageEventService, combi.stepMeta, transMeta,
-              combi.data, this );
+            List<StepMetaDataCombi> subSteps = getSubSteps( transformation, combi );
+            combi.step = new StepInterfaceWebSocketEngineAdapter(
+              op, messageEventService, combi.stepMeta, transMeta, combi.data, this, subSteps );
           } catch ( KettleException e ) {
             //TODO: treat the exception
             e.printStackTrace();
@@ -348,7 +384,27 @@ public class TransWebSocketEngineAdapter extends Trans {
           combi.stepname = combi.stepMeta.getName();
           return combi;
         } ) );
-    return operationToCombi.values();
+    return new ArrayList<>( operationToCombi.values() );
+  }
+
+  @SuppressWarnings ( "unchecked" )
+  private List<StepMetaDataCombi> getSubSteps( Transformation transformation, StepMetaDataCombi combi ) {
+    HashMap<String, Transformation> config =
+      ( (Optional<HashMap<String, Transformation>>) transformation
+        .getConfig( TransMetaConverter.SUB_TRANSFORMATIONS_KEY ) )
+        .orElse( Maps.newHashMap() );
+    StepMetaInterface smi = combi.stepMeta.getStepMetaInterface();
+    return config.keySet().stream()
+      .filter( key -> stepHasDependency( combi, smi, key ) )
+      .flatMap( key -> opsToSteps( config.get( key ) ).stream() )
+      .collect( Collectors.toList() );
+  }
+
+  private boolean stepHasDependency( StepMetaDataCombi combi, StepMetaInterface smi, String path ) {
+    return smi.getResourceDependencies( transMeta, combi.stepMeta ).stream()
+      .flatMap( resourceReference -> resourceReference.getEntries().stream() )
+      .filter( entry -> ResourceEntry.ResourceType.ACTIONFILE.equals( entry.getResourcetype() ) )
+      .anyMatch( entry -> entry.getResource().equals( path ) );
   }
 
   @Override public void startThreads() throws KettleException {
@@ -369,7 +425,9 @@ public class TransWebSocketEngineAdapter extends Trans {
             errors.incrementAndGet();
             getLogChannel().logError(
               "Session Monitor detected that communication with the server was lost. Finalizing execution." );
-            finishProcess( false );
+            if ( !cancelling ) {
+              finishProcess( false );
+            }
             // Signal for the the waitUntilFinished blocker...
             transFinishedSignal.countDown();
           } else {

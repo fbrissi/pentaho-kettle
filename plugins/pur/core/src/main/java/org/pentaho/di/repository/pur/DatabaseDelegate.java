@@ -1,5 +1,5 @@
 /*!
- * Copyright 2010 - 2015 Pentaho Corporation.  All rights reserved.
+ * Copyright 2010 - 2017 Hitachi Vantara.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -107,7 +107,7 @@ public class DatabaseDelegate extends AbstractDelegate implements ITransformer, 
       // Save this attribute
       //
       // Escape the code as it might contain invalid JCR characters like '/' as in AS/400
-      String escapedCode = RepositoryFilenameUtils.escape( code, repo.getPur().getReservedChars() );
+      String escapedCode = RepositoryFilenameUtils.escape( code, repo.getUnderlyingRepository().getReservedChars() );
       attrNode.setProperty( escapedCode, attribute );
     }
     return rootNode;

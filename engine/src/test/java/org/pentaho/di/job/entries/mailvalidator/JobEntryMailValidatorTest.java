@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2016 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -21,19 +21,22 @@
  ******************************************************************************/
 package org.pentaho.di.job.entries.mailvalidator;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertNotNull;
 import java.util.Arrays;
 
 import java.util.List;
 import java.util.Map;
 
+import org.junit.ClassRule;
 import org.junit.Test;
 import org.pentaho.di.core.Result;
 import org.pentaho.di.core.logging.KettleLogStore;
 import org.pentaho.di.job.entry.loadSave.JobEntryLoadSaveTestSupport;
+import org.pentaho.di.junit.rules.RestorePDIEngineEnvironment;
 
 
 public class JobEntryMailValidatorTest extends JobEntryLoadSaveTestSupport<JobEntryMailValidator> {
+  @ClassRule public static RestorePDIEngineEnvironment env = new RestorePDIEngineEnvironment();
 
   @Override
   protected Class<JobEntryMailValidator> getJobEntryClass() {

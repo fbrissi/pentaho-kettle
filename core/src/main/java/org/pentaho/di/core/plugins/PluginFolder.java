@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2016 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -22,18 +22,20 @@
 
 package org.pentaho.di.core.plugins;
 
-import java.io.File;
-import java.util.ArrayList;
-import java.util.List;
-
+import org.apache.commons.lang.builder.EqualsBuilder;
+import org.apache.commons.lang.builder.HashCodeBuilder;
 import org.apache.commons.vfs2.FileObject;
 import org.apache.commons.vfs2.FileSelectInfo;
 import org.apache.commons.vfs2.FileSelector;
 import org.pentaho.di.core.Const;
-import org.pentaho.di.core.util.Utils;
 import org.pentaho.di.core.exception.KettleFileException;
 import org.pentaho.di.core.util.EnvUtil;
+import org.pentaho.di.core.util.Utils;
 import org.pentaho.di.core.vfs.KettleVFS;
+
+import java.io.File;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * A folder to search plugins in.
@@ -91,22 +93,20 @@ public class PluginFolder implements PluginFolderInterface {
    * @return The list of plugin folders found
    */
   public static List<PluginFolderInterface> populateFolders( String xmlSubfolder ) {
-    List<PluginFolderInterface> pluginFolders = new ArrayList<PluginFolderInterface>();
+    List<PluginFolderInterface> pluginFolders = new ArrayList<>();
     String folderPaths = EnvUtil.getSystemProperty( "KETTLE_PLUGIN_BASE_FOLDERS" );
     if ( folderPaths == null ) {
       folderPaths = Const.DEFAULT_PLUGIN_BASE_FOLDERS;
     }
-    if ( folderPaths != null ) {
-      String[] folders = folderPaths.split( "," );
-      // for each folder in the list of plugin base folders
-      // add an annotation and xml path for searching
-      // trim the folder - we don't need leading and trailing spaces
-      for ( String folder : folders ) {
-        folder = folder.trim();
-        pluginFolders.add( new PluginFolder( folder, false, true ) );
-        if ( !Utils.isEmpty( xmlSubfolder ) ) {
-          pluginFolders.add( new PluginFolder( folder + File.separator + xmlSubfolder, true, false ) );
-        }
+    String[] folders = folderPaths.split( "," );
+    // for each folder in the list of plugin base folders
+    // add an annotation and xml path for searching
+    // trim the folder - we don't need leading and trailing spaces
+    for ( String folder : folders ) {
+      folder = folder.trim();
+      pluginFolders.add( new PluginFolder( folder, false, true ) );
+      if ( !Utils.isEmpty( xmlSubfolder ) ) {
+        pluginFolders.add( new PluginFolder( folder + File.separator + xmlSubfolder, true, false ) );
       }
     }
     return pluginFolders;
@@ -123,7 +123,8 @@ public class PluginFolder implements PluginFolderInterface {
       // Find all the jar files in this folder...
       //
       FileObject folderObject = KettleVFS.getFileObject( this.getFolder() );
-      FileObject[] fileObjects = folderObject.findFiles( new FileSelector() {
+
+      return folderObject.findFiles( new FileSelector() {
         @Override
         public boolean traverseDescendents( FileSelectInfo fileSelectInfo ) throws Exception {
           FileObject fileObject = fileSelectInfo.getFile();
@@ -138,8 +139,6 @@ public class PluginFolder implements PluginFolderInterface {
           return file.isFile() && file.toString().endsWith( ".jar" );
         }
       } );
-
-      return fileObjects;
     } catch ( Exception e ) {
       throw new KettleFileException( "Unable to list jar files in plugin folder '" + toString() + "'", e );
     }
@@ -191,5 +190,34 @@ public class PluginFolder implements PluginFolderInterface {
    */
   public void setPluginAnnotationsFolder( boolean pluginAnnotationsFolder ) {
     this.pluginAnnotationsFolder = pluginAnnotationsFolder;
+  }
+
+  @Override public int hashCode() {
+    return new HashCodeBuilder()
+      .append( folder )
+      .append( pluginAnnotationsFolder )
+      .append( pluginXmlFolder )
+      .append( searchLibDir )
+      .hashCode();
+  }
+
+  @Override public boolean equals( Object obj ) {
+    if ( obj == null ) {
+      return false;
+    }
+    if ( obj == this ) {
+      return true;
+    }
+    if ( obj.getClass() != getClass() ) {
+      return false;
+    }
+
+    PluginFolder other = (PluginFolder) obj;
+    return new EqualsBuilder()
+      .append( folder, other.getFolder() )
+      .append( pluginAnnotationsFolder, other.isPluginAnnotationsFolder() )
+      .append( pluginXmlFolder, other.isPluginXmlFolder() )
+      .append( searchLibDir, other.searchLibDir )
+      .isEquals();
   }
 }

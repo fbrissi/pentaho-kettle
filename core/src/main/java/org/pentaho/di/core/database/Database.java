@@ -3,7 +3,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2017 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -439,9 +439,9 @@ public class Database implements VariableSpace, LoggingObjectInterface {
           try {
             try {
               this.connection = dsp.getNamedDataSource( name, DatasourceType.POOLED ).getConnection();
-            } catch ( UnsupportedOperationException e ) {
-              // DatabaseUtil doesn't support pooled DS,
-              // use legacy routine
+            } catch ( UnsupportedOperationException | NullPointerException e ) {
+              // UnsupportedOperationException is happen at DatabaseUtil doesn't support pooled DS, use legacy routine
+              // NullPointerException is happen when we will try to run the transformation on the remote server but server does not have such databases, so will using legacy routine as well
               this.connection = ConnectionPoolUtil.getConnection( log, databaseMeta, partitionId );
             }
             if ( getConnection().getAutoCommit() != isAutoCommit() ) {
@@ -552,24 +552,19 @@ public class Database implements VariableSpace, LoggingObjectInterface {
 
       if ( databaseMeta.supportsOptionsInURL() ) {
         if ( !Utils.isEmpty( username ) || !Utils.isEmpty( password ) ) {
+          // Allow for empty username with given password, in this case username must be given with one space
+          properties.put( "user", Const.NVL( username, " " ) );
+          properties.put( "password", Const.NVL( password, "" ) );
           if ( databaseMeta.getDatabaseInterface() instanceof MSSQLServerNativeDatabaseMeta ) {
-            // Needs user & password in the URL
-            //
+            // Handle MSSQL Instance name. Would rather this was handled in the dialect
+            // but cannot (without refactor) get to variablespace for variable substitution from
+            // a BaseDatabaseMeta subclass.
             String instance = environmentSubstitute( databaseMeta.getSQLServerInstance() );
-            if ( Utils.isEmpty( instance ) ) {
-              connection = DriverManager.getConnection( url + ";user=" + username + ";password=" + password, properties );
-            } else {
-              connection =
-                DriverManager.getConnection( url
-                  + ";user=" + username + ";password=" + password + ";instanceName=" + instance, properties );
+            if ( !Utils.isEmpty( instance ) ) {
+              url += ";instanceName=" + instance;
             }
-          } else {
-            // also allow for empty username with given password, in this case
-            // username must be given with one space
-            properties.put( "user", Const.NVL( username, " " ) );
-            properties.put( "password", Const.NVL( password, "" ) );
-            connection = DriverManager.getConnection( url, properties );
           }
+          connection = DriverManager.getConnection( url, properties );
         } else {
           // Perhaps the username is in the URL or no username is required...
           connection = DriverManager.getConnection( url, properties );
@@ -3682,7 +3677,11 @@ public class Database implements VariableSpace, LoggingObjectInterface {
   }
 
   public String[] getTablenames( String schemanamein, boolean includeSchema ) throws KettleDatabaseException {
-    Map<String, Collection<String>> tableMap = getTableMap( schemanamein );
+    return getTablenames( schemanamein, includeSchema, null );
+  }
+
+  public String[] getTablenames( String schemanamein, boolean includeSchema, Map<String, String> props ) throws KettleDatabaseException {
+    Map<String, Collection<String>> tableMap = getTableMap( schemanamein, props );
     List<String> res = new ArrayList<String>();
     for ( String schema : tableMap.keySet() ) {
       Collection<String> tables = tableMap.get( schema );
@@ -3702,6 +3701,10 @@ public class Database implements VariableSpace, LoggingObjectInterface {
   }
 
   public Map<String, Collection<String>> getTableMap( String schemanamein ) throws KettleDatabaseException {
+    return getTableMap( schemanamein, null );
+  }
+
+  public Map<String, Collection<String>> getTableMap( String schemanamein, Map<String, String> props ) throws KettleDatabaseException {
     String schemaname = schemanamein;
     if ( schemaname == null ) {
       if ( databaseMeta.useSchemaNameForTableList() ) {
@@ -3745,7 +3748,24 @@ public class Database implements VariableSpace, LoggingObjectInterface {
           log.logRowlevel( toString(), "got table from meta-data: "
             + databaseMeta.getQuotedSchemaTableCombination( schema, table ) );
         }
-        multimapPut( schema, table, tableMap );
+
+        // Check for any extra properties that might require validation
+        if ( props != null && !props.isEmpty() ) {
+          for ( Map.Entry<String, String> prop : props.entrySet() ) {
+            String propName = prop.getKey();
+
+            String tableProperty = alltables.getString( propName );
+            if ( tableProperty != null ) {
+              String propValue = prop.getValue();
+
+              if ( tableProperty.equals( propValue ) ) {
+                multimapPut( schema, table, tableMap );
+              }
+            }
+          }
+        } else {
+          multimapPut( schema, table, tableMap );
+        }
       }
     } catch ( SQLException e ) {
       log.logError( "Error getting tablenames from schema [" + schemaname + "]" );

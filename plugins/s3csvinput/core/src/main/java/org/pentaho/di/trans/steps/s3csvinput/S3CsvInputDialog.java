@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2016 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -47,9 +47,7 @@ import org.eclipse.swt.widgets.Listener;
 import org.eclipse.swt.widgets.Shell;
 import org.eclipse.swt.widgets.TableItem;
 import org.eclipse.swt.widgets.Text;
-import org.jets3t.service.S3Service;
 import org.jets3t.service.model.S3Bucket;
-import org.jets3t.service.model.S3Object;
 import org.pentaho.di.core.Const;
 import org.pentaho.di.core.util.Utils;
 import org.pentaho.di.core.exception.KettleStepException;
@@ -74,7 +72,6 @@ import org.pentaho.di.ui.core.widget.ColumnInfo;
 import org.pentaho.di.ui.core.widget.ComboValuesSelectionListener;
 import org.pentaho.di.ui.core.widget.TableView;
 import org.pentaho.di.ui.core.widget.TextVar;
-import org.pentaho.di.ui.core.widget.PasswordTextVar;
 import org.pentaho.di.ui.trans.dialog.TransPreviewProgressDialog;
 import org.pentaho.di.ui.trans.step.BaseStepDialog;
 import org.pentaho.di.ui.trans.steps.textfileinput.TextFileCSVImportProgressDialog;
@@ -82,8 +79,6 @@ import org.pentaho.di.ui.trans.steps.textfileinput.TextFileCSVImportProgressDial
 public class S3CsvInputDialog extends BaseStepDialog implements StepDialogInterface {
   private S3CsvInputMeta inputMeta;
 
-  private TextVar      wAccessKey;
-  private TextVar      wSecretKey;
   private TextVar      wBucket;
   private Button       wbBucket; // browse for a bucket.
   private TextVar      wFilename;
@@ -154,48 +149,6 @@ public class S3CsvInputDialog extends BaseStepDialog implements StepDialogInterf
     fdStepname.right = new FormAttachment( 100, 0 );
     wStepname.setLayoutData( fdStepname );
     Control lastControl = wStepname;
-
-    // Access key
-    Label wlAccessKey = new Label( shell, SWT.RIGHT );
-    wlAccessKey.setText( Messages.getString( "S3CsvInputDialog.AccessKey.Label" ) ); //$NON-NLS-1$
-    props.setLook( wlAccessKey );
-    FormData fdlAccessKey = new FormData();
-    fdlAccessKey.top = new FormAttachment( lastControl, margin );
-    fdlAccessKey.left = new FormAttachment( 0, 0 );
-    fdlAccessKey.right = new FormAttachment( middle, -margin );
-    wlAccessKey.setLayoutData( fdlAccessKey );
-
-    wAccessKey = new PasswordTextVar( transMeta, shell, SWT.SINGLE | SWT.LEFT | SWT.BORDER );
-
-    props.setLook( wAccessKey );
-    wAccessKey.addModifyListener( lsMod );
-    FormData fdAccessKey = new FormData();
-    fdAccessKey.top = new FormAttachment( lastControl, margin );
-    fdAccessKey.left = new FormAttachment( middle, 0 );
-    fdAccessKey.right = new FormAttachment( 100, 0 );
-    wAccessKey.setLayoutData( fdAccessKey );
-    lastControl = wAccessKey;
-
-    // Secret key
-    Label wlSecretKey = new Label( shell, SWT.RIGHT );
-    wlSecretKey.setText( Messages.getString( "S3CsvInputDialog.SecretKey.Label" ) ); //$NON-NLS-1$
-    props.setLook( wlSecretKey );
-    FormData fdlSecretKey = new FormData();
-    fdlSecretKey.top = new FormAttachment( lastControl, margin );
-    fdlSecretKey.left = new FormAttachment( 0, 0 );
-    fdlSecretKey.right = new FormAttachment( middle, -margin );
-    wlSecretKey.setLayoutData( fdlSecretKey );
-
-    wSecretKey = new PasswordTextVar( transMeta, shell, SWT.SINGLE | SWT.LEFT | SWT.BORDER );
-
-    props.setLook( wSecretKey );
-    wSecretKey.addModifyListener( lsMod );
-    FormData fdSecretKey = new FormData();
-    fdSecretKey.top = new FormAttachment( lastControl, margin );
-    fdSecretKey.left = new FormAttachment( middle, 0 );
-    fdSecretKey.right = new FormAttachment( 100, 0 );
-    wSecretKey.setLayoutData( fdSecretKey );
-    lastControl = wSecretKey;
 
     // Bucket name
     Label wlBucket = new Label( shell, SWT.RIGHT );
@@ -583,14 +536,9 @@ public class S3CsvInputDialog extends BaseStepDialog implements StepDialogInterf
         try {
           S3CsvInputMeta meta = new S3CsvInputMeta();
           getInfo( meta );
-          S3Service service = meta.getS3Service( transMeta );
-          S3Bucket[] buckets = service.listAllBuckets();
-          String[] bucketNames = new String[buckets.length];
-          for ( int i = 0; i < buckets.length; i++ ) {
-            bucketNames[i] = buckets[i].getName();
-          }
+          S3ObjectsProvider s3ObjProvider = new S3ObjectsProvider( meta.getS3Service( transMeta ) );
 
-          EnterSelectionDialog dialog = new EnterSelectionDialog( shell, bucketNames,
+          EnterSelectionDialog dialog = new EnterSelectionDialog( shell, s3ObjProvider.getBucketsNames(),
               Messages.getString( "S3CsvInputDialog.Exception.SelectBucket.Title" ),
               Messages.getString( "S3CsvInputDialog.Exception.SelectBucket.Message" ) );
           dialog.setMulti( false );
@@ -615,26 +563,9 @@ public class S3CsvInputDialog extends BaseStepDialog implements StepDialogInterf
           try {
             S3CsvInputMeta meta = new S3CsvInputMeta();
             getInfo( meta );
-            S3Service service = meta.getS3Service( transMeta );
 
-            S3Bucket[] buckets = service.listAllBuckets();
-            S3Bucket bucket = null;
-
-            for ( S3Bucket compare : buckets ) {
-              if ( compare.getName().equals( meta.getBucket() ) ) {
-                bucket = compare;
-              }
-            }
-
-            if ( bucket == null ) {
-              throw new Exception( Messages.getString( "S3CsvInputDialog.Exception.UnableToFindBucket.Message", meta.getBucket() ) );
-            }
-
-            S3Object[] objects = service.listObjects( bucket );
-            String[] objectnames = new String[objects.length];
-            for ( int i = 0; i < objects.length; i++ ) {
-              objectnames[i] = objects[i].getKey();
-            }
+            S3ObjectsProvider s3ObjProvider = new S3ObjectsProvider( meta.getS3Service( transMeta ) );
+            String[] objectnames = s3ObjProvider.getS3ObjectsNames( meta.getBucket() );
 
             EnterSelectionDialog dialog = new EnterSelectionDialog( shell, objectnames,
               Messages.getString( "S3CsvInputDialog.Exception.SelectObject.Title" ),
@@ -692,8 +623,6 @@ public class S3CsvInputDialog extends BaseStepDialog implements StepDialogInterf
    */
   public void getData( S3CsvInputMeta inputMeta ) {
     wStepname.setText( stepname );
-    wAccessKey.setText( Const.NVL( inputMeta.getAwsAccessKey(), "" ) );
-    wSecretKey.setText( Const.NVL( inputMeta.getAwsSecretKey(), "" ) );
     wBucket.setText( Const.NVL( inputMeta.getBucket(), "" ) );
 
     if ( isReceivingInput ) {
@@ -740,8 +669,6 @@ public class S3CsvInputDialog extends BaseStepDialog implements StepDialogInterf
 
   private void getInfo( S3CsvInputMeta inputMeta ) {
 
-    inputMeta.setAwsAccessKey( wAccessKey.getText() );
-    inputMeta.setAwsSecretKey( wSecretKey.getText() );
     inputMeta.setBucket( wBucket.getText() );
 
     if ( isReceivingInput ) {
@@ -807,17 +734,11 @@ public class S3CsvInputDialog extends BaseStepDialog implements StepDialogInterf
 
       wFields.table.removeAll();
 
-      S3Service s3Service = meta.getS3Service( transMeta );
-      S3Bucket[] buckets = s3Service.listAllBuckets();
-      S3Bucket s3bucket = null;
-      for ( S3Bucket bucket : buckets ) {
-        if ( bucket.getName().equals( bucketname ) ) {
-          s3bucket = bucket;
-        }
-      }
+      S3ObjectsProvider s3ObjProvider = new S3ObjectsProvider( meta.getS3Service( transMeta ) );
+      S3Bucket s3bucket = s3ObjProvider.getBucket( bucketname );
 
       if ( s3bucket == null ) {
-        throw new Exception( "Unable to find specified bucket : [" + bucketname + "]" ); // TODO i18n
+        throw new Exception( Messages.getString( "S3DefaultService.Exception.UnableToFindBucket.Message", bucketname ) );
       }
 
       // Now we can continue reading the rows of data and we can guess the
@@ -832,12 +753,8 @@ public class S3CsvInputDialog extends BaseStepDialog implements StepDialogInterf
       }
 
       // Only get the first lines, not the complete file
-      //
-      S3Object object = s3Service.getObject( s3bucket, filename, null, null, null, null, 0L, (long) samples * (long) maxLineSize );
-
-      // Grab an input stream to the data...
-      //
-      inputStream = object.getDataInputStream();
+      // And grab an input stream to the data...
+      inputStream = s3ObjProvider.getS3Object( s3bucket, filename, 0L, (long) samples * (long) maxLineSize ).getDataInputStream();
 
       InputStreamReader reader = new InputStreamReader( inputStream );
 

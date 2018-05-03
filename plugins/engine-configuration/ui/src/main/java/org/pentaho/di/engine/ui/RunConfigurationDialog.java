@@ -3,7 +3,7 @@
  *
  *  Pentaho Data Integration
  *
- *  Copyright (C) 2017 by Pentaho : http://www.pentaho.com
+ *  Copyright (C) 2017 by Hitachi Vantara : http://www.pentaho.com
  *
  *  *******************************************************************************
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use
@@ -199,11 +199,6 @@ public class RunConfigurationDialog extends Dialog
     gOptions = new Group( wSettings, SWT.SHADOW_ETCHED_IN );
     gOptions.setText( BaseMessages.getString( PKG, "RunConfigurationDialog.Group.Settings" ) );
     props.setLook( gOptions );
-
-    FormLayout gformLayout = new FormLayout();
-    gformLayout.marginWidth = 10;
-    gformLayout.marginHeight = 10;
-    gOptions.setLayout( gformLayout );
 
     FormData fdOptions = new FormData();
     fdOptions.top = new FormAttachment( wEngine, 15 );

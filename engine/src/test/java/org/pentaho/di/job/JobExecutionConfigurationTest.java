@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2016 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -33,6 +33,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.junit.ClassRule;
 import org.junit.Test;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
@@ -46,6 +47,7 @@ import org.pentaho.di.core.xml.XMLHandler;
 import org.pentaho.di.job.entries.trans.JobEntryTrans;
 import org.pentaho.di.job.entry.JobEntryCopy;
 import org.pentaho.di.job.entry.JobEntryInterface;
+import org.pentaho.di.junit.rules.RestorePDIEngineEnvironment;
 import org.pentaho.di.repository.RepositoriesMeta;
 import org.pentaho.di.repository.Repository;
 import org.pentaho.di.repository.RepositoryMeta;
@@ -55,6 +57,7 @@ import org.w3c.dom.Document;
 import org.w3c.dom.Node;
 
 public class JobExecutionConfigurationTest {
+  @ClassRule public static RestorePDIEngineEnvironment env = new RestorePDIEngineEnvironment();
 
   @Test
   public void testConnectRepository() throws KettleException {
@@ -119,7 +122,7 @@ public class JobExecutionConfigurationTest {
     assertEquals( "Repository didn't change", repository, jobExecutionConfiguration.getRepository() );
     assertTrue( "Repository not connected", connectionSuccess[0] );
   }
-  private interface MockRepositoryPlugin extends PluginInterface, ClassLoadingPluginInterface { }
+  public interface MockRepositoryPlugin extends PluginInterface, ClassLoadingPluginInterface { }
 
   @Test
   public void testDefaultPassedBatchId() {
@@ -135,16 +138,19 @@ public class JobExecutionConfigurationTest {
     final long passedBatchId2 = 5L;
 
     jec.setPassedBatchId( passedBatchId0 );
+    //CHECKSTYLE IGNORE AvoidNestedBlocks FOR NEXT 3 LINES
     {
       JobExecutionConfiguration jecCopy = (JobExecutionConfiguration) jec.clone();
       assertEquals( "clone-copy", jec.getPassedBatchId(), jecCopy.getPassedBatchId() );
     }
     jec.setPassedBatchId( passedBatchId1 );
+    //CHECKSTYLE IGNORE AvoidNestedBlocks FOR NEXT 3 LINES
     {
       JobExecutionConfiguration jecCopy = (JobExecutionConfiguration) jec.clone();
       assertEquals( "clone-copy", jec.getPassedBatchId(), jecCopy.getPassedBatchId() );
     }
     jec.setPassedBatchId( passedBatchId2 );
+    //CHECKSTYLE IGNORE AvoidNestedBlocks FOR NEXT 3 LINES
     {
       JobExecutionConfiguration jecCopy = (JobExecutionConfiguration) jec.clone();
       assertEquals( "clone-copy", jec.getPassedBatchId(), jecCopy.getPassedBatchId() );
@@ -159,6 +165,7 @@ public class JobExecutionConfigurationTest {
     final long passedBatchId2 = 5L;
 
     jec.setPassedBatchId( passedBatchId0 );
+    //CHECKSTYLE IGNORE AvoidNestedBlocks FOR NEXT 3 LINES
     {
       String xml = jec.getXML();
       Document doc = XMLHandler.loadXMLString( xml );
@@ -167,6 +174,7 @@ public class JobExecutionConfigurationTest {
       assertEquals( "xml-copy", jec.getPassedBatchId(), jecCopy.getPassedBatchId() );
     }
     jec.setPassedBatchId( passedBatchId1 );
+    //CHECKSTYLE IGNORE AvoidNestedBlocks FOR NEXT 3 LINES
     {
       String xml = jec.getXML();
       Document doc = XMLHandler.loadXMLString( xml );
@@ -175,6 +183,7 @@ public class JobExecutionConfigurationTest {
       assertEquals( "xml-copy", jec.getPassedBatchId(), jecCopy.getPassedBatchId() );
     }
     jec.setPassedBatchId( passedBatchId2 );
+    //CHECKSTYLE IGNORE AvoidNestedBlocks FOR NEXT 3 LINES
     {
       String xml = jec.getXML();
       Document doc = XMLHandler.loadXMLString( xml );

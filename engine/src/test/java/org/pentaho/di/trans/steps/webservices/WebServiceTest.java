@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2017 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2017 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -25,6 +25,7 @@ package org.pentaho.di.trans.steps.webservices;
 import org.apache.http.Header;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.message.BasicHeader;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.pentaho.di.core.logging.LoggingObjectInterface;
@@ -34,7 +35,10 @@ import java.net.URISyntaxException;
 
 import static org.junit.Assert.assertEquals;
 import static org.mockito.Matchers.any;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.when;
 
 public class WebServiceTest {
 
@@ -59,6 +63,11 @@ public class WebServiceTest {
     webServiceStep =
         spy( new WebService( mockHelper.stepMeta, mockHelper.stepDataInterface, 0, mockHelper.transMeta,
             mockHelper.trans ) );
+  }
+
+  @After
+  public void cleanUp() {
+    mockHelper.cleanUp();
   }
 
   @Test( expected = URISyntaxException.class )

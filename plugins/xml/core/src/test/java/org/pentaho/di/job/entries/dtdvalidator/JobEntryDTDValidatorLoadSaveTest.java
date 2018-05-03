@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2017 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2017 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -27,9 +27,12 @@ import static java.util.Arrays.asList;
 import java.util.List;
 import java.util.Map;
 
+import org.junit.ClassRule;
 import org.pentaho.di.job.entry.loadSave.JobEntryLoadSaveTestSupport;
+import org.pentaho.di.junit.rules.RestorePDIEngineEnvironment;
 
 public class JobEntryDTDValidatorLoadSaveTest extends JobEntryLoadSaveTestSupport<JobEntryDTDValidator> {
+  @ClassRule public static RestorePDIEngineEnvironment env = new RestorePDIEngineEnvironment();
 
   @Override
   protected Class<JobEntryDTDValidator> getJobEntryClass() {

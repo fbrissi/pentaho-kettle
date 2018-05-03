@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2013 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2017 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -56,28 +56,10 @@ public class TransDialogPluginType extends BasePluginType implements PluginTypeI
   }
 
   /**
-   * Let's put in code here to search for the transformation dialog plugins..
-   */
-  public void searchPlugins() throws KettlePluginException {
-    registerNatives();
-    registerAnnotations();
-    registerPluginJars();
-    registerXmlPlugins();
-  }
-
-  /**
    * Scan & register internal transformation dialog plugins
    */
   protected void registerNatives() throws KettlePluginException {
     // No native plugins
-  }
-
-  /**
-   * Scan & register internal plugins
-   */
-  protected void registerAnnotations() throws KettlePluginException {
-    // This is no longer done because it was deemed too slow. Only jar files in the plugins/ folders are scanned for
-    // annotations.
   }
 
   protected void registerXmlPlugins() throws KettlePluginException {

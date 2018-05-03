@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2013 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -23,13 +23,16 @@
 package org.pentaho.di.trans.steps.update;
 
 import static org.mockito.Matchers.any;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.sql.PreparedStatement;
 import java.sql.Timestamp;
 
 import junit.framework.Assert;
 
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.pentaho.di.core.database.Database;
@@ -55,6 +58,11 @@ public class PDI_11152_Test {
     when( smh.logChannelInterfaceFactory.create( any(), any( LoggingObjectInterface.class ) ) ).thenReturn(
         smh.logChannelInterface );
     when( smh.trans.isRunning() ).thenReturn( true );
+  }
+
+  @After
+  public void cleanUp() {
+    smh.cleanUp();
   }
 
   @Test
@@ -87,7 +95,7 @@ public class PDI_11152_Test {
 
     Update step = new Update( smh.stepMeta, smh.stepDataInterface, 0, smh.transMeta, smh.trans );
     step.setInputRowMeta( inputRowMeta );
-    step.getInputRowSets().add( smh.getMockInputRowSet( new Object[] { "2013-12-20".getBytes() } ) );
+    step.addRowSetToInputRowSets( smh.getMockInputRowSet( new Object[] { "2013-12-20".getBytes() } ) );
     step.init( smh.initStepMetaInterface, smh.initStepDataInterface );
     step.first = false;
     Assert.assertTrue( "Failure during row processing", step.processRow( stepMeta, stepData ) );

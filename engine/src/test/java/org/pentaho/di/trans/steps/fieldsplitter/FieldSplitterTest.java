@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2016 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -24,12 +24,16 @@ package org.pentaho.di.trans.steps.fieldsplitter;
 
 import static org.mockito.Matchers.any;
 import static org.mockito.Matchers.anyString;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doCallRealMethod;
+import static org.mockito.Mockito.when;
 
 import java.util.Arrays;
 
+import org.junit.After;
 import org.junit.Before;
 import org.junit.BeforeClass;
+import org.junit.ClassRule;
 import org.junit.Test;
 import org.pentaho.di.core.KettleEnvironment;
 import org.pentaho.di.core.QueueRowSet;
@@ -43,12 +47,15 @@ import org.pentaho.di.core.row.RowMetaInterface;
 import org.pentaho.di.core.row.ValueMetaInterface;
 import org.pentaho.di.core.row.value.ValueMetaString;
 import org.pentaho.di.core.variables.VariableSpace;
+import org.pentaho.di.junit.rules.RestorePDIEngineEnvironment;
 import org.pentaho.di.repository.Repository;
 import org.pentaho.di.trans.step.StepMeta;
 import org.pentaho.di.trans.steps.mock.StepMockHelper;
 import org.pentaho.metastore.api.IMetaStore;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertArrayEquals;
+import static org.junit.Assert.assertTrue;
 
 /**
  * Tests for FieldSplitter step
@@ -57,6 +64,7 @@ import static org.junit.Assert.*;
  * @see FieldSplitter
  */
 public class FieldSplitterTest {
+  @ClassRule public static RestorePDIEngineEnvironment env = new RestorePDIEngineEnvironment();
   StepMockHelper<FieldSplitterMeta, FieldSplitterData> smh;
 
   @BeforeClass
@@ -72,6 +80,11 @@ public class FieldSplitterTest {
     when( smh.logChannelInterfaceFactory.create( any(), any( LoggingObjectInterface.class ) ) ).thenReturn(
         smh.logChannelInterface );
     when( smh.trans.isRunning() ).thenReturn( true );
+  }
+
+  @After
+  public void cleanUp() {
+    smh.cleanUp();
   }
 
   private RowSet mockInputRowSet() {
@@ -118,8 +131,8 @@ public class FieldSplitterTest {
     FieldSplitter step = new FieldSplitter( smh.stepMeta, smh.stepDataInterface, 0, smh.transMeta, smh.trans );
     step.init( smh.initStepMetaInterface, smh.stepDataInterface );
     step.setInputRowMeta( getInputRowMeta() );
-    step.getInputRowSets().add( mockInputRowSet() );
-    step.getOutputRowSets().add( new QueueRowSet() );
+    step.addRowSetToInputRowSets( mockInputRowSet() );
+    step.addRowSetToOutputRowSets( new QueueRowSet() );
 
     boolean hasMoreRows;
     do {
@@ -156,8 +169,8 @@ public class FieldSplitterTest {
     rowMeta.addValueMeta( new ValueMetaString( "split" ) );
 
     step.setInputRowMeta( rowMeta );
-    step.getInputRowSets().add( smh.getMockInputRowSet( new Object[] { "key", "string", "part1 part2" } ) );
-    step.getOutputRowSets().add( new SingleRowRowSet() );
+    step.addRowSetToInputRowSets( smh.getMockInputRowSet( new Object[] { "key", "string", "part1 part2" } ) );
+    step.addRowSetToOutputRowSets( new SingleRowRowSet() );
 
     assertTrue( step.processRow( meta, smh.stepDataInterface ) );
 

@@ -3,7 +3,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2017 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -972,9 +972,34 @@ public class Const {
   public static final String KETTLE_BATCHING_ROWSET = "KETTLE_BATCHING_ROWSET";
 
   /**
+   * Set this variable to limit max number of files the Text File Output step can have open at one time.
+   */
+  public static final String KETTLE_FILE_OUTPUT_MAX_STREAM_COUNT = "KETTLE_FILE_OUTPUT_MAX_STREAM_COUNT";
+
+  /**
+   * This variable contains the number of milliseconds between flushes of all open files in the Text File Output step.
+   */
+  public static final String KETTLE_FILE_OUTPUT_MAX_STREAM_LIFE = "KETTLE_FILE_OUTPUT_MAX_STREAM_LIFE";
+
+  /**
    * Set this variable to Y to disable standard Kettle logging to the console. (stdout)
    */
   public static final String KETTLE_DISABLE_CONSOLE_LOGGING = "KETTLE_DISABLE_CONSOLE_LOGGING";
+
+  /**
+   * Set this variable to with the intended repository name ( in repositories.xml )
+   */
+  public static final String KETTLE_REPOSITORY = "KETTLE_REPOSITORY";
+
+  /**
+   * Set this variable to with the intended username to pass as repository credentials
+   */
+  public static final String KETTLE_USER = "KETTLE_USER";
+
+  /**
+   * Set this variable to with the intended password to pass as repository credentials
+   */
+  public static final String KETTLE_PASSWORD = "KETTLE_PASSWORD";
 
   /**
    * The XML file that contains the list of native Kettle job entries
@@ -1061,6 +1086,11 @@ public class Const {
   public static final String KETTLE_SPLIT_FIELDS_REMOVE_ENCLOSURE = "KETTLE_SPLIT_FIELDS_REMOVE_ENCLOSURE";
 
   /**
+   * Variable that is responsible for checking empty field names and types.
+   */
+  public static final String KETTLE_ALLOW_EMPTY_FIELD_NAMES_AND_TYPES = "KETTLE_ALLOW_EMPTY_FIELD_NAMES_AND_TYPES";
+
+  /**
    * Set this variable to false to preserve global log variables defined in transformation / job Properties -> Log panel.
    * Changing it to true will clear all global log variables when export transformation / job
    */
@@ -1130,6 +1160,11 @@ public class Const {
    * A variable to configure jetty option: lowResourcesMaxIdleTime for Carte
    */
   public static final String KETTLE_CARTE_JETTY_RES_MAX_IDLE_TIME = "KETTLE_CARTE_JETTY_RES_MAX_IDLE_TIME";
+
+  /**
+   * A variable to configure refresh for carte job/trans status page
+   */
+  public static final String KETTLE_CARTE_REFRESH_STATUS = "KETTLE_CARTE_REFRESH_STATUS";
 
   /**
    * A variable to configure s3vfs to use a temporary file on upload data to S3 Amazon."
@@ -1994,7 +2029,8 @@ public class Const {
    * Provides the documentation url with the configured base + the given URI.
    *
    * @param uri
-   *          the resource identifier for the documentation (eg. 0L0/0Y0/030/050/000)
+   *          the resource identifier for the documentation
+   *          (eg. Products/Data_Integration/Data_Integration_Perspective/050/000)
    *
    * @return the fully qualified documentation URL for the given URI
    */
@@ -3246,7 +3282,7 @@ public class Const {
    * @return cleaned string
    */
   public static String removeCR( String in ) {
-    return removeChar( in, '\n' );
+    return removeChar( in, '\r' );
   } // removeCR
 
   /**
@@ -3257,7 +3293,7 @@ public class Const {
    * @return cleaned string
    */
   public static String removeLF( String in ) {
-    return removeChar( in, '\r' );
+    return removeChar( in, '\n' );
   } // removeCRLF
 
   /**

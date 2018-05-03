@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2015 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -23,18 +23,25 @@
 package org.pentaho.di.repository.filerep;
 
 import org.apache.commons.vfs2.FileObject;
+import org.junit.ClassRule;
 import org.junit.Test;
 import org.pentaho.di.core.database.DatabaseMeta;
+import org.pentaho.di.junit.rules.RestorePDIEngineEnvironment;
 import org.pentaho.di.repository.ObjectId;
 
 import java.util.UUID;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.assertNotSame;
+import static org.junit.Assert.assertNotNull;
 
 /**
  * @author Andrey Khayrutdinov
  */
 public class KettleFileRepository_DatabaseNames_Test extends KettleFileRepositoryTestBase {
+  @ClassRule public static RestorePDIEngineEnvironment env = new RestorePDIEngineEnvironment();
 
   @Test
   public void getDatabaseId_ExactMatch() throws Exception {

@@ -1,5 +1,5 @@
 /*!
- * Copyright 2010 - 2016 Pentaho Corporation.  All rights reserved.
+ * Copyright 2010 - 2017 Hitachi Vantara.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -71,7 +71,7 @@ public class PurRepositoryMetaStore extends MemoryMetaStore implements IMetaStor
 
   public PurRepositoryMetaStore( PurRepository repository ) throws KettleException {
     this.repository = repository;
-    this.pur = repository.getPur();
+    this.pur = repository.getUnderlyingRepository();
 
     namespacesFolder = pur.getFile( METASTORE_FOLDER_PATH );
     if ( namespacesFolder == null ) {

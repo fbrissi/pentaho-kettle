@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2017 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2017 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -102,6 +102,9 @@ public enum EncodingType {
   }
 
   public static String removeBOMIfPresent( String string ) {
+    if ( string == null ) {
+      return null;
+    }
     return string.replaceFirst( UTF_8_BOM, "" );
   }
 

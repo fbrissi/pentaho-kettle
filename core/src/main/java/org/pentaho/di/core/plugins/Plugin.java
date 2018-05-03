@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2017 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2017 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -23,9 +23,11 @@
 package org.pentaho.di.core.plugins;
 
 import java.net.URL;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
+import org.apache.commons.lang.builder.CompareToBuilder;
 import org.pentaho.di.core.Const;
 
 /**
@@ -35,7 +37,13 @@ import org.pentaho.di.core.Const;
  * @author matt
  *
  */
-public class Plugin implements PluginInterface {
+public class Plugin implements PluginInterface, Comparable<Plugin> {
+
+  public static Comparator<PluginInterface> nullStringComparator =
+    ( p1, p2 ) -> new CompareToBuilder()
+      .append( p1.getName(), p2.getName(), Comparator.nullsLast( String::compareToIgnoreCase ) )
+      .append( p1.getIds(), p2.getIds() )
+      .toComparison();
 
   private String category;
   private String name;
@@ -68,11 +76,10 @@ public class Plugin implements PluginInterface {
    * @param libraries
    */
   public Plugin( String[] ids, Class<? extends PluginTypeInterface> pluginType, Class<?> mainType,
-    String category, String name, String description, String imageFile, boolean separateClassLoaderNeeded,
-    boolean nativePlugin, Map<Class<?>, String> classMap, List<String> libraries, String errorHelpFile,
-    URL pluginFolder ) {
-    this(
-      ids, pluginType, mainType, category, name, description, imageFile, separateClassLoaderNeeded,
+                 String category, String name, String description, String imageFile, boolean separateClassLoaderNeeded,
+                 boolean nativePlugin, Map<Class<?>, String> classMap, List<String> libraries, String errorHelpFile,
+                 URL pluginFolder ) {
+    this( ids, pluginType, mainType, category, name, description, imageFile, separateClassLoaderNeeded,
       nativePlugin, classMap, libraries, errorHelpFile, pluginFolder, null, null, null );
   }
 
@@ -89,9 +96,9 @@ public class Plugin implements PluginInterface {
    * @param libraries
    */
   public Plugin( String[] ids, Class<? extends PluginTypeInterface> pluginType, Class<?> mainType,
-    String category, String name, String description, String imageFile, boolean separateClassLoaderNeeded,
-    boolean nativePlugin, Map<Class<?>, String> classMap, List<String> libraries, String errorHelpFile,
-    URL pluginFolder, String documentationUrl, String casesUrl, String forumUrl ) {
+                 String category, String name, String description, String imageFile, boolean separateClassLoaderNeeded,
+                 boolean nativePlugin, Map<Class<?>, String> classMap, List<String> libraries, String errorHelpFile,
+                 URL pluginFolder, String documentationUrl, String casesUrl, String forumUrl ) {
     this( ids, pluginType, mainType, category, name, description, imageFile, separateClassLoaderNeeded, null,
       nativePlugin, classMap, libraries, errorHelpFile, pluginFolder, documentationUrl, casesUrl, forumUrl );
   }
@@ -116,10 +123,9 @@ public class Plugin implements PluginInterface {
    * @param forumUrl
    */
   public Plugin( String[] ids, Class<? extends PluginTypeInterface> pluginType, Class<?> mainType,
-    String category, String name, String description, String imageFile, boolean separateClassLoaderNeeded,
-    String classLoaderGroup, boolean nativePlugin, Map<Class<?>, String> classMap, List<String> libraries,
-    String errorHelpFile, URL pluginFolder, String documentationUrl, String casesUrl, String forumUrl ) {
-
+                 String category, String name, String description, String imageFile, boolean separateClassLoaderNeeded,
+                 String classLoaderGroup, boolean nativePlugin, Map<Class<?>, String> classMap, List<String> libraries,
+                 String errorHelpFile, URL pluginFolder, String documentationUrl, String casesUrl, String forumUrl ) {
     this.ids = ids;
     this.pluginType = pluginType;
     this.mainType = mainType;
@@ -146,33 +152,21 @@ public class Plugin implements PluginInterface {
 
   @Override
   public boolean equals( Object obj ) {
-    if ( obj == null ) {
-      return false;
-    }
-    if ( !( obj instanceof Plugin ) ) {
-      return false;
-    }
-
-    Plugin plugin = (Plugin) obj;
-
-    // All the IDs have to be the same to match, otherwise it's a different plugin
-    // This might be a bit over the top, usually we only have a single ID
-    //
-    if ( ids.length != plugin.ids.length ) {
-      return false;
-    }
-    for ( int i = 0; i < ids.length; i++ ) {
-      if ( !ids[i].equals( plugin.ids[i] ) ) {
-        return false;
-      }
-    }
-
-    return true;
+    return ( obj != null ) && ( obj instanceof Plugin ) && compareTo( (Plugin) obj ) == 0;
   }
 
   @Override
   public int hashCode() {
     return ids[0].hashCode();
+  }
+
+  @Override
+  public int compareTo( Plugin o ) {
+    // All the IDs have to be the same to match, otherwise it's a different plugin
+    // This might be a bit over the top, usually we only have a single ID
+    //
+
+    return nullStringComparator.compare( this, o );
   }
 
   @Override
@@ -272,6 +266,7 @@ public class Plugin implements PluginInterface {
    * @param imageFile
    *          the imageFile to set
    */
+  @Override
   public void setImageFile( String imageFile ) {
     this.imageFile = imageFile;
   }
@@ -352,6 +347,7 @@ public class Plugin implements PluginInterface {
    * @param errorHelpFile
    *          the errorHelpFile to set
    */
+  @Override
   public void setErrorHelpFile( String errorHelpFile ) {
     this.errorHelpFile = errorHelpFile;
   }

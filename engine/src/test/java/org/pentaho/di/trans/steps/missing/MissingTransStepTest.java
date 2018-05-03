@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2017 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2017 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -22,8 +22,13 @@
 
 package org.pentaho.di.trans.steps.missing;
 
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
+import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
@@ -39,9 +44,20 @@ import org.pentaho.di.trans.steps.StepMockUtil;
 import org.pentaho.di.trans.steps.datagrid.DataGridMeta;
 import org.pentaho.di.trans.steps.mock.StepMockHelper;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertFalse;
 
 public class MissingTransStepTest {
+  private StepMockHelper<DataGridMeta, StepDataInterface> helper;
+
+  @Before
+  public void setUp() {
+    helper = StepMockUtil.getStepMockHelper( DataGridMeta.class, "DataGrid_EmptyStringVsNull_Test" );
+  }
+
+  @After
+  public void cleanUp() {
+    helper.cleanUp();
+  }
 
   @Test
   public void testInit() {
@@ -80,8 +96,6 @@ public class MissingTransStepTest {
   }
 
   private MissingTransStep createAndInitStep( StepMetaInterface meta, StepDataInterface data ) {
-    StepMockHelper<DataGridMeta, StepDataInterface> helper =
-      StepMockUtil.getStepMockHelper( DataGridMeta.class, "DataGrid_EmptyStringVsNull_Test" );
     when( helper.stepMeta.getStepMetaInterface() ).thenReturn( meta );
 
     MissingTransStep step = new MissingTransStep( helper.stepMeta, data, 0, helper.transMeta, helper.trans );

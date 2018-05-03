@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2016 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -22,7 +22,7 @@
 
 package org.pentaho.di.trans.steps.calculator;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.fail;
 import static org.mockito.Matchers.any;
 import static org.mockito.Matchers.anyString;
 import static org.mockito.Matchers.eq;
@@ -37,8 +37,10 @@ import java.util.List;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 
+import org.junit.After;
 import org.junit.Before;
 import org.junit.BeforeClass;
+import org.junit.ClassRule;
 import org.junit.Test;
 import org.pentaho.di.core.Const;
 import org.pentaho.di.core.KettleEnvironment;
@@ -54,6 +56,7 @@ import org.pentaho.di.core.row.value.ValueMetaBigNumber;
 import org.pentaho.di.core.row.value.ValueMetaInteger;
 import org.pentaho.di.core.row.value.ValueMetaNumber;
 import org.pentaho.di.core.row.value.ValueMetaString;
+import org.pentaho.di.junit.rules.RestorePDIEngineEnvironment;
 import org.pentaho.di.trans.step.RowAdapter;
 import org.pentaho.di.trans.steps.mock.StepMockHelper;
 
@@ -68,6 +71,8 @@ import junit.framework.Assert;
 public class CalculatorUnitTest {
   private StepMockHelper<CalculatorMeta, CalculatorData> smh;
 
+  @ClassRule public static RestorePDIEngineEnvironment env = new RestorePDIEngineEnvironment();
+
   @BeforeClass
   public static void init() throws KettleException {
     KettleEnvironment.init( false );
@@ -81,6 +86,11 @@ public class CalculatorUnitTest {
     when( smh.logChannelInterfaceFactory.create( any(), any( LoggingObjectInterface.class ) ) ).thenReturn(
       smh.logChannelInterface );
     when( smh.trans.isRunning() ).thenReturn( true );
+  }
+
+  @After
+  public void cleanUp() {
+    smh.cleanUp();
   }
 
   @Test
@@ -103,7 +113,7 @@ public class CalculatorUnitTest {
     inputRowSet.setRowMeta( inputRowMeta );
 
     Calculator calculator = new Calculator( smh.stepMeta, smh.stepDataInterface, 0, smh.transMeta, smh.trans );
-    calculator.getInputRowSets().add( inputRowSet );
+    calculator.addRowSetToInputRowSets( inputRowSet );
     calculator.setInputRowMeta( inputRowMeta );
     calculator.init( smh.initStepMetaInterface, smh.initStepDataInterface );
 
@@ -142,7 +152,7 @@ public class CalculatorUnitTest {
     inputRowSet.setRowMeta( inputRowMeta );
 
     Calculator calculator = new Calculator( smh.stepMeta, smh.stepDataInterface, 0, smh.transMeta, smh.trans );
-    calculator.getInputRowSets().add( inputRowSet );
+    calculator.addRowSetToInputRowSets( inputRowSet );
     calculator.setInputRowMeta( inputRowMeta );
     calculator.init( smh.initStepMetaInterface, smh.initStepDataInterface );
 
@@ -175,7 +185,7 @@ public class CalculatorUnitTest {
     inputRowSet.setRowMeta( inputRowMeta );
 
     Calculator calculator = new Calculator( smh.stepMeta, smh.stepDataInterface, 0, smh.transMeta, smh.trans );
-    calculator.getInputRowSets().add( inputRowSet );
+    calculator.addRowSetToInputRowSets( inputRowSet );
     calculator.setInputRowMeta( inputRowMeta );
     calculator.init( smh.initStepMetaInterface, smh.initStepDataInterface );
 
@@ -584,7 +594,7 @@ public class CalculatorUnitTest {
     final int expectedResultRowSize = inputRowMeta.size() + 1;
 
     Calculator calculator = new Calculator( smh.stepMeta, smh.stepDataInterface, 0, smh.transMeta, smh.trans );
-    calculator.getInputRowSets().add( inputRowSet );
+    calculator.addRowSetToInputRowSets( inputRowSet );
     calculator.setInputRowMeta( inputRowMeta );
     calculator.init( smh.initStepMetaInterface, smh.initStepDataInterface );
 
@@ -625,6 +635,7 @@ public class CalculatorUnitTest {
    */
   public void assertRoundEveryDataType( final Number expectedResult, final int calcFunction, final Number value,
       final Long precision, final Long roundingMode ) throws KettleException {
+    //CHECKSTYLE IGNORE AvoidNestedBlocks FOR NEXT 3 LINES
     {
       final double resultValue = expectedResult.doubleValue();
       assertRoundGeneral( resultValue, calcFunction, value.doubleValue(), precision, roundingMode, ValueMetaInterface.TYPE_NUMBER,
@@ -636,6 +647,7 @@ public class CalculatorUnitTest {
             ValueMetaInterface.TYPE_NUMBER );
       }
     }
+    //CHECKSTYLE IGNORE AvoidNestedBlocks FOR NEXT 3 LINES
     {
       final BigDecimal resultValue = BigDecimal.valueOf( expectedResult.doubleValue() );
       assertRoundGeneral( resultValue, calcFunction, value.doubleValue(), precision, roundingMode, ValueMetaInterface.TYPE_NUMBER,
@@ -744,6 +756,75 @@ public class CalculatorUnitTest {
       }
     } else {
       Assert.assertEquals( msg, expected, actual );
+    }
+  }
+
+  @Test
+  public void calculatorReminder() throws Exception {
+    assertCalculatorReminder( new Double( "0.10000000000000053" ), new Object[]{ new Long( "10" ), new Double( "3.3" ) },
+      new int[]{ ValueMetaInterface.TYPE_INTEGER, ValueMetaInterface.TYPE_NUMBER } );
+    assertCalculatorReminder( new Double( "1.0" ), new Object[]{ new Long( "10" ), new Double( "4.5" ) },
+      new int[]{ ValueMetaInterface.TYPE_INTEGER, ValueMetaInterface.TYPE_NUMBER } );
+    assertCalculatorReminder( new Double( "4.0" ), new Object[]{ new Double( "12.5" ), new Double( "4.25" ) },
+      new int[]{ ValueMetaInterface.TYPE_NUMBER, ValueMetaInterface.TYPE_NUMBER } );
+    assertCalculatorReminder( new Double( "2.6000000000000005" ), new Object[]{ new Double( "12.5" ), new Double( "3.3" ) },
+      new int[]{ ValueMetaInterface.TYPE_NUMBER, ValueMetaInterface.TYPE_NUMBER } );
+  }
+
+  private void assertCalculatorReminder( final Object expectedResult, final Object[] values, final int[] types ) throws Exception {
+    RowMeta inputRowMeta = new RowMeta();
+    for( int i = 0; i < types.length; i++ ) {
+      switch ( types[i] ) {
+        case ValueMetaInterface.TYPE_BIGNUMBER:
+          inputRowMeta.addValueMeta( new ValueMetaBigNumber("f" + i ) );
+          break;
+        case ValueMetaInterface.TYPE_NUMBER:
+          inputRowMeta.addValueMeta( new ValueMetaNumber("f" + i ) );
+          break;
+        case ValueMetaInterface.TYPE_INTEGER:
+          inputRowMeta.addValueMeta( new ValueMetaInteger("f" + i ) );
+          break;
+        default:
+          throw new IllegalArgumentException( "Unexpected value dataType: " + types[i]
+            + ". Long, Double or BigDecimal expected." );
+      }
+    }
+
+    RowSet inputRowSet = null;
+    try {
+      inputRowSet = smh.getMockInputRowSet( new Object[][] {
+        { values[0], values[1] } } );
+    } catch ( Exception pe ) {
+      pe.printStackTrace();
+      fail();
+    }
+    inputRowSet.setRowMeta( inputRowMeta );
+
+    Calculator calculator = new Calculator( smh.stepMeta, smh.stepDataInterface, 0, smh.transMeta, smh.trans );
+    calculator.addRowSetToInputRowSets( inputRowSet );
+    calculator.setInputRowMeta( inputRowMeta );
+    calculator.init( smh.initStepMetaInterface, smh.initStepDataInterface );
+
+    CalculatorMeta meta = new CalculatorMeta();
+    meta.setCalculation( new CalculatorMetaFunction[] {
+      new CalculatorMetaFunction( "res", CalculatorMetaFunction.CALC_REMAINDER, "f0", "f1", null,
+        ValueMetaInterface.TYPE_NUMBER, 0, 0, false, "", "", "", "" ) } );
+
+    //Verify output
+    try {
+      calculator.addRowListener( new RowAdapter() {
+        @Override public void rowWrittenEvent( RowMetaInterface rowMeta, Object[] row ) throws KettleStepException {
+          try {
+            assertEquals( expectedResult, row[ 2 ] );
+          } catch ( Exception pe ) {
+            throw new KettleStepException( pe );
+          }
+        }
+      } );
+      calculator.processRow( meta, new CalculatorData() );
+    } catch ( KettleException ke ) {
+      ke.printStackTrace();
+      fail();
     }
   }
 }

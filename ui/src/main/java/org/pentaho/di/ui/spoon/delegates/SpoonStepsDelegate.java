@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2016 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -34,6 +34,9 @@ import org.pentaho.di.core.exception.KettleException;
 import org.pentaho.di.core.extension.ExtensionPointHandler;
 import org.pentaho.di.core.extension.KettleExtensionPoint;
 import org.pentaho.di.core.gui.Point;
+import org.pentaho.di.core.plugins.PluginInterface;
+import org.pentaho.di.core.plugins.PluginRegistry;
+import org.pentaho.di.core.plugins.StepPluginType;
 import org.pentaho.di.core.util.Utils;
 import org.pentaho.di.i18n.BaseMessages;
 import org.pentaho.di.trans.Partitioner;
@@ -45,7 +48,6 @@ import org.pentaho.di.trans.step.StepMeta;
 import org.pentaho.di.trans.step.StepMetaInterface;
 import org.pentaho.di.trans.step.StepPartitioningMeta;
 import org.pentaho.di.ui.core.dialog.ErrorDialog;
-import org.pentaho.di.ui.core.gui.GUIResource;
 import org.pentaho.di.ui.spoon.Spoon;
 import org.pentaho.di.ui.trans.step.StepErrorMetaDialog;
 
@@ -101,15 +103,6 @@ public class SpoonStepsDelegate extends SpoonDelegate {
     }
   }
 
-  public void clipStep( StepMeta stepMeta ) {
-    try {
-      String xml = stepMeta.getXML();
-      GUIResource.getInstance().toClipboard( xml );
-    } catch ( Exception ex ) {
-      new ErrorDialog( spoon.getShell(), "Error", "Error encoding to XML", ex );
-    }
-  }
-
   public String editStep( TransMeta transMeta, StepMeta stepMeta ) {
     boolean refresh = false;
     String stepname = null;
@@ -159,6 +152,7 @@ public class SpoonStepsDelegate extends SpoonDelegate {
 
         StepMeta newStepMeta = (StepMeta) stepMeta.clone();
         newStepMeta.setName( stepname );
+        transMeta.clearCaches();
         transMeta.notifyAllListeners( stepMeta, newStepMeta );
         stepMeta.setName( stepname );
 
@@ -208,7 +202,7 @@ public class SpoonStepsDelegate extends SpoonDelegate {
     }
 
     // Hops belonging to the deleting steps are placed in a single transaction and removed.
-    List<TransHopMeta> transHops = new ArrayList<TransHopMeta>();
+    List<TransHopMeta> transHops = new ArrayList<>();
     int[] hopIndexes = new int[transformation.nrTransHops()];
     int hopIndex = 0;
     for ( int i = transformation.nrTransHops() - 1; i >= 0; i-- ) {
@@ -248,37 +242,36 @@ public class SpoonStepsDelegate extends SpoonDelegate {
   }
 
   public StepDialogInterface getStepDialog( StepMetaInterface stepMeta, TransMeta transMeta, String stepName ) throws KettleException {
-    String dialogClassName = stepMeta.getDialogClassName();
-
-    Class<?> dialogClass;
     Class<?>[] paramClasses = new Class<?>[] { Shell.class, Object.class, TransMeta.class, String.class };
     Object[] paramArgs = new Object[] { spoon.getShell(), stepMeta, transMeta, stepName };
-    Constructor<?> dialogConstructor;
+
+    PluginRegistry registry = PluginRegistry.getInstance();
+    PluginInterface plugin = registry.getPlugin( StepPluginType.class, stepMeta );
+    String dialogClassName = plugin.getClassMap().get( StepDialogInterface.class );
+    if ( dialogClassName == null ) {
+      // try the deprecated way
+      log.logDebug( "Use of StepMetaInterface#getDialogClassName is deprecated, use PluginDialog annotation instead." );
+      dialogClassName = stepMeta.getDialogClassName();
+    }
+
     try {
-      dialogClass = stepMeta.getClass().getClassLoader().loadClass( dialogClassName );
-      dialogConstructor = dialogClass.getConstructor( paramClasses );
-      return (StepDialogInterface) dialogConstructor.newInstance( paramArgs );
+      Class<StepDialogInterface> dialogClass = registry.getClass( plugin, dialogClassName );
+      Constructor<StepDialogInterface> dialogConstructor = dialogClass.getConstructor( paramClasses );
+      return dialogConstructor.newInstance( paramArgs );
     } catch ( Exception e ) {
       // try the old way for compatibility
-      Method method = null;
       try {
         Class<?>[] sig = new Class<?>[] { Shell.class, StepMetaInterface.class, TransMeta.class, String.class };
-        method = stepMeta.getClass().getDeclaredMethod( "getDialog", sig );
+        Method method = stepMeta.getClass().getDeclaredMethod( "getDialog", sig );
         if ( method != null ) {
-          return (StepDialogInterface) method.invoke( stepMeta, new Object[] {
-            spoon.getShell(), stepMeta, transMeta, stepName } );
+          log.logDebug( "Use of StepMetaInterface#getDialog is deprecated, use PluginDialog annotation instead." );
+          return (StepDialogInterface) method.invoke( stepMeta, paramArgs );
         }
-      } catch ( Throwable t ) {
-        // Ignore errors
-      }
+      } catch ( Throwable ignored ) { }
 
-      String errorTitle =
-        BaseMessages.getString( PKG, "Spoon.Dialog.ErrorCreatingStepDialog.Title" );
-      String errorMsg =
-        BaseMessages.getString( PKG, "Spoon.Dialog.ErrorCreatingStepDialog.Message", stepMeta.getDialogClassName() );
-      new ErrorDialog(
-        spoon.getShell(), errorTitle, errorMsg, e );
-
+      String errorTitle = BaseMessages.getString( PKG, "Spoon.Dialog.ErrorCreatingStepDialog.Title" );
+      String errorMsg = BaseMessages.getString( PKG, "Spoon.Dialog.ErrorCreatingStepDialog.Message", dialogClassName );
+      new ErrorDialog( spoon.getShell(), errorTitle, errorMsg, e );
       throw new KettleException( e );
     }
   }
@@ -299,7 +292,7 @@ public class SpoonStepsDelegate extends SpoonDelegate {
       return (StepDialogInterface) dialogConstructor.newInstance( paramArgs );
     } catch ( Exception e ) {
       // try the old way for compatibility
-      Method method = null;
+      Method method;
       try {
         Class<?>[] sig = new Class<?>[] { Shell.class, StepMetaInterface.class, TransMeta.class };
         method = stepMeta.getClass().getDeclaredMethod( "getDialog", sig );
@@ -307,9 +300,7 @@ public class SpoonStepsDelegate extends SpoonDelegate {
           return (StepDialogInterface) method.invoke( stepMeta, new Object[] {
             spoon.getShell(), stepMeta, transMeta } );
         }
-      } catch ( Throwable t ) {
-        // Ignore errors
-      }
+      } catch ( Throwable ignored ) { }
 
       throw new KettleException( e );
     }

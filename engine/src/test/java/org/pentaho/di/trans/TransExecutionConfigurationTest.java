@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2015 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -22,9 +22,14 @@
 
 package org.pentaho.di.trans;
 
-import static org.mockito.Mockito.*;
-import static org.junit.Assert.*;
+import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
+import org.junit.ClassRule;
 import org.junit.Test;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
@@ -35,6 +40,7 @@ import org.pentaho.di.core.plugins.PluginInterface;
 import org.pentaho.di.core.plugins.PluginRegistry;
 import org.pentaho.di.core.plugins.RepositoryPluginType;
 import org.pentaho.di.core.xml.XMLHandler;
+import org.pentaho.di.junit.rules.RestorePDIEngineEnvironment;
 import org.pentaho.di.repository.RepositoriesMeta;
 import org.pentaho.di.repository.Repository;
 import org.pentaho.di.repository.RepositoryMeta;
@@ -46,6 +52,7 @@ import org.w3c.dom.Document;
 import org.w3c.dom.Node;
 
 public class TransExecutionConfigurationTest {
+  @ClassRule public static RestorePDIEngineEnvironment env = new RestorePDIEngineEnvironment();
 
   @Test
   public void testConnectRepository() throws KettleException {
@@ -115,7 +122,7 @@ public class TransExecutionConfigurationTest {
     assertTrue( "Repository not connected", connectionSuccess[0] );
   }
 
-  private interface MockRepositoryPlugin extends PluginInterface, ClassLoadingPluginInterface {
+  public interface MockRepositoryPlugin extends PluginInterface, ClassLoadingPluginInterface {
   }
 
   @Test
@@ -129,16 +136,19 @@ public class TransExecutionConfigurationTest {
     TransExecutionConfiguration tec = new TransExecutionConfiguration();
 
     tec.setPassedBatchId( null );
+    //CHECKSTYLE IGNORE AvoidNestedBlocks FOR NEXT 3 LINES
     {
       TransExecutionConfiguration tecCopy = (TransExecutionConfiguration) tec.clone();
       assertEquals( "clone-copy", tec.getPassedBatchId(), tecCopy.getPassedBatchId() );
     }
     tec.setPassedBatchId( 0L );
+    //CHECKSTYLE IGNORE AvoidNestedBlocks FOR NEXT 3 LINES
     {
       TransExecutionConfiguration tecCopy = (TransExecutionConfiguration) tec.clone();
       assertEquals( "clone-copy", tec.getPassedBatchId(), tecCopy.getPassedBatchId() );
     }
     tec.setPassedBatchId( 5L );
+    //CHECKSTYLE IGNORE AvoidNestedBlocks FOR NEXT 3 LINES
     {
       TransExecutionConfiguration tecCopy = (TransExecutionConfiguration) tec.clone();
       assertEquals( "clone-copy", tec.getPassedBatchId(), tecCopy.getPassedBatchId() );
@@ -152,6 +162,7 @@ public class TransExecutionConfigurationTest {
     final long passedBatchId1 = 0L;
     final long passedBatchId2 = 5L;
     tec.setPassedBatchId( passedBatchId0 );
+    //CHECKSTYLE IGNORE AvoidNestedBlocks FOR NEXT 3 LINES
     {
       String xml = tec.getXML();
       Document doc = XMLHandler.loadXMLString( xml );
@@ -160,6 +171,7 @@ public class TransExecutionConfigurationTest {
       assertEquals( "xml-copy", tec.getPassedBatchId(), tecCopy.getPassedBatchId() );
     }
     tec.setPassedBatchId( passedBatchId1 );
+    //CHECKSTYLE IGNORE AvoidNestedBlocks FOR NEXT 3 LINES
     {
       String xml = tec.getXML();
       Document doc = XMLHandler.loadXMLString( xml );
@@ -168,6 +180,7 @@ public class TransExecutionConfigurationTest {
       assertEquals( "xml-copy", tec.getPassedBatchId(), tecCopy.getPassedBatchId() );
     }
     tec.setPassedBatchId( passedBatchId2 );
+    //CHECKSTYLE IGNORE AvoidNestedBlocks FOR NEXT 3 LINES
     {
       String xml = tec.getXML();
       Document doc = XMLHandler.loadXMLString( xml );

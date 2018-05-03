@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2017 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2017 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -35,9 +35,11 @@ import static org.mockito.Mockito.when;
 import java.util.UUID;
 
 import com.sforce.ws.bind.XmlObject;
+import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.BeforeClass;
+import org.junit.ClassRule;
 import org.junit.Test;
 import org.pentaho.di.core.Const;
 import org.pentaho.di.core.encryption.Encr;
@@ -50,15 +52,20 @@ import org.pentaho.di.core.row.value.ValueMetaBase;
 import org.pentaho.di.core.row.value.ValueMetaInteger;
 import org.pentaho.di.core.row.value.ValueMetaString;
 import org.pentaho.di.core.util.EnvUtil;
+import org.pentaho.di.junit.rules.RestorePDIEngineEnvironment;
 import org.pentaho.di.trans.steps.mock.StepMockHelper;
 import org.pentaho.di.trans.steps.salesforce.SalesforceConnection;
 
 import com.sforce.soap.partner.sobject.SObject;
 import com.sforce.ws.wsdl.Constants;
 
-public class SalesforceUpsertTest {
+import javax.xml.namespace.QName;
 
-  private static final String ACCOUNT_EXT_ID_ACCOUNT_ID_C_ACCOUNT = "Account:ExtID_AccountId__c/Account";
+public class SalesforceUpsertTest {
+  @ClassRule public static RestorePDIEngineEnvironment env = new RestorePDIEngineEnvironment();
+
+  private static final String EXT_ID_ACCOUNT_ID_C = "ExtID_AccountId__c";
+  private static final String ACCOUNT_EXT_ID_ACCOUNT_ID_C_ACCOUNT = "Account:" + EXT_ID_ACCOUNT_ID_C + "/Account";
   private static final String ACCOUNT_ID = "AccountId";
   private StepMockHelper<SalesforceUpsertMeta, SalesforceUpsertData> smh;
 
@@ -78,6 +85,11 @@ public class SalesforceUpsertTest {
             SalesforceUpsertData.class );
     when( smh.logChannelInterfaceFactory.create( any(), any( LoggingObjectInterface.class ) ) ).thenReturn(
         smh.logChannelInterface );
+  }
+
+  @After
+  public void cleanUp() {
+    smh.cleanUp();
   }
 
   @Test
@@ -156,14 +168,15 @@ public class SalesforceUpsertTest {
     rowMeta.addValueMeta( valueMeta );
     smh.initStepDataInterface.inputRowMeta = rowMeta;
 
-    sfInputStep.writeToSalesForce( new Object[] { "tkas88" } );
+    String extIdValue = "tkas88";
+    sfInputStep.writeToSalesForce( new Object[] { extIdValue } );
     assertEquals( 0, data.sfBuffer[0].getFieldsToNull().length );
     assertEquals( 1, SalesforceConnection.getChildren( data.sfBuffer[0] ).length );
     assertEquals( Constants.PARTNER_SOBJECT_NS,
       SalesforceConnection.getChildren( data.sfBuffer[0] )[0].getName().getNamespaceURI() );
     assertEquals( "Account", SalesforceConnection.getChildren( data.sfBuffer[0] )[0].getName().getLocalPart() );
     assertNull( SalesforceConnection.getChildren( data.sfBuffer[0] )[0].getValue() );
-    assertFalse( SalesforceConnection.getChildren( data.sfBuffer[0] )[0].hasChildren() );
+    assertEquals( extIdValue, SalesforceConnection.getChildren( data.sfBuffer[0] )[0].getChild( EXT_ID_ACCOUNT_ID_C ).getValue() );
   }
 
   @Test
@@ -225,4 +238,30 @@ public class SalesforceUpsertTest {
     Assert.assertEquals( sObject.getValue(), 1 );
   }
 
+  @Test
+  public void testSetFieldInSObjectForeignKey() throws Exception {
+    SalesforceUpsert salesforceUpsert =
+      new SalesforceUpsert( smh.stepMeta, smh.stepDataInterface, 0, smh.transMeta, smh.trans );
+
+    SObject sobjPass = new SObject();
+    XmlObject parentObject = new XmlObject();
+    String parentParam = "parentParam";
+    String parentValue = "parentValue";
+    parentObject.setName( new QName( parentParam ) );
+    parentObject.setValue( parentValue );
+
+    String child = "child";
+    String childParam = "childParam";
+    String childValue = "childValue";
+
+    XmlObject childObject = new XmlObject();
+    childObject.setName( new QName( child ) );
+    childObject.setField( childParam, childValue );
+
+    salesforceUpsert.setFieldInSObject( sobjPass, parentObject );
+    salesforceUpsert.setFieldInSObject( sobjPass, childObject );
+
+    Assert.assertEquals( parentValue, sobjPass.getField( parentParam ) );
+    Assert.assertEquals( childValue, ( (SObject) sobjPass.getField( child ) ).getField( childParam ) );
+  }
 }

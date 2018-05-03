@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2017 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -40,6 +40,7 @@ import org.eclipse.swt.events.MouseAdapter;
 import org.eclipse.swt.events.MouseEvent;
 import org.eclipse.swt.events.SelectionAdapter;
 import org.eclipse.swt.events.SelectionEvent;
+import org.eclipse.swt.events.SelectionListener;
 import org.eclipse.swt.events.ShellAdapter;
 import org.eclipse.swt.events.ShellEvent;
 import org.eclipse.swt.graphics.Cursor;
@@ -88,6 +89,7 @@ import org.pentaho.di.ui.core.widget.StyledTextComp;
 import org.pentaho.di.ui.core.widget.TableView;
 import org.pentaho.di.ui.core.widget.TextVar;
 import org.pentaho.di.ui.trans.dialog.TransPreviewProgressDialog;
+import org.pentaho.di.ui.trans.step.ComponentSelectionListener;
 import org.pentaho.di.ui.trans.steps.salesforce.SalesforceStepDialog;
 
 import com.sforce.soap.partner.Field;
@@ -217,6 +219,14 @@ public class SalesforceInputDialog extends SalesforceStepDialog {
         input.setChanged();
       }
     };
+
+    SelectionListener checkBoxModifyListener = new SelectionAdapter() {
+      @Override
+      public void widgetSelected( SelectionEvent e ) {
+        input.setChanged();
+      }
+    };
+
     changed = input.hasChanged();
 
     FormLayout formLayout = new FormLayout();
@@ -362,6 +372,7 @@ public class SalesforceInputDialog extends SalesforceStepDialog {
       @Override
       public void widgetSelected( SelectionEvent e ) {
         setEnableQuery();
+        input.setChanged();
       }
     } );
 
@@ -639,12 +650,14 @@ public class SalesforceInputDialog extends SalesforceStepDialog {
     fdlQueryAll.right = new FormAttachment( middle, -margin );
     wlQueryAll.setLayoutData( fdlQueryAll );
     wQueryAll = new Button( wAdvancedGroup, SWT.CHECK );
+    wQueryAll.addSelectionListener( checkBoxModifyListener );
     props.setLook( wQueryAll );
     wQueryAll.setToolTipText( BaseMessages.getString( PKG, "SalesforceInputDialog.QueryAll.Tooltip" ) );
     FormData fdQueryAll = new FormData();
     fdQueryAll.left = new FormAttachment( middle, 0 );
     fdQueryAll.top = new FormAttachment( wRecordsFilter, margin );
     wQueryAll.setLayoutData( fdQueryAll );
+    wQueryAll.addSelectionListener( new ComponentSelectionListener( input ) );
 
     open = new Button( wAdvancedGroup, SWT.PUSH );
     open.setImage( GUIResource.getInstance().getImageCalendar() );
@@ -807,10 +820,12 @@ public class SalesforceInputDialog extends SalesforceStepDialog {
     fdInclURL.left = new FormAttachment( middle, 0 );
     fdInclURL.top = new FormAttachment( wAdvancedGroup, margin );
     wInclURL.setLayoutData( fdInclURL );
+    wInclURL.addSelectionListener( checkBoxModifyListener );
     wInclURL.addSelectionListener( new SelectionAdapter() {
       @Override
       public void widgetSelected( SelectionEvent e ) {
         setEnableInclTargetURL();
+        input.setChanged();
       }
     } );
 
@@ -846,11 +861,13 @@ public class SalesforceInputDialog extends SalesforceStepDialog {
     fdModule.left = new FormAttachment( middle, 0 );
     fdModule.top = new FormAttachment( wInclURLField, margin );
     wInclModule.setLayoutData( fdModule );
+    wInclModule.addSelectionListener( checkBoxModifyListener );
 
     wInclModule.addSelectionListener( new SelectionAdapter() {
       @Override
       public void widgetSelected( SelectionEvent e ) {
         setEnableInclModule();
+        input.setChanged();
       }
     } );
 
@@ -886,10 +903,12 @@ public class SalesforceInputDialog extends SalesforceStepDialog {
     fdInclSQL.left = new FormAttachment( middle, 0 );
     fdInclSQL.top = new FormAttachment( wInclModuleField, margin );
     wInclSQL.setLayoutData( fdInclSQL );
+    wInclSQL.addSelectionListener( checkBoxModifyListener );
     wInclSQL.addSelectionListener( new SelectionAdapter() {
       @Override
       public void widgetSelected( SelectionEvent e ) {
         setEnableInclSQL();
+        input.setChanged();
       }
     } );
 
@@ -925,10 +944,12 @@ public class SalesforceInputDialog extends SalesforceStepDialog {
     fdInclTimestamp.left = new FormAttachment( middle, 0 );
     fdInclTimestamp.top = new FormAttachment( wInclSQLField, margin );
     wInclTimestamp.setLayoutData( fdInclTimestamp );
+    wInclTimestamp.addSelectionListener( checkBoxModifyListener );
     wInclTimestamp.addSelectionListener( new SelectionAdapter() {
       @Override
       public void widgetSelected( SelectionEvent e ) {
         setEnableInclTimestamp();
+        input.setChanged();
       }
     } );
 
@@ -964,11 +985,13 @@ public class SalesforceInputDialog extends SalesforceStepDialog {
     fdRownum.left = new FormAttachment( middle, 0 );
     fdRownum.top = new FormAttachment( wInclTimestampField, margin );
     wInclRownum.setLayoutData( fdRownum );
+    wInclRownum.addSelectionListener( checkBoxModifyListener );
 
     wInclRownum.addSelectionListener( new SelectionAdapter() {
       @Override
       public void widgetSelected( SelectionEvent e ) {
         setEnableInclRownum();
+        input.setChanged();
       }
     } );
 
@@ -1005,11 +1028,13 @@ public class SalesforceInputDialog extends SalesforceStepDialog {
     fdDeletionDate.left = new FormAttachment( middle, 0 );
     fdDeletionDate.top = new FormAttachment( wInclRownumField, margin );
     wInclDeletionDate.setLayoutData( fdDeletionDate );
+    wInclDeletionDate.addSelectionListener( checkBoxModifyListener );
 
     wInclDeletionDate.addSelectionListener( new SelectionAdapter() {
       @Override
       public void widgetSelected( SelectionEvent e ) {
         setEnableInclDeletionDate();
+        input.setChanged();
       }
     } );
 
@@ -1068,12 +1093,14 @@ public class SalesforceInputDialog extends SalesforceStepDialog {
     fdlUseCompression.right = new FormAttachment( middle, -margin );
     wlUseCompression.setLayoutData( fdlUseCompression );
     wUseCompression = new Button( wContentComp, SWT.CHECK );
+    wUseCompression.addSelectionListener( checkBoxModifyListener );
     props.setLook( wUseCompression );
     wUseCompression.setToolTipText( BaseMessages.getString( PKG, "SalesforceInputDialog.UseCompression.Tooltip" ) );
     FormData fdUseCompression = new FormData();
     fdUseCompression.left = new FormAttachment( middle, 0 );
     fdUseCompression.top = new FormAttachment( wTimeOut, margin );
     wUseCompression.setLayoutData( fdUseCompression );
+    wUseCompression.addSelectionListener( new ComponentSelectionListener( input ) );
 
     // Limit rows
     wlLimit = new Label( wContentComp, SWT.RIGHT );
@@ -1239,6 +1266,7 @@ public class SalesforceInputDialog extends SalesforceStepDialog {
         get();
         shell.setCursor( null );
         busy.dispose();
+        input.setChanged();
       }
     };
     lsPreview = new Listener() {
@@ -1515,6 +1543,8 @@ public class SalesforceInputDialog extends SalesforceStepDialog {
       item.setText( 4, "Number" );
     } else if ( fieldType.equals( "int" ) ) {
       item.setText( 4, "Integer" );
+    } else if ( fieldType.equals( "base64" ) ) {
+      item.setText( 4, "Binary" );
     } else {
       item.setText( 4, "String" );
     }

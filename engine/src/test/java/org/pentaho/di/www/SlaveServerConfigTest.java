@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2014 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2017 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -254,7 +254,7 @@ public class SlaveServerConfigTest {
       xml.append( "</" + XML_TAG_JETTY_OPTIONS + ">" ).append( Const.CR );
     }
     xml.append( "</" + XML_TAG_SLAVE_CONFIG + ">" ).append( Const.CR );
-    System.out.println( xml.toString() );
+//    System.out.println( xml.toString() );
     return xml.toString();
   }
 

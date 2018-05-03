@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2017 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -858,6 +858,26 @@ public class SpoonTransformationDelegate extends SpoonDelegate {
     }
 
     if ( execConfigAnswer ) {
+      TransGraph activeTransGraph = spoon.getActiveTransGraph();
+      activeTransGraph.transLogDelegate.addTransLog();
+
+      // Set the named parameters
+      Map<String, String> paramMap = executionConfiguration.getParams();
+      for ( String key : paramMap.keySet() ) {
+        transMeta.setParameterValue( key, Const.NVL( paramMap.get( key ), "" ) );
+      }
+      transMeta.activateParameters();
+
+      // Set the log level
+      //
+      if ( executionConfiguration.getLogLevel() != null ) {
+        transMeta.setLogLevel( executionConfiguration.getLogLevel() );
+      }
+
+      // Set the run options
+      transMeta.setClearingLog( executionConfiguration.isClearingLog() );
+      transMeta.setSafeModeEnabled( executionConfiguration.isSafeModeEnabled() );
+      transMeta.setGatheringMetrics( executionConfiguration.isGatheringMetrics() );
 
       ExtensionPointHandler.callExtensionPoint( log, KettleExtensionPoint.SpoonTransMetaExecutionStart.id, transMeta );
       ExtensionPointHandler.callExtensionPoint( log, KettleExtensionPoint.SpoonTransExecutionConfiguration.id,
@@ -872,12 +892,9 @@ public class SpoonTransformationDelegate extends SpoonDelegate {
         return;
       }
 
-      TransGraph activeTransGraph = spoon.getActiveTransGraph();
       if ( !executionConfiguration.isExecutingLocally() && !executionConfiguration.isExecutingRemotely() ) {
         if ( transMeta.hasChanged() ) {
           activeTransGraph.showSaveFileMessage();
-        } else {
-          activeTransGraph.transLogDelegate.addTransLog();
         }
       }
 

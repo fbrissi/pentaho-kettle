@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2013 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2017 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -38,6 +38,7 @@ import org.pentaho.di.partition.PartitionSchema;
 import org.pentaho.di.shared.SharedObjects;
 import org.pentaho.di.trans.TransMeta;
 import org.pentaho.metastore.api.IMetaStore;
+import org.pentaho.platform.api.repository2.unified.IUnifiedRepository;
 
 public interface Repository {
 
@@ -752,4 +753,9 @@ public interface Repository {
    *         Metastore.
    */
   public IMetaStore getMetaStore();
+
+  /**
+   * @return repository for connect to server
+   */
+  public IUnifiedRepository getUnderlyingRepository();
 }

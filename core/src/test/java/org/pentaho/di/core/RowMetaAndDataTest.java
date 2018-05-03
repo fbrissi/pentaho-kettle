@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2017 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -35,6 +35,7 @@ import org.pentaho.di.core.row.value.ValueMetaBinary;
 import org.pentaho.di.core.row.value.ValueMetaBoolean;
 import org.pentaho.di.core.row.value.ValueMetaDate;
 import org.pentaho.di.core.row.value.ValueMetaInteger;
+import org.pentaho.di.core.row.value.ValueMetaInternetAddress;
 import org.pentaho.di.core.row.value.ValueMetaNumber;
 import org.pentaho.di.core.row.value.ValueMetaString;
 import org.pentaho.di.core.row.value.ValueMetaTimestamp;
@@ -61,6 +62,22 @@ public class RowMetaAndDataTest {
 
     ValueMetaInterface valueMetaInteger = new ValueMetaInteger( "int" );
     rowsMeta.addValueMeta( valueMetaInteger );
+  }
+
+  @Test
+  public void testMergeRowAndMetaData() {
+    row = new RowMetaAndData( rowsMeta, "text", true, 1 );
+    RowMeta addRowMeta = new RowMeta();
+    ValueMetaInterface valueMetaString = new ValueMetaString( "str" );
+    addRowMeta.addValueMeta( valueMetaString );
+
+    RowMetaAndData addRow = new RowMetaAndData( addRowMeta, "text1" );
+    row.mergeRowMetaAndData( addRow, "originName" );
+
+    assertEquals( 4, row.size() );
+    assertEquals( "text", row.getData()[0] );
+    assertEquals( "text1", row.getData()[3] );
+    assertEquals( "originName", row.getValueMeta( 3 ).getOrigin() );
   }
 
   @Test
@@ -185,7 +202,8 @@ public class RowMetaAndDataTest {
     rowsMetaEmpty.addValueMeta( new ValueMetaBinary( "bin" ) );
     rowsMetaEmpty.addValueMeta( new ValueMetaDate( "date" ) );
     rowsMetaEmpty.addValueMeta( new ValueMetaTimestamp( "timestamp" ) );
-    row = new RowMetaAndData( rowsMetaEmpty, null, null, null, null, null, null, null, null );
+    rowsMetaEmpty.addValueMeta( new ValueMetaInternetAddress( "inet" ) );
+    row = new RowMetaAndData( rowsMetaEmpty, null, null, null, null, null, null, null, null, null );
     assertTrue( row.isEmptyValue( "str" ) );
     assertTrue( row.isEmptyValue( "bool" ) );
     assertTrue( row.isEmptyValue( "int" ) );
@@ -194,5 +212,6 @@ public class RowMetaAndDataTest {
     assertTrue( row.isEmptyValue( "bin" ) );
     assertTrue( row.isEmptyValue( "date" ) );
     assertTrue( row.isEmptyValue( "timestamp" ) );
+    assertTrue( row.isEmptyValue( "inet" ) );
   }
 }

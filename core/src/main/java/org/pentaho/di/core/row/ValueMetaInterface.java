@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2017 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -219,6 +219,14 @@ public interface ValueMetaInterface extends Cloneable {
 
   /** Default integer length for hardcoded metadata integers */
   int DEFAULT_INTEGER_LENGTH = 10;
+
+  static String getTypeDescription( int type ) {
+    try {
+      return typeCodes[ type ];
+    } catch ( Exception e ) {
+      return "unknown/illegal";
+    }
+  }
 
   /**
    * Gets the name.
@@ -1316,5 +1324,21 @@ public interface ValueMetaInterface extends Cloneable {
    */
   String getDatabaseColumnTypeDefinition( DatabaseInterface databaseInterface, String tk, String pk,
     boolean use_autoinc, boolean add_fieldname, boolean add_cr );
+
+  /**
+   * Is Ignore Whitespace
+   * Only applicable for TYPE_STRING comparisons
+   *
+   * @return true if whitespace should be ignored during string comparison
+   */
+  boolean isIgnoreWhitespace();
+
+  /**
+   * Set Ignore Whitespace
+   * Only applicable for TYPE_STRING comparisons
+   *
+   * @param ignoreWhitespace true if whitespace should be ignored during string comparison
+   */
+  void setIgnoreWhitespace( boolean ignoreWhitespace );
 
 }

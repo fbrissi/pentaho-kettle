@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2016 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -49,6 +49,7 @@ import org.pentaho.di.core.variables.VariableSpace;
 import org.pentaho.di.core.xml.XMLHandler;
 import org.pentaho.di.i18n.BaseMessages;
 import org.pentaho.di.job.JobMeta;
+import org.pentaho.di.repository.HasRepositoryDirectories;
 import org.pentaho.di.repository.HasRepositoryInterface;
 import org.pentaho.di.repository.ObjectId;
 import org.pentaho.di.repository.Repository;
@@ -63,6 +64,7 @@ import org.pentaho.di.resource.ResourceEntry;
 import org.pentaho.di.resource.ResourceEntry.ResourceType;
 import org.pentaho.di.resource.ResourceNamingInterface;
 import org.pentaho.di.resource.ResourceReference;
+import org.pentaho.di.trans.StepWithMappingMeta;
 import org.pentaho.di.trans.Trans;
 import org.pentaho.di.trans.TransMeta;
 import org.pentaho.di.trans.TransMeta.TransformationType;
@@ -88,7 +90,8 @@ import org.w3c.dom.Node;
  *
  */
 
-public class JobExecutorMeta extends BaseStepMeta implements StepMetaInterface, HasRepositoryInterface {
+public class JobExecutorMeta extends BaseStepMeta implements StepMetaInterface, HasRepositoryInterface,
+  HasRepositoryDirectories {
   private static Class<?> PKG = JobExecutorMeta.class; // for i18n purposes, needed by Translator2!!
   private String jobName;
   private String fileName;
@@ -643,7 +646,7 @@ public class JobExecutorMeta extends BaseStepMeta implements StepMetaInterface, 
             }
           }
           if ( mappingJobMeta == null ) {
-            mappingJobMeta = new JobMeta( tmpSpace, realFilename, rep, metaStore, null );
+            mappingJobMeta = new JobMeta( null, realFilename, rep, metaStore, null );
             LogChannel.GENERAL.logDetailed( "Loading job from repository", "Job was loaded from XML file ["
               + realFilename + "]" );
           }
@@ -677,11 +680,11 @@ public class JobExecutorMeta extends BaseStepMeta implements StepMetaInterface, 
         } else {
           // rep is null, let's try loading by filename
           try {
-            mappingJobMeta = new JobMeta( tmpSpace, realDirectory + "/" + realJobname, rep, metaStore, null );
+            mappingJobMeta = new JobMeta( null, realDirectory + "/" + realJobname, rep, metaStore, null );
           } catch ( KettleException ke ) {
             try {
               // add .kjb extension and try again
-              mappingJobMeta = new JobMeta( tmpSpace,
+              mappingJobMeta = new JobMeta( null,
                   realDirectory + "/" + realJobname + "." + Const.STRING_JOB_DEFAULT_EXT, rep, metaStore, null );
             } catch ( KettleException ke2 ) {
               throw new KettleException( BaseMessages.getString(
@@ -701,8 +704,15 @@ public class JobExecutorMeta extends BaseStepMeta implements StepMetaInterface, 
     }
 
     // Pass some important information to the mapping transformation metadata:
-    //
-    mappingJobMeta.copyVariablesFrom( space );
+
+    //  When the child parameter does exist in the parent parameters, overwrite the child parameter by the
+    // parent parameter.
+    StepWithMappingMeta.replaceVariableValues( mappingJobMeta, space );
+    if ( executorMeta.getParameters().isInheritingAllVariables() ) {
+      // All other parent parameters need to get copied into the child parameters  (when the 'Inherit all
+      // variables from the transformation?' option is checked)
+      StepWithMappingMeta.addMissingVariables( mappingJobMeta, space );
+    }
     mappingJobMeta.setRepository( rep );
     mappingJobMeta.setMetaStore( metaStore );
     mappingJobMeta.setFilename( mappingJobMeta.getFilename() );
@@ -770,6 +780,22 @@ public class JobExecutorMeta extends BaseStepMeta implements StepMetaInterface, 
     return references;
   }
 
+  /**
+   * This method was created exclusively for tests
+   * to bypass the mock static final method
+   * without using PowerMock
+   *
+   * @param executorMeta
+   * @param rep
+   * @param space
+   * @return JobMeta
+   * @throws KettleException
+   */
+  JobMeta loadJobMetaProxy( JobExecutorMeta executorMeta, Repository rep,
+                           VariableSpace space ) throws KettleException {
+    return loadJobMeta( executorMeta, rep, space );
+  }
+
   @Override
   public String exportResources( VariableSpace space, Map<String, ResourceDefinition> definitions,
     ResourceNamingInterface resourceNamingInterface, Repository repository, IMetaStore metaStore ) throws KettleException {
@@ -782,7 +808,7 @@ public class JobExecutorMeta extends BaseStepMeta implements StepMetaInterface, 
       //
       // First load the executor job metadata...
       //
-      JobMeta executorJobMeta = loadJobMeta( this, repository, space );
+      JobMeta executorJobMeta = loadJobMetaProxy( this, repository, space );
 
       // Also go down into the mapping transformation and export the files
       // there. (mapping recursively down)
@@ -792,10 +818,10 @@ public class JobExecutorMeta extends BaseStepMeta implements StepMetaInterface, 
           executorJobMeta, definitions, resourceNamingInterface, repository, metaStore );
 
       // To get a relative path to it, we inject
-      // ${Internal.Transformation.Filename.Directory}
+      // ${Internal.Entry.Current.Directory}
       //
       String newFilename =
-        "${" + Const.INTERNAL_VARIABLE_TRANSFORMATION_FILENAME_DIRECTORY + "}/" + proposedNewFilename;
+        "${" + Const.INTERNAL_VARIABLE_ENTRY_CURRENT_DIRECTORY + "}/" + proposedNewFilename;
 
       // Set the correct filename inside the XML.
       //
@@ -809,6 +835,8 @@ public class JobExecutorMeta extends BaseStepMeta implements StepMetaInterface, 
       // change it in the job entry
       //
       fileName = newFilename;
+
+      setSpecificationMethod( ObjectLocationSpecificationMethod.FILENAME );
 
       return proposedNewFilename;
     } catch ( Exception e ) {
@@ -916,6 +944,16 @@ public class JobExecutorMeta extends BaseStepMeta implements StepMetaInterface, 
     this.directoryPath = directoryPath;
   }
 
+  @Override
+  public String[] getDirectories() {
+    return new String[]{ directoryPath };
+  }
+
+  @Override
+  public void setDirectories( String[] directories ) {
+    this.directoryPath = directories[0];
+  }
+
   /**
    * @return the fileName
    */
@@ -968,6 +1006,11 @@ public class JobExecutorMeta extends BaseStepMeta implements StepMetaInterface, 
    */
   public ObjectLocationSpecificationMethod getSpecificationMethod() {
     return specificationMethod;
+  }
+
+  @Override
+  public ObjectLocationSpecificationMethod[] getSpecificationMethods() {
+    return new ObjectLocationSpecificationMethod[] { specificationMethod };
   }
 
   /**

@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2017 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -30,19 +30,24 @@ import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.doReturn;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
 
+import org.junit.Assert;
 import org.junit.Test;
+import org.mockito.Mockito;
 import org.pentaho.di.cluster.SlaveServer;
+import org.pentaho.di.core.Const;
 import org.pentaho.di.core.ObjectLocationSpecificationMethod;
 import org.pentaho.di.core.Result;
 import org.pentaho.di.core.database.DatabaseMeta;
@@ -50,9 +55,12 @@ import org.pentaho.di.core.exception.KettleException;
 import org.pentaho.di.core.exception.KettleXMLException;
 import org.pentaho.di.core.logging.LogLevel;
 import org.pentaho.di.core.variables.VariableSpace;
+import org.pentaho.di.core.variables.Variables;
 import org.pentaho.di.job.Job;
 import org.pentaho.di.job.JobMeta;
 import org.pentaho.di.repository.Repository;
+import org.pentaho.di.resource.ResourceNamingInterface;
+import org.pentaho.di.trans.TransMeta;
 import org.pentaho.metastore.api.IMetaStore;
 import org.w3c.dom.Document;
 import org.w3c.dom.Node;
@@ -197,5 +205,66 @@ public class JobEntryTransTest {
     jet.setParentJobMeta( null );
     verify( meta, times( 1 ) ).addCurrentDirectoryChangedListener( any() );
     verify( meta, times( 1 ) ).removeCurrentDirectoryChangedListener( any() );
+  }
+
+  @Test
+  public void testExportResources() throws KettleException {
+    JobEntryTrans jobEntryTrans = spy( getJobEntryTrans() );
+    TransMeta transMeta = mock( TransMeta.class );
+
+    String testName = "test";
+
+    doReturn( transMeta ).when( jobEntryTrans ).getTransMeta( any( Repository.class ),
+            any( VariableSpace.class ) );
+    when( transMeta.exportResources( any( TransMeta.class ), any( Map.class ), any( ResourceNamingInterface.class ),
+            any( Repository.class ), any( IMetaStore.class ) ) ).thenReturn( testName );
+
+    jobEntryTrans.exportResources( null, null, null, null, null );
+
+    verify( transMeta ).setFilename( "${" + Const.INTERNAL_VARIABLE_ENTRY_CURRENT_DIRECTORY + "}/" + testName );
+    verify( jobEntryTrans ).setSpecificationMethod( ObjectLocationSpecificationMethod.FILENAME );
+  }
+
+  @Test
+  public void testGetTransMeta() throws KettleException {
+    String param1 = "param1";
+    String param2 = "param2";
+    String param3 = "param3";
+    String parentValue1 = "parentValue1";
+    String parentValue2 = "parentValue2";
+    String childValue3 = "childValue3";
+
+    JobEntryTrans jobEntryTrans = spy( getJobEntryTrans() );
+    Repository rep = Mockito.mock( Repository.class );
+
+    TransMeta meta = new TransMeta();
+    meta.setVariable( param2, "childValue2 should be override" );
+    meta.setVariable( param3, childValue3 );
+
+    Mockito.doReturn( meta ).when( rep )
+      .loadTransformation( Mockito.eq( "test.ktr" ), Mockito.anyObject(), Mockito.anyObject(), Mockito.anyBoolean(),
+        Mockito.anyObject() );
+
+    VariableSpace parentSpace = new Variables();
+    parentSpace.setVariable( param1, parentValue1 );
+    parentSpace.setVariable( param2, parentValue2 );
+
+    jobEntryTrans.setFileName( "/home/admin/test.ktr" );
+
+    Mockito.doNothing().when( jobEntryTrans ).logBasic( Mockito.anyString() );
+    jobEntryTrans.setSpecificationMethod( ObjectLocationSpecificationMethod.FILENAME );
+
+    TransMeta transMeta;
+    jobEntryTrans.setPassingAllParameters( false );
+    transMeta = jobEntryTrans.getTransMeta( rep, null, parentSpace );
+    Assert.assertEquals( null, transMeta.getVariable( param1 ) );
+    Assert.assertEquals( parentValue2, transMeta.getVariable( param2 ) );
+    Assert.assertEquals( childValue3, transMeta.getVariable( param3 ) );
+
+    jobEntryTrans.setPassingAllParameters( true );
+    transMeta = jobEntryTrans.getTransMeta( rep, null, parentSpace );
+    Assert.assertEquals( parentValue1, transMeta.getVariable( param1 ) );
+    Assert.assertEquals( parentValue2, transMeta.getVariable( param2 ) );
+    Assert.assertEquals( childValue3, transMeta.getVariable( param3 ) );
   }
 }

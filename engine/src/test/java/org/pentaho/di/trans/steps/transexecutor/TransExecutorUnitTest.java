@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2017 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -24,9 +24,13 @@ package org.pentaho.di.trans.steps.transexecutor;
 
 import java.util.Arrays;
 import org.junit.After;
+import org.junit.AfterClass;
+import org.junit.Assert;
 import org.junit.Before;
 import org.junit.BeforeClass;
+import org.junit.ClassRule;
 import org.junit.Test;
+import org.mockito.Mockito;
 import org.pentaho.di.core.KettleEnvironment;
 import org.pentaho.di.core.QueueRowSet;
 import org.pentaho.di.core.Result;
@@ -35,12 +39,14 @@ import org.pentaho.di.core.RowMetaAndData;
 import org.pentaho.di.core.RowSet;
 import org.pentaho.di.core.exception.KettleException;
 import org.pentaho.di.core.exception.KettleStepException;
+import org.pentaho.di.core.logging.LogChannel;
 import org.pentaho.di.core.logging.LogChannelInterface;
 import org.pentaho.di.core.logging.LogLevel;
 import org.pentaho.di.core.row.RowMeta;
 import org.pentaho.di.core.row.RowMetaInterface;
 import org.pentaho.di.core.row.value.ValueMetaString;
 import org.pentaho.di.core.variables.VariableSpace;
+import org.pentaho.di.junit.rules.RestorePDIEngineEnvironment;
 import org.pentaho.di.repository.Repository;
 import org.pentaho.di.trans.Trans;
 import org.pentaho.di.trans.TransMeta;
@@ -67,6 +73,7 @@ import static org.mockito.Mockito.when;
  * @author Andrey Khayrutdinov
  */
 public class TransExecutorUnitTest {
+  @ClassRule public static RestorePDIEngineEnvironment env = new RestorePDIEngineEnvironment();
 
   @BeforeClass
   public static void initKettle() throws Exception {
@@ -96,14 +103,14 @@ public class TransExecutorUnitTest {
 
     doReturn( internalTrans ).when( executor ).createInternalTrans();
     internalResult = new Result();
-    when( internalTrans.getResult() ).thenReturn( internalResult );
+    doReturn( internalResult ).when( internalTrans ).getResult();
 
     meta = new TransExecutorMeta();
     data = new TransExecutorData();
   }
 
   @After
-  public void tearDown() {
+  public void cleanUp() {
     executor = null;
     meta = null;
     data = null;
@@ -396,5 +403,72 @@ public class TransExecutorUnitTest {
     when( stepMeta.getName() ).thenReturn( stepName );
     doReturn( rowSet ).when( executor ).findOutputRowSet( stepName );
     return stepMeta;
+  }
+
+  @Test
+  //PDI-16066
+  public void testExecuteTrans() throws KettleException {
+
+    String childParam = "childParam";
+    String childValue = "childValue";
+    String paramOverwrite = "paramOverwrite";
+    String parentValue = "parentValue";
+
+    meta.getParameters().setVariable( new String[]{ childParam, paramOverwrite } );
+    meta.getParameters().setInput( new String[]{ childValue, childValue } );
+    Trans parent = new Trans();
+    Mockito.when( executor.getTrans() ).thenReturn( parent );
+
+    executor.init( meta, data );
+
+    executor.setVariable( paramOverwrite, parentValue );
+    executor.setVariable( childParam, childValue );
+
+    Mockito.when( executor.getLogLevel() ).thenReturn( LogLevel.NOTHING );
+    parent.setLog( new LogChannel( this ) );
+    Mockito.doCallRealMethod().when( executor ).createInternalTrans( );
+    Mockito.when(  executor.getData().getExecutorTransMeta().listVariables() ).thenReturn( new String[0] );
+    Mockito.when(  executor.getData().getExecutorTransMeta().listParameters() ).thenReturn( new String[0] /*{parentParam}*/ );
+
+    Trans internalTrans = executor.createInternalTrans();
+    executor.getData().setExecutorTrans( internalTrans );
+    executor.passParametersToTrans( Arrays.asList( meta.getParameters().getInput() ) );
+
+    //When the child parameter does exist in the parent parameters, overwrite the child parameter by the parent parameter.
+    Assert.assertEquals( parentValue, internalTrans.getVariable( paramOverwrite ) );
+
+    //All other parent parameters need to get copied into the child parameters  (when the 'Inherit all variables from the transformation?' option is checked)
+    Assert.assertEquals( childValue, internalTrans.getVariable( childParam ) );
+  }
+
+  @Test
+  public void testSafeStop() throws Exception {
+    prepareOneRowForExecutor();
+    meta.setGroupSize( "1" );
+    data.groupSize = 1;
+
+    internalResult.setSafeStop( true );
+
+    executor.init( meta, data );
+    executor.setInputRowMeta( new RowMeta() );
+    assertTrue( executor.processRow( meta, data ) );
+    verify( executor.getTrans() ).safeStop();
+    verify( executor.getTrans(), never() ).stopAll();
+  }
+
+  @Test
+  public void testAbortWithError() throws Exception {
+    prepareOneRowForExecutor();
+    meta.setGroupSize( "1" );
+    data.groupSize = 1;
+
+    internalResult.setSafeStop( false );
+    internalResult.setNrErrors( 1 );
+
+    executor.init( meta, data );
+    executor.setInputRowMeta( new RowMeta() );
+    assertTrue( executor.processRow( meta, data ) );
+    verify( executor.getTrans(), never() ).safeStop();
+    verify( executor.getTrans() ).stopAll();
   }
 }

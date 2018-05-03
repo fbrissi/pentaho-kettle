@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2016 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -22,18 +22,14 @@
 
 package org.pentaho.di.core.plugins;
 
-import java.io.FileInputStream;
-import java.io.InputStream;
 import java.lang.annotation.Annotation;
 import java.util.List;
 import java.util.Map;
 
 import org.apache.commons.vfs2.FileObject;
 import org.pentaho.di.core.Const;
-import org.pentaho.di.core.util.Utils;
 import org.pentaho.di.core.annotations.JobEntry;
 import org.pentaho.di.core.exception.KettlePluginException;
-import org.pentaho.di.core.exception.KettleXMLException;
 import org.pentaho.di.core.vfs.KettleVFS;
 import org.pentaho.di.core.xml.XMLHandler;
 import org.pentaho.di.i18n.BaseMessages;
@@ -82,70 +78,24 @@ public class JobEntryPluginType extends BasePluginType implements PluginTypeInte
     return pluginType;
   }
 
-  /**
-   * Let's put in code here to search for the step plugins..
-   */
-  public void searchPlugins() throws KettlePluginException {
-    registerNatives();
-    registerAnnotations();
-    registerPluginJars();
-    registerXmlPlugins();
+  @Override
+  protected String getXmlPluginFile() {
+    return Const.XML_FILE_KETTLE_JOB_ENTRIES;
   }
 
-  /**
-   * Scan & register internal step plugins
-   */
-  protected void registerNatives() throws KettlePluginException {
-    // Scan the native steps...
-    //
-    String kettleJobEntriesXmlFile = Const.XML_FILE_KETTLE_JOB_ENTRIES;
-    String alternative = System.getProperty( Const.KETTLE_CORE_JOBENTRIES_FILE, null );
-    if ( !Utils.isEmpty( alternative ) ) {
-      kettleJobEntriesXmlFile = alternative;
-    }
-
-    // Load the plugins for this file...
-    //
-    try {
-      InputStream inputStream = getClass().getResourceAsStream( kettleJobEntriesXmlFile );
-      if ( inputStream == null ) {
-        inputStream = getClass().getResourceAsStream( "/" + kettleJobEntriesXmlFile );
-      }
-      // Retry to load a regular file...
-      if ( inputStream == null && !Utils.isEmpty( alternative ) ) {
-        try {
-          inputStream = new FileInputStream( kettleJobEntriesXmlFile );
-        } catch ( Exception e ) {
-          throw new KettlePluginException( "Unable to load native job entries plugins '"
-            + kettleJobEntriesXmlFile + "'", e );
-        }
-      }
-      if ( inputStream == null ) {
-        throw new KettlePluginException( "Unable to find native step definition file: "
-          + Const.XML_FILE_KETTLE_JOB_ENTRIES );
-      }
-      Document document = XMLHandler.loadXMLFile( inputStream, null, true, false );
-
-      // Document document = XMLHandler.loadXMLFile(kettleStepsXmlFile);
-
-      Node entriesNode = XMLHandler.getSubNode( document, "job-entries" );
-      List<Node> entryNodes = XMLHandler.getNodes( entriesNode, "job-entry" );
-      for ( Node entryNode : entryNodes ) {
-        registerPluginFromXmlResource( entryNode, null, this.getClass(), true, null );
-      }
-
-    } catch ( KettleXMLException e ) {
-      throw new KettlePluginException( "Unable to read the kettle job entries XML config file: "
-        + kettleJobEntriesXmlFile, e );
-    }
+  @Override
+  protected String getAlternativePluginFile() {
+    return Const.KETTLE_CORE_JOBENTRIES_FILE;
   }
 
-  /**
-   * Scan & register internal job entry plugins
-   */
-  protected void registerAnnotations() throws KettlePluginException {
-    // This is no longer done because it was deemed too slow. Only jar files in the plugins/ folders are scanned for
-    // annotations.
+  @Override
+  protected String getMainTag() {
+    return "job-entries";
+  }
+
+  @Override
+  protected String getSubTag() {
+    return "job-entry";
   }
 
   protected void registerXmlPlugins() throws KettlePluginException {
@@ -158,10 +108,10 @@ public class JobEntryPluginType extends BasePluginType implements PluginTypeInte
           try {
             Document document = XMLHandler.loadXMLFile( file );
             Node pluginNode = XMLHandler.getSubNode( document, "plugin" );
-
-            registerPluginFromXmlResource(
-              pluginNode, KettleVFS.getFilename( file.getParent() ), this.getClass(), false, file
-                .getParent().getURL() );
+            if ( pluginNode != null ) {
+              registerPluginFromXmlResource( pluginNode, KettleVFS.getFilename( file.getParent() ), this
+                .getClass(), false, file.getParent().getURL() );
+            }
           } catch ( Exception e ) {
             // We want to report this plugin.xml error, perhaps an XML typo or something like that...
             //

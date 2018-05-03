@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2017 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2017 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -44,7 +44,7 @@ public class DialogHelper {
       }
       ExtensionPointHandler.callExtensionPoint( log, KettleExtensionPoint.SpoonOpenSaveRepository.id,
         fileDialogOperation );
-      return fileDialogOperation.getRepositoryObject();
+      return (RepositoryObject) fileDialogOperation.getRepositoryObject();
     } catch ( KettleException ke ) {
       // Ignore
     }

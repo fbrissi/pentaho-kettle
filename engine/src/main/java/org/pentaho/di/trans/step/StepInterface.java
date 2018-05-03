@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2013 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -22,6 +22,8 @@
 
 package org.pentaho.di.trans.step;
 
+import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
@@ -143,6 +145,20 @@ public interface StepInterface extends VariableSpace, HasLogChannelInterface {
    *          true if the step needs to be stopped
    */
   public void setStopped( boolean stopped );
+
+  /**
+   * @param stopped
+   *          true if the step needs to be safe stopped
+   */
+  default void setSafeStopped( boolean stopped ) {
+  }
+
+  /**
+   * @return true if step is safe stopped.
+   */
+  default boolean isSafeStopped() {
+    return false;
+  }
 
   /**
    * @return True if the step is paused
@@ -389,7 +405,7 @@ public interface StepInterface extends VariableSpace, HasLogChannelInterface {
   public void setPartitioned( boolean partitioned );
 
   /**
-   * @param partitioningMethodNone
+   * @param partitioningMethod
    *          The repartitioning method
    */
   public void setRepartitioning( int partitioningMethod );
@@ -448,5 +464,17 @@ public interface StepInterface extends VariableSpace, HasLogChannelInterface {
    *          Sets the index of the active (current) input row set to use.
    */
   public void setCurrentInputRowSetNr( int index );
+
+  default Collection<StepStatus> subStatuses() {
+    return Collections.emptyList();
+  }
+
+  default void addRowSetToInputRowSets( RowSet rowSet ) {
+    getInputRowSets().add( rowSet );
+  }
+
+  default void addRowSetToOutputRowSets( RowSet rowSet ) {
+    getOutputRowSets().add( rowSet );
+  }
 
 }

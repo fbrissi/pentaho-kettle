@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2017 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -28,6 +28,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 import org.pentaho.di.core.RowMetaAndData;
 import org.pentaho.di.core.exception.KettleException;
@@ -42,6 +43,43 @@ public class BeanInjector {
   public BeanInjector( BeanInjectionInfo info ) {
     this.info = info;
   }
+
+  public Object getObject( Object root, String propName ) throws Exception {
+    BeanInjectionInfo.Property prop = info.getProperties().get( propName );
+    if ( prop == null ) {
+      throw new RuntimeException( "Property not found" );
+    }
+    BeanLevelInfo beanLevelInfo = prop.path.get( 1 );
+    return beanLevelInfo.field.get( root );
+  }
+
+  /**
+   * Retrieves the raw prop value from root object.
+   * <p>
+   * The similar {@link #getProperty(Object, String)} method (also in this class )should be
+   * revisited and possibly eliminated.  That version attempts to retrieve indexed prop
+   * vals from lists/arrays, but doesn't provide a way to retrieve the list or array objects
+   * themselves.
+   */
+  public Object getPropVal( Object root, String propName ) {
+    List<BeanLevelInfo> beanInfos = Optional.ofNullable( info.getProperties().get( propName ) )
+      .orElseThrow( () -> new RuntimeException( "Property not found" ) )
+      .path;
+    Object obj = root;
+    for ( int i = 1; i < beanInfos.size(); i++ ) {
+      obj = getObjFromBeanInfo( obj,  beanInfos.get( i ) );
+    }
+    return obj;
+  }
+
+  private Object getObjFromBeanInfo( Object obj, BeanLevelInfo beanLevelInfo ) {
+    try {
+      return beanLevelInfo.field.get( obj );
+    } catch ( IllegalAccessException e ) {
+      throw new RuntimeException( e );
+    }
+  }
+
 
   public Object getProperty( Object root, String propName ) throws Exception {
     List<Integer> extractedIndexes = new ArrayList<>();

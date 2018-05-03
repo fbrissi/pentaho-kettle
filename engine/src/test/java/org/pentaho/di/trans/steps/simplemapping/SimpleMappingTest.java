@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2017 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -23,7 +23,10 @@ package org.pentaho.di.trans.steps.simplemapping;
 
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
-import static org.mockito.Matchers.*;
+import static org.mockito.Matchers.any;
+import static org.mockito.Matchers.anyBoolean;
+import static org.mockito.Matchers.anyInt;
+import static org.mockito.Matchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -104,6 +107,11 @@ public class SimpleMappingTest {
     when( stepMockHelper.processRowsStepMetaInterface.getInputMapping() ).thenReturn( mpIODefMock );
   }
 
+  @After
+  public void cleanUp() {
+    stepMockHelper.cleanUp();
+  }
+
   @Test
   public void testStepSetUpAsWasStarted_AtProcessingFirstRow() throws KettleException {
 
@@ -111,7 +119,7 @@ public class SimpleMappingTest {
         new SimpleMapping( stepMockHelper.stepMeta, stepMockHelper.stepDataInterface, 0, stepMockHelper.transMeta,
             stepMockHelper.trans );
     smp.init( stepMockHelper.initStepMetaInterface, stepMockHelper.initStepDataInterface );
-    smp.getInputRowSets().add( stepMockHelper.getMockInputRowSet( new Object[] {} ) );
+    smp.addRowSetToInputRowSets( stepMockHelper.getMockInputRowSet( new Object[] {} ) );
     assertTrue( "The step is processing in first", smp.first );
     assertTrue( smp.processRow( stepMockHelper.processRowsStepMetaInterface, simpleMpData ) );
     assertFalse( "The step is processing not in first", smp.first );
@@ -174,8 +182,8 @@ public class SimpleMappingTest {
     smp = new SimpleMapping( stepMockHelper.stepMeta, stepMockHelper.stepDataInterface, 0, stepMockHelper.transMeta,
       stepMockHelper.trans );
     smp.init( stepMockHelper.initStepMetaInterface, simpleMpData );
-    smp.getInputRowSets().add( stepMockHelper.getMockInputRowSet( new Object[] { } ) );
-    smp.getInputRowSets().add( stepMockHelper.getMockInputRowSet( new Object[] { } ) );
+    smp.addRowSetToInputRowSets( stepMockHelper.getMockInputRowSet( new Object[] { } ) );
+    smp.addRowSetToInputRowSets( stepMockHelper.getMockInputRowSet( new Object[] { } ) );
 
     assertTrue(
       smp.processRow( stepMockHelper.processRowsStepMetaInterface, stepMockHelper.processRowsStepDataInterface ) );

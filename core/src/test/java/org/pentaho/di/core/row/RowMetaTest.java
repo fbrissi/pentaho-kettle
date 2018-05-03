@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2016 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -22,23 +22,27 @@
 
 package org.pentaho.di.core.row;
 
+import org.apache.commons.io.IOUtils;
 import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
+import org.junit.ClassRule;
 import org.junit.Test;
 import org.pentaho.di.core.KettleClientEnvironment;
 import org.pentaho.di.core.exception.KettlePluginException;
 import org.pentaho.di.core.exception.KettleValueException;
 import org.pentaho.di.core.row.value.ValueMetaBase;
+import org.pentaho.di.core.row.value.ValueMetaDate;
 import org.pentaho.di.core.row.value.ValueMetaFactory;
 import org.pentaho.di.core.row.value.ValueMetaInteger;
 import org.pentaho.di.core.row.value.ValueMetaString;
+import org.pentaho.di.core.row.value.ValueMetaTimestamp;
+import org.pentaho.di.core.xml.XMLHandler;
+import org.pentaho.di.junit.rules.RestorePDIEnvironment;
+import org.w3c.dom.Document;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.io.InputStream;
+import java.util.*;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -46,8 +50,10 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.Mockito.spy;
 
 public class RowMetaTest {
+  @ClassRule public static RestorePDIEnvironment env = new RestorePDIEnvironment();
 
   RowMetaInterface rowMeta = new RowMeta();
   ValueMetaInterface string;
@@ -56,6 +62,7 @@ public class RowMetaTest {
 
   ValueMetaInterface charly;
   ValueMetaInterface dup;
+  ValueMetaInterface bin;
 
   @BeforeClass
   public static void setUpBeforeClass() throws Exception {
@@ -78,6 +85,7 @@ public class RowMetaTest {
     charly = ValueMetaFactory.createValueMeta( "charly", ValueMetaInterface.TYPE_SERIALIZABLE );
 
     dup = ValueMetaFactory.createValueMeta( "dup", ValueMetaInterface.TYPE_SERIALIZABLE );
+    bin = ValueMetaFactory.createValueMeta(  "bin", ValueMetaInterface.TYPE_BINARY );
   }
 
   private List<ValueMetaInterface> generateVList( String[] names, int[] types ) throws KettlePluginException {
@@ -88,6 +96,25 @@ public class RowMetaTest {
       list.add( vm );
     }
     return list;
+  }
+
+  @Test
+  public void testRowMetaInitializingFromXmlNode() throws Exception {
+    String testXmlNode = null;
+    try ( InputStream in = RowMetaTest.class.getResourceAsStream( "rowMetaNode.xml" ) ) {
+      testXmlNode = IOUtils.toString( in );
+    }
+    Document xmlDoc = XMLHandler.loadXMLString( testXmlNode );
+    RowMeta rowMeta = spy( new RowMeta( xmlDoc.getFirstChild() ) );
+    assertEquals( 2, rowMeta.getValueMetaList().size() );
+    ValueMetaInterface valueMeta = rowMeta.getValueMeta( 0 );
+    assertTrue( valueMeta instanceof ValueMetaDate );
+    assertEquals( "testDate", valueMeta.getName() );
+    assertNull( valueMeta.getConversionMask() );
+    valueMeta = rowMeta.getValueMeta( 1 );
+    assertTrue( valueMeta instanceof ValueMetaTimestamp );
+    assertEquals( "testTimestamp", valueMeta.getName() );
+    assertEquals( "yyyy/MM/dd HH:mm:ss.000000000", valueMeta.getConversionMask() );
   }
 
   @Test
@@ -312,16 +339,44 @@ public class RowMetaTest {
   public void testCopyRowMetaCacheConstructor() {
     Map<String, Integer> mapping = new HashMap<>();
     mapping.put( "a", 1 );
-    List<Integer> needRealClone = new ArrayList<>();
-    needRealClone.add( 2 );
-    RowMeta.RowMetaCache rowMetaCache = new RowMeta.RowMetaCache( mapping, needRealClone );
+    RowMeta.RowMetaCache rowMetaCache = new RowMeta.RowMetaCache( mapping );
     RowMeta.RowMetaCache rowMetaCache2 = new RowMeta.RowMetaCache( rowMetaCache );
     assertEquals( rowMetaCache.mapping, rowMetaCache2.mapping );
-    assertEquals( rowMetaCache.needRealClone, rowMetaCache2.needRealClone );
-    rowMetaCache = new RowMeta.RowMetaCache( mapping, null );
+    rowMetaCache = new RowMeta.RowMetaCache( mapping );
     rowMetaCache2 = new RowMeta.RowMetaCache( rowMetaCache );
     assertEquals( rowMetaCache.mapping, rowMetaCache2.mapping );
-    assertNull( rowMetaCache2.needRealClone );
+  }
+
+  @Test
+  public void testNeedRealClone() {
+    RowMeta newRowMeta = new RowMeta();
+    newRowMeta.addValueMeta( string );
+    newRowMeta.addValueMeta( integer );
+    newRowMeta.addValueMeta( date );
+    newRowMeta.addValueMeta( charly );
+    newRowMeta.addValueMeta( dup );
+    newRowMeta.addValueMeta( bin );
+    List<Integer> list = newRowMeta.getOrCreateValuesThatNeedRealClone( newRowMeta.valueMetaList );
+    assertEquals( 3, list.size() ); // Should be charly, dup and bin
+    assertTrue( list.contains( 3 ) ); // charly
+    assertTrue( list.contains( 4 ) ); // dup
+    assertTrue( list.contains( 5 ) ); // bin
+    newRowMeta.addValueMeta( charly ); // should have nulled the newRowMeta.needRealClone
+    assertNull( newRowMeta.needRealClone ); // null because of the new add
+    list = newRowMeta.getOrCreateValuesThatNeedRealClone( newRowMeta.valueMetaList );
+    assertNotNull( newRowMeta.needRealClone );
+    assertEquals( 4, list.size() ); // Should still be charly, dup, bin, charly_1
+    newRowMeta.addValueMeta( bin ); // add new binary, should null out needRealClone again
+    assertNull( newRowMeta.needRealClone ); // null because of the new add
+    list = newRowMeta.getOrCreateValuesThatNeedRealClone( newRowMeta.valueMetaList );
+    assertNotNull( newRowMeta.needRealClone );
+    assertEquals( 5, list.size() ); // Should be charly, dup and bin, charly_1, bin_1
+
+    newRowMeta.addValueMeta( string ); // add new string, should null out needRealClone again
+    assertNull( newRowMeta.needRealClone ); // null because of the new add
+    list = newRowMeta.getOrCreateValuesThatNeedRealClone( newRowMeta.valueMetaList );
+    assertNotNull( newRowMeta.needRealClone );
+    assertEquals( 5, list.size() ); // Should still only be charly, dup and bin, charly_1, bin_1 - adding a string doesn't change of result
   }
 
   // @Test
@@ -436,6 +491,18 @@ public class RowMetaTest {
     assertEquals( "sample", names[0] );
     for ( int i = 1; i < names.length; i++ ) {
       assertEquals( "", names[i] );
+    }
+  }
+
+  @Test
+  public void testHashCode() {
+    rowMeta.clear();
+    byte[] byteArray = new byte[]{ 49, 50, 51 };
+    Object[] objArray = new Object[]{ byteArray };
+    try {
+      assertEquals( 78512, rowMeta.hashCode( objArray ) );
+    } catch (KettleValueException e) {
+      e.printStackTrace();
     }
   }
 

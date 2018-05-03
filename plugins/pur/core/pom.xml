@@ -5,23 +5,23 @@
 
   <artifactId>pdi-pur-plugin-core</artifactId>
   <packaging>jar</packaging>
-  <version>8.0-SNAPSHOT</version>
+  <version>8.2.0.0-SNAPSHOT</version>
 
   <name>PDI PUR Plugin Core</name>
 
   <parent>
     <groupId>org.pentaho.di.plugins</groupId>
     <artifactId>pur</artifactId>
-    <version>8.0-SNAPSHOT</version>
+    <version>8.2.0.0-SNAPSHOT</version>
   </parent>
 
   <properties>
     <!-- Kettle dependencies -->
-    <kettle.version>${project.version}</kettle.version>
+    <pdi.version>8.2.0.0-SNAPSHOT</pdi.version>
 
     <!-- Pentaho dependenceis -->
-    <pentaho-platform.version>${project.version}</pentaho-platform.version>
-    <json.version>${project.version}</json.version>
+    <platform.version>8.2.0.0-SNAPSHOT</platform.version>
+    <pentaho-json.version>8.2.0.0-SNAPSHOT</pentaho-json.version>
 
     <!-- Third party dependencies -->
     <slf4j-api.version>1.7.7</slf4j-api.version>
@@ -38,9 +38,6 @@
     <snakeyaml.version>1.7</snakeyaml.version>
 
     <!-- Test dependencies -->
-    <mockito-core.version>1.9.5</mockito-core.version>
-    <hamcrest-core.version>1.3</hamcrest-core.version>
-    <hamcrest-library.version>1.3</hamcrest-library.version>
     <spring.framework.version>3.2.10.RELEASE</spring.framework.version>
     <spring.security.version>4.1.3.RELEASE</spring.security.version>
     <spring.webflow.version>2.4.4.RELEASE</spring.webflow.version>
@@ -59,26 +56,26 @@
     <dependency>
       <groupId>pentaho-kettle</groupId>
       <artifactId>kettle-core</artifactId>
-      <version>${kettle.version}</version>
+      <version>${pdi.version}</version>
       <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>pentaho-kettle</groupId>
       <artifactId>kettle-engine</artifactId>
-      <version>${kettle.version}</version>
+      <version>${pdi.version}</version>
       <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>pentaho-kettle</groupId>
       <artifactId>kettle-ui-swt</artifactId>
-      <version>${kettle.version}</version>
+      <version>${pdi.version}</version>
       <scope>provided</scope>
     </dependency>
 
     <!-- Pentaho dependencies -->
     <dependency>
-      <groupId>pentaho</groupId>
-      <artifactId>pentaho-xul-core</artifactId>
+      <groupId>org.pentaho</groupId>
+      <artifactId>commons-xul-core</artifactId>
       <scope>provided</scope>
       <exclusions>
         <exclusion>
@@ -88,8 +85,8 @@
       </exclusions>
     </dependency>
     <dependency>
-      <groupId>pentaho</groupId>
-      <artifactId>pentaho-xul-swt</artifactId>
+      <groupId>org.pentaho</groupId>
+      <artifactId>commons-xul-swt</artifactId>
       <scope>provided</scope>
     </dependency>
     <dependency>
@@ -100,13 +97,13 @@
     <dependency>
       <groupId>pentaho</groupId>
       <artifactId>pentaho-platform-core</artifactId>
-      <version>${pentaho-platform.version}</version>
+      <version>${platform.version}</version>
       <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>pentaho</groupId>
       <artifactId>pentaho-platform-api</artifactId>
-      <version>${pentaho-platform.version}</version>
+      <version>${platform.version}</version>
       <scope>provided</scope>
       <exclusions>
         <exclusion>
@@ -118,7 +115,7 @@
     <dependency>
       <groupId>pentaho</groupId>
       <artifactId>pentaho-platform-repository</artifactId>
-      <version>${pentaho-platform.version}</version>
+      <version>${platform.version}</version>
       <scope>provided</scope>
       <exclusions>
         <exclusion>
@@ -130,7 +127,7 @@
     <dependency>
       <groupId>pentaho</groupId>
       <artifactId>pentaho-platform-extensions</artifactId>
-      <version>${pentaho-platform.version}</version>
+      <version>${platform.version}</version>
       <scope>provided</scope>
       <exclusions>
         <exclusion>
@@ -142,7 +139,7 @@
     <dependency>
       <groupId>org.pentaho</groupId>
       <artifactId>json</artifactId>
-      <version>${json.version}</version>
+      <version>${pentaho-json.version}</version>
       <scope>compile</scope>
       <exclusions>
         <exclusion>
@@ -251,21 +248,22 @@
 
     <!-- Test dependencies -->
     <dependency>
-      <groupId>org.mockito</groupId>
-      <artifactId>mockito-core</artifactId>
-      <version>${mockito-core.version}</version>
+      <groupId>org.hamcrest</groupId>
+      <artifactId>java-hamcrest</artifactId>
       <scope>test</scope>
     </dependency>
     <dependency>
-      <groupId>org.hamcrest</groupId>
-      <artifactId>hamcrest-core</artifactId>
-      <version>${hamcrest-core.version}</version>
+      <groupId>pentaho-kettle</groupId>
+      <artifactId>kettle-engine</artifactId>
+      <version>${pdi.version}</version>
+      <classifier>tests</classifier>
       <scope>test</scope>
     </dependency>
     <dependency>
-      <groupId>org.hamcrest</groupId>
-      <artifactId>hamcrest-library</artifactId>
-      <version>${hamcrest-library.version}</version>
+      <groupId>pentaho-kettle</groupId>
+      <artifactId>kettle-core</artifactId>
+      <version>${pdi.version}</version>
+      <classifier>tests</classifier>
       <scope>test</scope>
     </dependency>
     <dependency>
@@ -355,7 +353,7 @@
     <dependency>
       <groupId>pentaho</groupId>
       <artifactId>pentaho-platform-repository</artifactId>
-      <version>${pentaho-platform.version}</version>
+      <version>${platform.version}</version>
       <classifier>tests</classifier>
       <scope>test</scope>
       <exclusions>
@@ -368,7 +366,7 @@
     <dependency>
       <groupId>pentaho</groupId>
       <artifactId>pentaho-platform-core</artifactId>
-      <version>${pentaho-platform.version}</version>
+      <version>${platform.version}</version>
       <classifier>tests</classifier>
       <scope>test</scope>
       <exclusions>
@@ -382,6 +380,16 @@
       <groupId>org.apache.jackrabbit</groupId>
       <artifactId>jackrabbit-core</artifactId>
       <version>${jackrabbit-core.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.powermock</groupId>
+      <artifactId>powermock-module-junit4</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.powermock</groupId>
+      <artifactId>powermock-api-mockito</artifactId>
       <scope>test</scope>
     </dependency>
   </dependencies>
@@ -456,7 +464,7 @@
 
       <!--
         TODO: a case exists to handle these integration tests
-        see: http://jira.pentaho.com/browse/BACKLOG-17551
+        see: https://jira.pentaho.com/browse/BACKLOG-17551
         -->
       <plugin>
         <artifactId>maven-failsafe-plugin</artifactId>

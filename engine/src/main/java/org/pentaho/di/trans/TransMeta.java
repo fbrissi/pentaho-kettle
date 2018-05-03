@@ -3,7 +3,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2017 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -23,20 +23,9 @@
 
 package org.pentaho.di.trans;
 
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Hashtable;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.stream.Collectors;
-
+import com.google.common.annotations.VisibleForTesting;
+import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang.builder.HashCodeBuilder;
 import org.apache.commons.vfs2.FileName;
 import org.apache.commons.vfs2.FileObject;
 import org.apache.commons.vfs2.FileSystemException;
@@ -46,7 +35,6 @@ import org.pentaho.di.cluster.SlaveServer;
 import org.pentaho.di.core.CheckResult;
 import org.pentaho.di.core.CheckResultInterface;
 import org.pentaho.di.core.Const;
-import org.pentaho.di.core.util.Utils;
 import org.pentaho.di.core.Counter;
 import org.pentaho.di.core.DBCache;
 import org.pentaho.di.core.LastUsedFile;
@@ -89,6 +77,7 @@ import org.pentaho.di.core.row.RowMeta;
 import org.pentaho.di.core.row.RowMetaInterface;
 import org.pentaho.di.core.row.ValueMetaInterface;
 import org.pentaho.di.core.util.StringUtil;
+import org.pentaho.di.core.util.Utils;
 import org.pentaho.di.core.variables.VariableSpace;
 import org.pentaho.di.core.vfs.KettleVFS;
 import org.pentaho.di.core.xml.XMLFormatter;
@@ -125,6 +114,20 @@ import org.pentaho.metastore.api.IMetaStore;
 import org.w3c.dom.Document;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
+
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Hashtable;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * This class defines information about a transformation and offers methods to save and load it from XML or a PDI
@@ -285,6 +288,9 @@ public class TransMeta extends AbstractMeta
 
   /** The loop cache. */
   protected Map<String, Boolean> loopCache;
+
+  /** The previous step cache */
+  protected Map<String, List<StepMeta>> previousStepCache;
 
   /** The log channel interface. */
   protected LogChannelInterface log;
@@ -695,6 +701,7 @@ public class TransMeta extends AbstractMeta
 
     stepsFieldsCache = new HashMap<>();
     loopCache = new HashMap<>();
+    previousStepCache = new HashMap<>();
     transformationType = TransformationType.Normal;
 
     log = LogChannel.GENERAL;
@@ -714,6 +721,7 @@ public class TransMeta extends AbstractMeta
       addStepChangeListener( (StepMetaChangeListenerInterface) iface );
     }
     changed_steps = true;
+    clearCaches();
   }
 
   /**
@@ -737,6 +745,7 @@ public class TransMeta extends AbstractMeta
       addStepChangeListener( index, (StepMetaChangeListenerInterface) iface );
     }
     changed_steps = true;
+    clearCaches();
   }
 
   /**
@@ -749,6 +758,7 @@ public class TransMeta extends AbstractMeta
   public void addTransHop( TransHopMeta hi ) {
     hops.add( hi );
     changed_hops = true;
+    clearCaches();
   }
 
   /**
@@ -778,6 +788,7 @@ public class TransMeta extends AbstractMeta
     if ( iface instanceof StepMetaChangeListenerInterface ) {
       addStepChangeListener( p, (StepMetaChangeListenerInterface) stepMeta.getStepMetaInterface() );
     }
+    clearCaches();
   }
 
   /**
@@ -796,6 +807,7 @@ public class TransMeta extends AbstractMeta
       hops.add( hi );
     }
     changed_hops = true;
+    clearCaches();
   }
 
   /**
@@ -828,6 +840,15 @@ public class TransMeta extends AbstractMeta
    */
   public StepMeta getStep( int i ) {
     return steps.get( i );
+  }
+
+  /**
+   * Get a list of defined hops in this transformation.
+   *
+   * @return a list of defined hops.
+   */
+  public List<TransHopMeta> getTransHops() {
+    return Collections.unmodifiableList( hops );
   }
 
   /**
@@ -877,6 +898,7 @@ public class TransMeta extends AbstractMeta
     }
 
     changed_steps = true;
+    clearCaches();
   }
 
   /**
@@ -893,6 +915,7 @@ public class TransMeta extends AbstractMeta
 
     hops.remove( i );
     changed_hops = true;
+    clearCaches();
   }
 
   /**
@@ -905,6 +928,7 @@ public class TransMeta extends AbstractMeta
   public void removeTransHop( TransHopMeta hop ) {
     hops.remove( hop );
     changed_hops = true;
+    clearCaches();
   }
 
   /**
@@ -980,6 +1004,7 @@ public class TransMeta extends AbstractMeta
     }
     steps.set( i, stepMeta );
     stepMeta.setParentTransMeta( this );
+    clearCaches();
   }
 
   /**
@@ -993,6 +1018,7 @@ public class TransMeta extends AbstractMeta
    */
   public void setTransHop( int i, TransHopMeta hi ) {
     hops.set( i, hi );
+    clearCaches();
   }
 
   /**
@@ -1355,16 +1381,20 @@ public class TransMeta extends AbstractMeta
    * @return The list of the preceding steps
    */
   public List<StepMeta> findPreviousSteps( StepMeta stepMeta, boolean info ) {
-    List<StepMeta> previousSteps = new ArrayList<>();
-
-    for ( TransHopMeta hi : hops ) {
-      if ( hi.getToStep() != null && hi.isEnabled() && hi.getToStep().equals( stepMeta ) ) {
-        // Check if this previous step isn't informative (StreamValueLookup)
-        // We don't want fields from this stream to show up!
-        if ( info || !isStepInformative( stepMeta, hi.getFromStep() ) ) {
-          previousSteps.add( hi.getFromStep() );
+    String cacheKey = getStepMetaCacheKey( stepMeta, info );
+    List<StepMeta> previousSteps = previousStepCache.get( cacheKey );
+    if ( previousSteps == null ) {
+      previousSteps = new ArrayList<>();
+      for ( TransHopMeta hi : hops ) {
+        if ( hi.getToStep() != null && hi.isEnabled() && hi.getToStep().equals( stepMeta ) ) {
+          // Check if this previous step isn't informative (StreamValueLookup)
+          // We don't want fields from this stream to show up!
+          if ( info || !isStepInformative( stepMeta, hi.getFromStep() ) ) {
+            previousSteps.add( hi.getFromStep() );
+          }
         }
       }
+      previousStepCache.put( cacheKey, previousSteps );
     }
     return previousSteps;
   }
@@ -1517,12 +1547,14 @@ public class TransMeta extends AbstractMeta
    * @return An array containing the preceding steps.
    */
   public StepMeta[] getPrevSteps( StepMeta stepMeta ) {
-    List<StepMeta> prevSteps = new ArrayList<>();
-    for ( int i = 0; i < nrTransHops(); i++ ) { // Look at all the hops;
-
-      TransHopMeta hopMeta = getTransHop( i );
-      if ( hopMeta.isEnabled() && hopMeta.getToStep().equals( stepMeta ) ) {
-        prevSteps.add( hopMeta.getFromStep() );
+    List<StepMeta> prevSteps = previousStepCache.get( getStepMetaCacheKey( stepMeta, true ) );
+    if ( prevSteps == null ) {
+      prevSteps = new ArrayList<>();
+      for ( int i = 0; i < nrTransHops(); i++ ) { // Look at all the hops;
+        TransHopMeta hopMeta = getTransHop( i );
+        if ( hopMeta.isEnabled() && hopMeta.getToStep().equals( stepMeta ) ) {
+          prevSteps.add( hopMeta.getFromStep() );
+        }
       }
     }
 
@@ -1729,7 +1761,6 @@ public class TransMeta extends AbstractMeta
    *           the kettle step exception
    */
   public RowMetaInterface getStepFields( StepMeta stepMeta, ProgressMonitorListener monitor ) throws KettleStepException {
-    clearStepFieldsCachce();
     setRepositoryOnMappingSteps();
     return getStepFields( stepMeta, null, monitor );
   }
@@ -1781,13 +1812,16 @@ public class TransMeta extends AbstractMeta
 
     // Resume the regular program...
 
+    List<StepMeta> prevSteps = findPreviousSteps( stepMeta, false );
+
+    int nrPrevious = prevSteps.size();
+
     if ( log.isDebug() ) {
       log.logDebug( BaseMessages.getString( PKG, "TransMeta.Log.FromStepALookingAtPreviousStep", stepMeta.getName(),
-          String.valueOf( findNrPrevSteps( stepMeta ) ) ) );
+          String.valueOf( nrPrevious ) ) );
     }
-    int nrPrevious = findNrPrevSteps( stepMeta );
-    for ( int i = 0; i < nrPrevious; i++ ) {
-      StepMeta prevStepMeta = findPrevStep( stepMeta, i );
+    for ( int i = 0; i < prevSteps.size(); i++ ) {
+      StepMeta prevStepMeta = prevSteps.get( i );
 
       if ( monitor != null ) {
         monitor.subTask(
@@ -1850,7 +1884,6 @@ public class TransMeta extends AbstractMeta
    *           the kettle step exception
    */
   public RowMetaInterface getPrevStepFields( String stepname ) throws KettleStepException {
-    clearStepFieldsCachce();
     return getPrevStepFields( findStep( stepname ) );
   }
 
@@ -1864,7 +1897,6 @@ public class TransMeta extends AbstractMeta
    *           the kettle step exception
    */
   public RowMetaInterface getPrevStepFields( StepMeta stepMeta ) throws KettleStepException {
-    clearStepFieldsCachce();
     return getPrevStepFields( stepMeta, null );
   }
 
@@ -1879,21 +1911,33 @@ public class TransMeta extends AbstractMeta
    * @throws KettleStepException
    *           the kettle step exception
    */
-  public RowMetaInterface getPrevStepFields( StepMeta stepMeta, ProgressMonitorListener monitor ) throws KettleStepException {
-    clearStepFieldsCachce();
 
+
+  public RowMetaInterface getPrevStepFields( StepMeta stepMeta, ProgressMonitorListener monitor ) throws KettleStepException {
+    return getPrevStepFields( stepMeta, null, monitor );
+  }
+
+  public RowMetaInterface getPrevStepFields(
+    StepMeta stepMeta, final String stepName, ProgressMonitorListener  monitor )
+    throws KettleStepException {
+    clearStepFieldsCachce();
     RowMetaInterface row = new RowMeta();
 
     if ( stepMeta == null ) {
       return null;
     }
-
+    List<StepMeta> prevSteps = findPreviousSteps( stepMeta );
+    int nrPrevSteps = prevSteps.size();
     if ( log.isDebug() ) {
       log.logDebug( BaseMessages.getString( PKG, "TransMeta.Log.FromStepALookingAtPreviousStep", stepMeta.getName(),
-          String.valueOf( findNrPrevSteps( stepMeta ) ) ) );
+          String.valueOf( nrPrevSteps ) ) );
     }
-    for ( int i = 0; i < findNrPrevSteps( stepMeta ); i++ ) {
-      StepMeta prevStepMeta = findPrevStep( stepMeta, i );
+    StepMeta prevStepMeta = null;
+    for ( int i = 0; i < nrPrevSteps; i++ ) {
+      prevStepMeta = prevSteps.get( i );
+      if  ( stepName != null && !stepName.equalsIgnoreCase( prevStepMeta.getName() ) ) {
+        continue;
+      }
 
       if ( monitor != null ) {
         monitor.subTask(
@@ -2324,6 +2368,40 @@ public class TransMeta extends AbstractMeta
    */
   public String getXML( boolean includeSteps, boolean includeDatabase, boolean includeSlaves, boolean includeClusters,
       boolean includePartitions ) throws KettleException {
+    return getXML( true, true, true, true, true, true, true, true, true, true );
+  }
+
+  /**
+   * Gets the XML representation of this transformation, including or excluding step, database, slave server, cluster,
+   * or partition information as specified by the parameters
+   *
+   * @param includeSteps
+   *          whether to include step data
+   * @param includeDatabase
+   *          whether to include database data
+   * @param includeSlaves
+   *          whether to include slave server data
+   * @param includeClusters
+   *          whether to include cluster data
+   * @param includePartitions
+   *          whether to include partition data
+   * @param includeNamedParameters
+   *          whether to include named parameters data
+   * @param includeLog
+   *          whether to include log data
+   * @param includeDependencies
+   *          whether to include dependencies data
+   * @param includeNotePads
+   *          whether to include notepads data
+   * @param includeAttributeGroups
+   *          whether to include attributes map data
+   * @return the XML representation of this transformation
+   * @throws KettleException
+   *           if any errors occur during generation of the XML
+   */
+  public String getXML( boolean includeSteps, boolean includeDatabase, boolean includeSlaves, boolean includeClusters,
+    boolean includePartitions, boolean includeNamedParameters, boolean includeLog, boolean includeDependencies,
+    boolean includeNotePads, boolean includeAttributeGroups ) throws KettleException {
 
     //Clear the embedded named clusters.  We will be repopulating from steps that used named clusters
     getNamedClusterEmbedManager().clear();
@@ -2351,30 +2429,36 @@ public class TransMeta extends AbstractMeta
     retval.append( "    " ).append( XMLHandler.addTagValue( "directory",
             directory != null ? directory.getPath() : RepositoryDirectory.DIRECTORY_SEPARATOR ) );
 
-    retval.append( "    " ).append( XMLHandler.openTag( XML_TAG_PARAMETERS ) ).append( Const.CR );
-    String[] parameters = listParameters();
-    for ( int idx = 0; idx < parameters.length; idx++ ) {
-      retval.append( "      " ).append( XMLHandler.openTag( "parameter" ) ).append( Const.CR );
-      retval.append( "        " ).append( XMLHandler.addTagValue( "name", parameters[idx] ) );
-      retval.append( "        " )
-          .append( XMLHandler.addTagValue( "default_value", getParameterDefault( parameters[idx] ) ) );
-      retval.append( "        " )
-          .append( XMLHandler.addTagValue( "description", getParameterDescription( parameters[idx] ) ) );
-      retval.append( "      " ).append( XMLHandler.closeTag( "parameter" ) ).append( Const.CR );
+
+    if ( includeNamedParameters ) {
+      retval.append( "    " ).append( XMLHandler.openTag( XML_TAG_PARAMETERS ) ).append( Const.CR );
+      String[] parameters = listParameters();
+      for ( int idx = 0; idx < parameters.length; idx++ ) {
+        retval.append( "      " ).append( XMLHandler.openTag( "parameter" ) ).append( Const.CR );
+        retval.append( "        " ).append( XMLHandler.addTagValue( "name", parameters[idx] ) );
+        retval.append( "        " )
+                .append( XMLHandler.addTagValue( "default_value", getParameterDefault( parameters[idx] ) ) );
+        retval.append( "        " )
+                .append( XMLHandler.addTagValue( "description", getParameterDescription( parameters[idx] ) ) );
+        retval.append( "      " ).append( XMLHandler.closeTag( "parameter" ) ).append( Const.CR );
+      }
+      retval.append( "    " ).append( XMLHandler.closeTag( XML_TAG_PARAMETERS ) ).append( Const.CR );
     }
-    retval.append( "    " ).append( XMLHandler.closeTag( XML_TAG_PARAMETERS ) ).append( Const.CR );
 
-    retval.append( "    " ).append( XMLHandler.openTag( "log" ) ).append( Const.CR );
+    if ( includeLog ) {
+      retval.append( "    " ).append( XMLHandler.openTag( "log" ) ).append( Const.CR );
 
-    // Add the metadata for the various logging tables
-    //
-    retval.append( transLogTable.getXML() );
-    retval.append( performanceLogTable.getXML() );
-    retval.append( channelLogTable.getXML() );
-    retval.append( stepLogTable.getXML() );
-    retval.append( metricsLogTable.getXML() );
+      // Add the metadata for the various logging tables
+      //
+      retval.append( transLogTable.getXML() );
+      retval.append( performanceLogTable.getXML() );
+      retval.append( channelLogTable.getXML() );
+      retval.append( stepLogTable.getXML() );
+      retval.append( metricsLogTable.getXML() );
 
-    retval.append( "    " ).append( XMLHandler.closeTag( "log" ) ).append( Const.CR );
+      retval.append( "    " ).append( XMLHandler.closeTag( "log" ) ).append( Const.CR );
+    }
+
     retval.append( "    " ).append( XMLHandler.openTag( "maxdate" ) ).append( Const.CR );
     retval.append( "      " )
         .append( XMLHandler.addTagValue( "connection", maxDateConnection == null ? "" : maxDateConnection.getName() ) );
@@ -2405,12 +2489,14 @@ public class TransMeta extends AbstractMeta
     retval.append( "    " )
         .append( XMLHandler.addTagValue( "step_performance_capturing_size_limit", stepPerformanceCapturingSizeLimit ) );
 
-    retval.append( "    " ).append( XMLHandler.openTag( XML_TAG_DEPENDENCIES ) ).append( Const.CR );
-    for ( int i = 0; i < nrDependencies(); i++ ) {
-      TransDependency td = getDependency( i );
-      retval.append( td.getXML() );
+    if ( includeDependencies ) {
+      retval.append( "    " ).append( XMLHandler.openTag( XML_TAG_DEPENDENCIES ) ).append( Const.CR );
+      for ( int i = 0; i < nrDependencies(); i++ ) {
+        TransDependency td = getDependency( i );
+        retval.append( td.getXML() );
+      }
+      retval.append( "    " ).append( XMLHandler.closeTag( XML_TAG_DEPENDENCIES ) ).append( Const.CR );
     }
-    retval.append( "    " ).append( XMLHandler.closeTag( XML_TAG_DEPENDENCIES ) ).append( Const.CR );
 
     // The partitioning schemas...
     //
@@ -2458,14 +2544,16 @@ public class TransMeta extends AbstractMeta
 
     retval.append( "  " ).append( XMLHandler.closeTag( XML_TAG_INFO ) ).append( Const.CR );
 
-    retval.append( "  " ).append( XMLHandler.openTag( XML_TAG_NOTEPADS ) ).append( Const.CR );
-    if ( notes != null ) {
-      for ( int i = 0; i < nrNotes(); i++ ) {
-        NotePadMeta ni = getNote( i );
-        retval.append( ni.getXML() );
+    if ( includeNotePads ) {
+      retval.append( "  " ).append( XMLHandler.openTag( XML_TAG_NOTEPADS ) ).append( Const.CR );
+      if ( notes != null ) {
+        for ( int i = 0; i < nrNotes(); i++ ) {
+          NotePadMeta ni = getNote( i );
+          retval.append( ni.getXML() );
+        }
       }
+      retval.append( "  " ).append( XMLHandler.closeTag( XML_TAG_NOTEPADS ) ).append( Const.CR );
     }
-    retval.append( "  " ).append( XMLHandler.closeTag( XML_TAG_NOTEPADS ) ).append( Const.CR );
 
     // The database connections...
     if ( includeDatabase ) {
@@ -2518,8 +2606,9 @@ public class TransMeta extends AbstractMeta
 
     // Also store the attribute groups
     //
-    retval.append( AttributesUtil.getAttributesXml( attributesMap ) );
-
+    if ( includeAttributeGroups ) {
+      retval.append( AttributesUtil.getAttributesXml( attributesMap ) );
+    }
     retval.append( XMLHandler.closeTag( XML_TAG ) ).append( Const.CR );
 
     return XMLFormatter.format( retval.toString() );
@@ -2679,14 +2768,25 @@ public class TransMeta extends AbstractMeta
   public TransMeta( String fname, IMetaStore metaStore, Repository rep, boolean setInternalVariables,
                     VariableSpace parentVariableSpace, OverwritePrompter prompter )
     throws KettleXMLException, KettleMissingPluginsException {
+    // if fname is not provided, there's not much we can do, throw an exception
+    if ( StringUtils.isBlank( fname ) ) {
+      throw new KettleXMLException( BaseMessages.getString( PKG, "TransMeta.Exception.MissingXMLFilePath" ) );
+    }
     this.metaStore = metaStore;
     this.repository = rep;
 
     // OK, try to load using the VFS stuff...
     Document doc = null;
     try {
-      doc = XMLHandler.loadXMLFile( KettleVFS.getFileObject( fname, parentVariableSpace ) );
-    } catch ( KettleFileException e ) {
+      final FileObject transFile = KettleVFS.getFileObject( fname, parentVariableSpace );
+      if ( !transFile.exists() ) {
+        throw new KettleXMLException( BaseMessages.getString( PKG, "TransMeta.Exception.InvalidXMLPath", fname ) );
+      }
+      doc = XMLHandler.loadXMLFile( transFile );
+    } catch ( KettleXMLException ke ) {
+      // if we have a KettleXMLException, simply re-throw it
+      throw ke;
+    } catch ( KettleException | FileSystemException e ) {
       throw new KettleXMLException( BaseMessages.getString(
         PKG, "TransMeta.Exception.ErrorOpeningOrValidatingTheXMLFile", fname ), e );
     }
@@ -3453,17 +3553,12 @@ public class TransMeta extends AbstractMeta
   public boolean isStepUsedInTransHops( StepMeta stepMeta ) {
     TransHopMeta fr = findTransHopFrom( stepMeta );
     TransHopMeta to = findTransHopTo( stepMeta );
-    if ( fr != null || to != null ) {
-      return true;
-    }
-    return false;
+    return fr != null || to != null;
   }
 
   /**
    * Checks if any selected step has been used in a hop or not.
    *
-   * @param stepMeta
-   *          The step queried.
    * @return true if a step is used in a hop (active or not), false otherwise
    */
   public boolean isAnySelectedStepUsedInTransHops() {
@@ -3599,11 +3694,8 @@ public class TransMeta extends AbstractMeta
     if ( havePartitionSchemasChanged() ) {
       return true;
     }
-    if ( haveClusterSchemasChanged() ) {
-      return true;
-    }
+    return haveClusterSchemasChanged();
 
-    return false;
   }
 
   private boolean isErrorNode( Node errorHandingNode, Node checkNode ) {
@@ -3651,7 +3743,27 @@ public class TransMeta extends AbstractMeta
    */
   public boolean hasLoop( StepMeta stepMeta ) {
     clearLoopCache();
-    return hasLoop( stepMeta, null, true ) || hasLoop( stepMeta, null, false );
+    return hasLoop( stepMeta, null );
+  }
+
+  /**
+   * @deprecated use {@link #hasLoop(StepMeta, StepMeta)}}
+   */
+  @Deprecated
+  public boolean hasLoop( StepMeta stepMeta, StepMeta lookup, boolean info ) {
+    return hasLoop( stepMeta, lookup, new HashSet<StepMeta>() );
+  }
+
+  /**
+   * Checks for loop.
+   *
+   * @param stepMeta  the stepmeta
+   * @param lookup the lookup
+   * @return true, if successful
+   */
+
+  public boolean hasLoop( StepMeta stepMeta, StepMeta lookup ) {
+    return hasLoop( stepMeta, lookup, new HashSet<StepMeta>() );
   }
 
   /**
@@ -3662,43 +3774,37 @@ public class TransMeta extends AbstractMeta
    *          The step position to start looking
    * @param lookup
    *          The original step when wandering around the transformation.
-   * @param info
-   *          Check the informational steps or not.
+   * @param checkedEntries
+   *          Already checked entries
    *
    * @return true if a loop has been found, false if no loop is found.
    */
-  private boolean hasLoop( StepMeta stepMeta, StepMeta lookup, boolean info ) {
-    String
-        cacheKey =
-        stepMeta.getName() + " - " + ( lookup != null ? lookup.getName() : "" ) + " - " + ( info ? "true" : "false" );
-    Boolean loop = loopCache.get( cacheKey );
-    if ( loop != null ) {
-      return loop.booleanValue();
+  private boolean hasLoop( StepMeta stepMeta, StepMeta lookup, HashSet<StepMeta> checkedEntries ) {
+    String cacheKey =
+            stepMeta.getName() + " - " + ( lookup != null ? lookup.getName() : "" );
+
+    Boolean hasLoop = loopCache.get( cacheKey );
+
+    if ( hasLoop != null ) {
+      return hasLoop;
     }
 
-    boolean hasLoop = false;
+    hasLoop = false;
 
-    int nr = findNrPrevSteps( stepMeta, info );
-    for ( int i = 0; i < nr && !hasLoop; i++ ) {
-      StepMeta prevStepMeta = findPrevStep( stepMeta, i, info );
-      if ( prevStepMeta != null ) {
-        if ( prevStepMeta.equals( stepMeta ) ) {
-          hasLoop = true;
-          break; // no need to check more but caching this one below
-        } else if ( prevStepMeta.equals( lookup ) ) {
-          hasLoop = true;
-          break; // no need to check more but caching this one below
-        } else if ( hasLoop( prevStepMeta, lookup == null ? stepMeta : lookup, info ) ) {
-          hasLoop = true;
-          break; // no need to check more but caching this one below
-        }
+    checkedEntries.add( stepMeta );
+
+    List<StepMeta> prevSteps = findPreviousSteps( stepMeta, true );
+    int nr = prevSteps.size();
+    for ( int i = 0; i < nr; i++ ) {
+      StepMeta prevStepMeta = prevSteps.get( i );
+      if ( prevStepMeta != null && ( prevStepMeta.equals( lookup )
+              || ( !checkedEntries.contains( prevStepMeta ) && hasLoop( prevStepMeta, lookup == null ? stepMeta : lookup, checkedEntries ) ) ) ) {
+        hasLoop = true;
+        break;
       }
     }
 
-    // Store in the cache...
-    //
-    loopCache.put( cacheKey, Boolean.valueOf( hasLoop ) );
-
+    loopCache.put( cacheKey, hasLoop );
     return hasLoop;
   }
 
@@ -4446,7 +4552,7 @@ public class TransMeta extends AbstractMeta
           stop_checking = true;
         }
 
-        if ( isStepUsedInTransHops( stepMeta ) ) {
+        if ( isStepUsedInTransHops( stepMeta ) || getSteps().size() == 1 ) {
           // Get the input & output steps!
           // Copy to arrays:
           String[] input = getPrevStepNames( stepMeta );
@@ -5081,11 +5187,8 @@ public class TransMeta extends AbstractMeta
       }
     }
 
-    if ( transLogTable.getDatabaseMeta() != null && transLogTable.getDatabaseMeta().equals( databaseMeta ) ) {
-      return true;
-    }
+    return transLogTable.getDatabaseMeta() != null && transLogTable.getDatabaseMeta().equals( databaseMeta );
 
-    return false;
   }
 
   /**
@@ -5485,12 +5588,13 @@ public class TransMeta extends AbstractMeta
    *           in case we detect a row mixing violation
    */
   public void checkRowMixingStatically( StepMeta stepMeta, ProgressMonitorListener monitor ) throws KettleRowException {
-    int nrPrevious = findNrPrevSteps( stepMeta );
+    List<StepMeta> prevSteps = findPreviousSteps( stepMeta );
+    int nrPrevious = prevSteps.size();
     if ( nrPrevious > 1 ) {
       RowMetaInterface referenceRow = null;
       // See if all previous steps send out the same rows...
       for ( int i = 0; i < nrPrevious; i++ ) {
-        StepMeta previousStep = findPrevStep( stepMeta, i );
+        StepMeta previousStep = prevSteps.get( i );
         try {
           RowMetaInterface row = getStepFields( previousStep, monitor ); // Throws KettleStepException
           if ( referenceRow == null ) {
@@ -5684,13 +5788,9 @@ public class TransMeta extends AbstractMeta
    * @return a list of ResourceReferences
    */
   public List<ResourceReference> getResourceDependencies() {
-    List<ResourceReference> resourceReferences = new ArrayList<>();
-
-    for ( StepMeta stepMeta : steps ) {
-      resourceReferences.addAll( stepMeta.getResourceDependencies( this ) );
-    }
-
-    return resourceReferences;
+    return steps.stream()
+      .flatMap( (StepMeta stepMeta) -> stepMeta.getResourceDependencies( this ).stream() )
+      .collect( Collectors.toList() );
   }
 
   /**
@@ -5922,6 +6022,7 @@ public class TransMeta extends AbstractMeta
   public void clearCaches() {
     clearStepFieldsCachce();
     clearLoopCache();
+    clearPreviousStepCache();
   }
 
   /**
@@ -5936,6 +6037,11 @@ public class TransMeta extends AbstractMeta
    */
   private void clearLoopCache() {
     loopCache.clear();
+  }
+
+  @VisibleForTesting
+  void clearPreviousStepCache() {
+    previousStepCache.clear();
   }
 
   /**
@@ -5992,8 +6098,7 @@ public class TransMeta extends AbstractMeta
   /**
    * Sets the log table for the transformation.
    *
-   * @param the
-   *          log table to set
+   * @param transLogTable the log table to set
    */
   public void setTransLogTable( TransLogTable transLogTable ) {
     this.transLogTable = transLogTable;
@@ -6239,4 +6344,64 @@ public class TransMeta extends AbstractMeta
     return namedClusterEmbedManager;
   }
 
+  /**
+   *
+   * @return
+   */
+  public int getCacheVersion() throws KettleException {
+    HashCodeBuilder hashCodeBuilder =  new HashCodeBuilder( 17, 31 )
+        // info
+        .append( this.getName() )
+        .append( this.getTransformationType() )
+        .append( this.getSizeRowset() )
+        .append( this.getSleepTimeEmpty() )
+        .append( this.getSleepTimeFull() )
+        .append( this.isUsingUniqueConnections() )
+        .append( this.isFeedbackShown() )
+        .append( this.getFeedbackSize() )
+        .append( this.isUsingThreadPriorityManagment() )
+        .append( this.getSharedObjectsFile() )
+        .append( this.isCapturingStepPerformanceSnapShots() )
+        .append( this.getStepPerformanceCapturingDelay() )
+        .append( this.getStepPerformanceCapturingSizeLimit() )
+
+        .append( this.getMaxDateConnection() )
+        .append( this.getMaxDateTable() )
+        .append( this.getMaxDateField() )
+        .append( this.getMaxDateOffset() )
+        .append( this.getMaxDateDifference() )
+
+        .append( this.getDependencies() )
+        .append( this.getPartitionSchemas() )
+        .append( this.getSlaveServers() )
+        .append( this.getClusterSchemas() )
+        .append( this.getSlaveStepCopyPartitionDistribution() )
+        .append( this.isSlaveTransformation() )
+
+        .append( this.nrTransHops() )
+
+        // steps
+        .append( this.getSteps().size() )
+        .append( this.getStepNames() )
+
+        // hops
+        .append( this.hops );
+
+    List<StepMeta> steps = this.getSteps();
+
+    for ( StepMeta step : steps ) {
+      hashCodeBuilder
+          .append( step.getName() )
+          .append( step.getStepMetaInterface().getXML() )
+          .append( step.getClusterSchema() )
+          .append( step.getRemoteInputSteps() )
+          .append( step.getRemoteOutputSteps() )
+          .append( step.isDoingErrorHandling() );
+    }
+    return hashCodeBuilder.toHashCode();
+  }
+
+  private static String getStepMetaCacheKey( StepMeta stepMeta, boolean info ) {
+    return String.format( "%1$b-%2$s-%3$s", info, stepMeta.getStepID(), stepMeta.toString() );
+  }
 }

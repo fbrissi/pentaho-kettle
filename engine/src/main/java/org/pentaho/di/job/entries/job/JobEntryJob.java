@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2017 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -57,8 +57,10 @@ import org.pentaho.di.job.JobExecutionConfiguration;
 import org.pentaho.di.job.JobMeta;
 import org.pentaho.di.job.entry.JobEntryBase;
 import org.pentaho.di.job.entry.JobEntryInterface;
+import org.pentaho.di.job.entry.JobEntryRunConfigurableInterface;
 import org.pentaho.di.job.entry.validator.AndValidator;
 import org.pentaho.di.job.entry.validator.JobEntryValidatorUtils;
+import org.pentaho.di.repository.HasRepositoryDirectories;
 import org.pentaho.di.repository.ObjectId;
 import org.pentaho.di.repository.Repository;
 import org.pentaho.di.repository.RepositoryDirectory;
@@ -92,7 +94,7 @@ import java.util.UUID;
  * @since 01-10-2003, Rewritten on 18-06-2004
  *
  */
-public class JobEntryJob extends JobEntryBase implements Cloneable, JobEntryInterface {
+public class JobEntryJob extends JobEntryBase implements Cloneable, JobEntryInterface, HasRepositoryDirectories, JobEntryRunConfigurableInterface {
   private static Class<?> PKG = JobEntryJob.class; // for i18n purposes, needed by Translator2!!
 
   private String filename;
@@ -215,6 +217,16 @@ public class JobEntryJob extends JobEntryBase implements Cloneable, JobEntryInte
 
   public void setDirectory( String directory ) {
     this.directory = directory;
+  }
+
+  @Override
+  public String[] getDirectories() {
+    return new String[]{ directory };
+  }
+
+  @Override
+  public void setDirectories( String[] directories ) {
+    this.directory = directories[0];
   }
 
   public boolean isPassingExport() {
@@ -842,6 +854,10 @@ public class JobEntryJob extends JobEntryBase implements Cloneable, JobEntryInte
             ExtensionPointHandler.callExtensionPoint( log, KettleExtensionPoint.SpoonTransBeforeStart.id, new Object[] {
               executionConfiguration, parentJob.getJobMeta(), jobMeta, rep
             } );
+            if ( !executionConfiguration.isExecutingLocally() && !executionConfiguration.isExecutingRemotely() ) {
+              result.setResult( true );
+              return result;
+            }
             remoteSlaveServer = executionConfiguration.getRemoteServer();
             doFallback = false;
           } catch ( KettleException e ) {
@@ -1342,8 +1358,19 @@ public class JobEntryJob extends JobEntryBase implements Cloneable, JobEntryInte
           }
           break;
         case REPOSITORY_BY_NAME:
-          String realDirectory = tmpSpace.environmentSubstitute( getDirectory() );
-          String realJobName = tmpSpace.environmentSubstitute( getJobName() );
+          String realJobName = getJobName();
+          String realDirectory = "";
+          if ( realJobName.startsWith( "${" ) && realJobName.endsWith( "}" ) ) {
+            String transPath = tmpSpace.environmentSubstitute( realJobName );
+            int index = transPath.lastIndexOf( "/" );
+            if ( index != -1 ) {
+              realJobName = transPath.substring( index + 1 );
+              realDirectory = index == 0 ? "/" : transPath.substring( 0, index );
+            }
+          } else {
+            realJobName = tmpSpace.environmentSubstitute( getJobName() );
+            realDirectory = tmpSpace.environmentSubstitute( getDirectory() );
+          }
 
           if ( rep != null ) {
             realDirectory = r.normalizeSlashes( realDirectory );
@@ -1466,9 +1493,9 @@ public class JobEntryJob extends JobEntryBase implements Cloneable, JobEntryInte
       jobMeta.exportResources( jobMeta, definitions, namingInterface, repository, metaStore );
 
     // To get a relative path to it, we inject
-    // ${Internal.Job.Filename.Directory}
+    // ${Internal.Entry.Current.Directory}
     //
-    String newFilename = "${" + Const.INTERNAL_VARIABLE_JOB_FILENAME_DIRECTORY + "}/" + proposedNewFilename;
+    String newFilename = "${" + Const.INTERNAL_VARIABLE_ENTRY_CURRENT_DIRECTORY + "}/" + proposedNewFilename;
 
     // Set the filename in the job
     //
@@ -1566,6 +1593,10 @@ public class JobEntryJob extends JobEntryBase implements Cloneable, JobEntryInte
     this.followingAbortRemotely = followingAbortRemotely;
   }
 
+  public void setLoggingRemoteWork( boolean loggingRemoteWork ) {
+    // do nothing. for compatibility with JobEntryRunConfigurableInterface
+  }
+
   /**
    * @return the passingAllParameters
    */
@@ -1605,6 +1636,11 @@ public class JobEntryJob extends JobEntryBase implements Cloneable, JobEntryInte
    */
   public ObjectLocationSpecificationMethod getSpecificationMethod() {
     return specificationMethod;
+  }
+
+  @Override
+  public ObjectLocationSpecificationMethod[] getSpecificationMethods() {
+    return new ObjectLocationSpecificationMethod[]{ specificationMethod };
   }
 
   /**

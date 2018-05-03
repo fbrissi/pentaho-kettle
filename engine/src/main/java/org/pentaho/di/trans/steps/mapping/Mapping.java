@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2017 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -23,13 +23,7 @@
 package org.pentaho.di.trans.steps.mapping;
 
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
-import java.util.Map.Entry;
-import java.util.Set;
 
 import com.google.common.annotations.VisibleForTesting;
 import org.pentaho.di.core.Const;
@@ -41,6 +35,7 @@ import org.pentaho.di.core.logging.LogTableField;
 import org.pentaho.di.core.logging.TransLogTable;
 import org.pentaho.di.i18n.BaseMessages;
 import org.pentaho.di.trans.SingleThreadedTransExecutor;
+import org.pentaho.di.trans.StepWithMappingMeta;
 import org.pentaho.di.trans.Trans;
 import org.pentaho.di.trans.TransMeta;
 import org.pentaho.di.trans.TransMeta.TransformationType;
@@ -92,15 +87,16 @@ public class Mapping extends BaseStep implements StepInterface {
 
           // Before we start, let's see if there are loose ends to tie up...
           //
-          if ( !getInputRowSets().isEmpty() ) {
-            for ( RowSet rowSet : new ArrayList<>( getInputRowSets() ) ) {
+          List<RowSet> inputRowSets = getInputRowSets();
+          if ( !inputRowSets.isEmpty() ) {
+            for ( RowSet rowSet : inputRowSets ) {
               // Pass this rowset down to a mapping input step in the
               // sub-transformation...
               //
               if ( mappingInputs.length == 1 ) {
                 // Simple case: only one input mapping. Move the RowSet over
                 //
-                mappingInputs[0].getInputRowSets().add( rowSet );
+                mappingInputs[0].addRowSetToInputRowSets( rowSet );
               } else {
                 // Difficult to see what's going on here.
                 // TODO: figure out where this RowSet needs to go and where it
@@ -111,7 +107,7 @@ public class Mapping extends BaseStep implements StepInterface {
                         + "To solve it, insert a dummy step before the mapping step." );
               }
             }
-            getInputRowSets().clear();
+            clearInputRowSets();
           }
 
           // Do the same thing for remote input steps...
@@ -147,15 +143,16 @@ public class Mapping extends BaseStep implements StepInterface {
 
           // Do the same thing for output row sets
           //
-          if ( !getOutputRowSets().isEmpty() ) {
-            for ( RowSet rowSet : new ArrayList<>( getOutputRowSets() ) ) {
+          List<RowSet> outputRowSets = getOutputRowSets();
+          if ( !outputRowSets.isEmpty() ) {
+            for ( RowSet rowSet : outputRowSets ) {
               // Pass this rowset down to a mapping input step in the
               // sub-transformation...
               //
               if ( mappingOutputs.length == 1 ) {
                 // Simple case: only one output mapping. Move the RowSet over
                 //
-                mappingOutputs[0].getOutputRowSets().add( rowSet );
+                mappingOutputs[0].addRowSetToOutputRowSets( rowSet );
               } else {
                 // Difficult to see what's going on here.
                 // TODO: figure out where this RowSet needs to go and where it
@@ -166,7 +163,7 @@ public class Mapping extends BaseStep implements StepInterface {
                         + "To solve it, insert a dummy step after the mapping step." );
               }
             }
-            getOutputRowSets().clear();
+            clearOutputRowSets();
           }
 
           // Do the same thing for remote output steps...
@@ -245,9 +242,10 @@ public class Mapping extends BaseStep implements StepInterface {
           // }
 
           if ( ( log != null ) && log.isDebug() ) {
-            log.logDebug( "# of input buffers: " + mappingInputs[0].getInputRowSets().size() );
-            if ( mappingInputs[0].getInputRowSets().size() > 0 ) {
-              log.logDebug( "Input buffer 0 size: " + mappingInputs[0].getInputRowSets().get( 0 ).size() );
+            List<RowSet> mappingInputRowSets = mappingInputs[0].getInputRowSets();
+            log.logDebug( "# of input buffers: " + mappingInputRowSets.size() );
+            if ( mappingInputRowSets.size() > 0 ) {
+              log.logDebug( "Input buffer 0 size: " + mappingInputRowSets.get( 0 ).size() );
             }
           }
 
@@ -280,39 +278,6 @@ public class Mapping extends BaseStep implements StepInterface {
     }
   }
 
-  public void setMappingParameters( Trans trans, TransMeta transMeta, MappingParameters mappingParameters )
-    throws KettleException {
-    if ( mappingParameters == null ) {
-      return;
-    }
-
-    Map<String, String> parameters = new HashMap<>();
-    Set<String> subTransParameters = new HashSet<>( Arrays.asList( transMeta.listParameters() ) );
-
-    if ( mappingParameters.isInheritingAllVariables() ) {
-      // This will include parameters
-      for ( String variableName : listVariables() ) {
-        parameters.put( variableName, getVariable( variableName ) );
-      }
-    }
-
-    String[] mappingVariables = mappingParameters.getVariable();
-    String[] inputFields = mappingParameters.getInputField();
-    for ( int i = 0; i < mappingVariables.length; i++ ) {
-      parameters.put( mappingVariables[i], environmentSubstitute( inputFields[i] ) );
-    }
-
-    for ( Entry<String, String> entry : parameters.entrySet() ) {
-      String key = entry.getKey();
-      String value = Const.NVL( entry.getValue(), "" );
-      if ( subTransParameters.contains( key ) ) {
-        trans.setParameterValue( key, Const.NVL( entry.getValue(), "" ) );
-      } else {
-        trans.setVariable( key, value );
-      }
-    }
-    trans.activateParameters();
-  }
 
   public void prepareMappingExecution() throws KettleException {
     initTransFromMeta();
@@ -567,7 +532,14 @@ public class Mapping extends BaseStep implements StepInterface {
 
     // Set the parameters values in the mapping.
     //
-    setMappingParameters( data.mappingTrans, data.mappingTransMeta, meta.getMappingParameters() );
+
+    MappingParameters mappingParameters = meta.getMappingParameters();
+    if ( mappingParameters != null ) {
+      StepWithMappingMeta
+        .activateParams( data.mappingTrans, data.mappingTrans, this, data.mappingTransMeta.listParameters(),
+          mappingParameters.getVariable(), mappingParameters.getInputField() );
+    }
+
   }
 
   void initServletConfig() {

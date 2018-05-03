@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2016 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2017 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -23,10 +23,14 @@
 package org.pentaho.di.trans.steps.sortedmerge;
 
 import org.junit.Before;
+import org.junit.ClassRule;
 import org.junit.Test;
 import org.pentaho.di.core.injection.BaseMetadataInjectionTest;
+import org.pentaho.di.junit.rules.RestorePDIEngineEnvironment;
 
 public class SortedMergeMetaInjectionTest extends BaseMetadataInjectionTest<SortedMergeMeta> {
+  @ClassRule public static RestorePDIEngineEnvironment env = new RestorePDIEngineEnvironment();
+
   @Before
   public void setup() {
     setup( new SortedMergeMeta() );

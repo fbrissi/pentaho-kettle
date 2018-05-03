@@ -3,7 +3,7 @@
  *
  *  Pentaho Data Integration
  *
- *  Copyright (C) 2002-2017 by Pentaho : http://www.pentaho.com
+ *  Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
  *
  * ******************************************************************************
  *
@@ -24,7 +24,6 @@
 
 package org.pentaho.di.engine.api;
 
-import org.pentaho.di.engine.api.converter.RowConversionManager;
 import org.pentaho.di.engine.api.model.Transformation;
 import org.pentaho.di.engine.api.reporting.LogLevel;
 import org.pentaho.di.engine.api.reporting.SubscriptionManager;
@@ -53,8 +52,6 @@ public interface ExecutionContext extends SubscriptionManager {
 
   CompletableFuture<ExecutionResult> execute();
 
-  RowConversionManager getConversionManager();
-
   Principal getActingPrincipal();
 
   void setActingPrincipal( Principal actingPrincipal );
@@ -64,4 +61,12 @@ public interface ExecutionContext extends SubscriptionManager {
   LogLevel getLoggingLogLevel();
 
   void stopTransformation();
+
+  /**
+   * Corresponds to Trans.safeStop()
+   */
+  default void safeStopTransformation() {
+    stopTransformation();
+  }
+
 }

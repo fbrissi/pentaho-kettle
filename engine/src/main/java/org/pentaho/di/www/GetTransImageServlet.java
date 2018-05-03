@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2016 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2017 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -197,9 +197,7 @@ public class GetTransImageServlet extends BaseHttpServlet implements CartePlugin
     transPainter.setMagnification( magnification );
     transPainter.buildTransformationImage();
 
-    BufferedImage image = (BufferedImage) gc.getImage();
-
-    return image;
+    return (BufferedImage) gc.getImage();
   }
 
   public String toString() {

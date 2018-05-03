@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2017 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -34,6 +34,7 @@ import java.util.SortedMap;
 import java.util.SortedSet;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.Collections;
 import org.apache.commons.lang.StringUtils;
 import org.eclipse.swt.widgets.Display;
 import org.pentaho.di.core.Const;
@@ -63,6 +64,7 @@ import org.pentaho.ui.xul.components.XulLabel;
 import org.pentaho.ui.xul.components.XulMessageBox;
 import org.pentaho.ui.xul.components.XulTextbox;
 import org.pentaho.ui.xul.components.XulTreeCell;
+import org.pentaho.ui.xul.components.XulMenuList;
 import org.pentaho.ui.xul.containers.XulDeck;
 import org.pentaho.ui.xul.containers.XulDialog;
 import org.pentaho.ui.xul.containers.XulListbox;
@@ -91,6 +93,8 @@ public class DataHandler extends AbstractXulEventHandler {
   private static final String EXTRA_OPTION_WEB_APPLICATION_NAME = BaseDatabaseMeta.ATTRIBUTE_PREFIX_EXTRA_OPTION
       + "KettleThin.webappname";
   private static final String DEFAULT_WEB_APPLICATION_NAME = "pentaho";
+
+  private List<String> databaseDialects;
 
   // The connectionMap allows us to keep track of the connection
   // type we are working with and the correlating database interface
@@ -176,7 +180,7 @@ public class DataHandler extends AbstractXulEventHandler {
   // MySQL specific
   private XulCheckbox resultStreamingCursorCheck;
 
-  // Pentaho data services specific
+  // Hitachi Vantara data services specific
   private XulTextbox webAppName;
 
   // ==== Options Panel ==== //
@@ -233,12 +237,20 @@ public class DataHandler extends AbstractXulEventHandler {
 
   protected XulTree poolParameterTree;
 
+  protected XulMenuList databaseDialectList;
+
   protected XulButton acceptButton;
   private XulButton cancelButton;
   private XulButton testButton;
   private XulLabel noticeLabel;
 
   public DataHandler() {
+    databaseDialects = new ArrayList<String>();
+    DatabaseInterface[] dialectMetas = DatabaseMeta.getDatabaseInterfaces();
+    for ( DatabaseInterface dialect : dialectMetas ) {
+      databaseDialects.add( dialect.getPluginName() );
+    }
+    Collections.sort( databaseDialects );
   }
 
   public void loadConnectionData() {
@@ -1124,7 +1136,7 @@ public class DataHandler extends AbstractXulEventHandler {
 
     }
     // Have at least 5 option rows, with at least one blank
-    int numToAdd = 5;
+    int numToAdd = 15;
     int numSet = optionsParameterTree.getRootChildren().getItemCount();
     if ( numSet < numToAdd ) {
       numToAdd -= numSet;
@@ -1219,6 +1231,13 @@ public class DataHandler extends AbstractXulEventHandler {
       meta.setPassword( passwordBox.getValue() );
     }
 
+    if ( databaseDialectList != null ) {
+      DatabaseInterface databaseInterface = meta.getDatabaseInterface();
+      if ( databaseInterface instanceof  GenericDatabaseMeta ) {
+        ( (GenericDatabaseMeta) databaseInterface).setDatabaseDialect( databaseDialectList.getValue() );
+      }
+    }
+
     // if(this.portNumberBox != null){
     // meta.setDBPort(portNumberBox.getValue());
     // }
@@ -1307,6 +1326,14 @@ public class DataHandler extends AbstractXulEventHandler {
   private void setConnectionSpecificInfo( DatabaseMeta meta ) {
 
     getControls();
+
+    if ( databaseDialectList != null ) {
+      databaseDialectList.setElements( databaseDialects  );
+      DatabaseInterface databaseInterface = meta.getDatabaseInterface();
+      if ( databaseInterface instanceof  GenericDatabaseMeta ) {
+        databaseDialectList.setSelectedItem( ( (GenericDatabaseMeta) databaseInterface).getDatabaseDialect() );
+      }
+    }
 
     if ( hostNameBox != null ) {
       hostNameBox.setValue( meta.getHostname() );
@@ -1422,6 +1449,7 @@ public class DataHandler extends AbstractXulEventHandler {
     dialogDeck = (XulDeck) document.getElementById( "dialog-panel-deck" );
     deckOptionsBox = (XulListbox) document.getElementById( "deck-options-list" );
     connectionBox = (XulListbox) document.getElementById( "connection-type-list" );
+    databaseDialectList = (XulMenuList) document.getElementById( "database-dialect-list" );
     accessBox = (XulListbox) document.getElementById( "access-type-list" );
     connectionNameBox = (XulTextbox) document.getElementById( "connection-name-text" );
     hostNameBox = (XulTextbox) document.getElementById( "server-host-name-text" );

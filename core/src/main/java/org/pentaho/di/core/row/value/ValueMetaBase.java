@@ -3,7 +3,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2017 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -117,7 +117,7 @@ public class ValueMetaBase implements ValueMetaInterface {
 
   public static final String COMPATIBLE_DATE_FORMAT_PATTERN = "yyyy/MM/dd HH:mm:ss.SSS";
 
-  public static final boolean EMPTY_STRING_AND_NULL_ARE_DIFFERENT = convertStringToBoolean(
+  public static final Boolean EMPTY_STRING_AND_NULL_ARE_DIFFERENT = convertStringToBoolean(
           Const.NVL( System.getProperty( Const.KETTLE_EMPTY_STRING_DIFFERS_FROM_NULL, "N" ), "N" ) );
 
   protected String name;
@@ -176,6 +176,8 @@ public class ValueMetaBase implements ValueMetaInterface {
   protected boolean originalAutoIncrement;
   protected int originalNullable;
   protected boolean originalSigned;
+
+  protected boolean ignoreWhitespace;
 
   private static final LogChannelInterface log = KettleLogStore.getLogChannelInterfaceFactory().create( "ValueMetaBase" );
 
@@ -1045,8 +1047,13 @@ public class ValueMetaBase implements ValueMetaInterface {
       // Do we have a locale?
       //
       if ( dateFormatLocale == null || dateFormatLocale.equals( Locale.getDefault() ) ) {
-        dateFormat = new SimpleDateFormat( mask );
+        if ( mask != null ) {
+          dateFormat = new SimpleDateFormat( mask );
+        }
       } else {
+        if ( mask == null ) {
+          mask = dateFormat.toPattern();
+        }
         dateFormat = new SimpleDateFormat( mask, dateFormatLocale );
       }
 
@@ -1390,8 +1397,8 @@ public class ValueMetaBase implements ValueMetaInterface {
     if ( Utils.isEmpty( string ) ) {
       return null;
     }
-    return Boolean.valueOf( "Y".equalsIgnoreCase( string ) || "TRUE".equalsIgnoreCase( string )
-        || "YES".equalsIgnoreCase( string ) || "1".equals( string ) );
+    return "Y".equalsIgnoreCase( string ) || "TRUE".equalsIgnoreCase( string )
+      || "YES".equalsIgnoreCase( string ) || "1".equals( string );
   }
 
   // BOOLEAN + NUMBER
@@ -3386,10 +3393,12 @@ public class ValueMetaBase implements ValueMetaInterface {
             return Long.parseLong( valueString );
           case TYPE_DATE:
             return XMLHandler.stringToDate( valueString );
+          case TYPE_TIMESTAMP:
+            return XMLHandler.stringToTimestamp( valueString );
           case TYPE_BIGNUMBER:
             return new BigDecimal( valueString );
           case TYPE_BOOLEAN:
-            return Boolean.valueOf( "Y".equalsIgnoreCase( valueString ) );
+            return "Y".equalsIgnoreCase( valueString );
           case TYPE_BINARY:
             return XMLHandler.stringToBinary( XMLHandler.getTagValue( node, "binary-value" ) );
           default:
@@ -3628,6 +3637,11 @@ public class ValueMetaBase implements ValueMetaInterface {
         // compareBinaryStrings((byte[])data1, (byte[])data2); TODO
         String one = getString( data1 );
         String two = getString( data2 );
+
+        if ( ignoreWhitespace ) {
+          one = one.trim();
+          two = two.trim();
+        }
 
         if ( collatorDisabled ) {
           if ( caseInsensitive ) {
@@ -3883,6 +3897,8 @@ public class ValueMetaBase implements ValueMetaInterface {
         return getBoolean( data );
       case TYPE_BINARY:
         return getBinary( data );
+      case TYPE_TIMESTAMP:
+        return getDate( data );
       default:
         throw new KettleValueException( toString() + " : I can't convert the specified value to data type : "
             + conversionMetadata.getType() );
@@ -4594,6 +4610,16 @@ public class ValueMetaBase implements ValueMetaInterface {
   public void setDateFormatTimeZone( TimeZone dateFormatTimeZone ) {
     this.dateFormatTimeZone = dateFormatTimeZone;
     dateFormatChanged = true;
+  }
+
+  @Override
+  public boolean isIgnoreWhitespace() {
+    return ignoreWhitespace;
+  }
+
+  @Override
+  public void setIgnoreWhitespace( boolean ignoreWhitespace ) {
+    this.ignoreWhitespace = ignoreWhitespace;
   }
 
   @Override

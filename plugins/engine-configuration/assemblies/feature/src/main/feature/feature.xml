@@ -3,7 +3,7 @@
   ~
   ~  Pentaho Data Integration
   ~
-  ~  Copyright (C) 2002-2017 by Pentaho : http://www.pentaho.com
+  ~  Copyright (C) 2002-2018 by Pentaho : http://www.pentaho.com
   ~
   ~  *******************************************************************************
   ~  Licensed under the Apache License, Version 2.0 (the "License"); you may not use
@@ -25,12 +25,12 @@
 <features xmlns="http://karaf.apache.org/xmlns/features/v1.0.0">
 
   <feature name="pdi-engine-configuration" version="1.0">
-    <bundle>mvn:org.pentaho.di.plugins/pdi-engine-configuration-impl/${kettle.version}</bundle>
+    <bundle>mvn:org.pentaho.di.plugins/pdi-engine-configuration-impl/${pdi.version}</bundle>
   </feature>
 
   <feature name="pdi-engine-configuration-ui" version="1.0">
     <feature>pdi-engine-configuration</feature>
-    <bundle>mvn:org.pentaho.di.plugins/pdi-engine-configuration-ui/${kettle.version}</bundle>
+    <bundle>mvn:org.pentaho.di.plugins/pdi-engine-configuration-ui/${pdi.version}</bundle>
   </feature>
 
 </features>

@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2016 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -26,6 +26,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.math.BigDecimal;
 
+import org.apache.poi.ss.usermodel.BorderStyle;
+import org.apache.poi.ss.usermodel.FillPatternType;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellStyle;
@@ -50,12 +52,15 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
-import static org.junit.Assert.*;
 import static org.junit.Assert.assertEquals;
-import static org.mockito.Matchers.*;
-import static org.mockito.Mockito.*;
+import static org.junit.Assert.assertFalse;
+import static org.mockito.Matchers.any;
+import static org.mockito.Matchers.anyObject;
+import static org.mockito.Matchers.anyString;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 
 /**
@@ -240,8 +245,8 @@ public class ExcelWriterStep_StyleFormatTest {
     // Cell F1 has custom style applied, used as template
     Cell cell = xlsRow.createCell( 5 );
     CellStyle cellStyle = stepData.wb.createCellStyle();
-    cellStyle.setBorderRight( CellStyle.BORDER_THICK );
-    cellStyle.setFillPattern( CellStyle.FINE_DOTS );
+    cellStyle.setBorderRight( BorderStyle.THICK );
+    cellStyle.setFillPattern( FillPatternType.FINE_DOTS );
     cell.setCellStyle( cellStyle );
 
     // Cell G1 has same style, but also a custom data format
@@ -273,9 +278,9 @@ public class ExcelWriterStep_StyleFormatTest {
     when( mockOutputRowMeta.size() ).thenReturn( outFields.length );
     when( inputRowSet.getRowMeta() ).thenReturn( inputRowMeta );
 
-    step.getInputRowSets().add( inputRowSet );
+    step.addRowSetToInputRowSets( inputRowSet );
     step.setInputRowMeta( inputRowMeta );
-    step.getOutputRowSets().add( inputRowSet );
+    step.addRowSetToOutputRowSets( inputRowSet );
   }
 
   /**

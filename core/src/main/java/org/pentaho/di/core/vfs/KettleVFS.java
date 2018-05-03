@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2017 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -22,15 +22,6 @@
 
 package org.pentaho.di.core.vfs;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.util.Comparator;
-
 import org.apache.commons.vfs2.FileContent;
 import org.apache.commons.vfs2.FileName;
 import org.apache.commons.vfs2.FileObject;
@@ -39,8 +30,8 @@ import org.apache.commons.vfs2.FileSystemManager;
 import org.apache.commons.vfs2.FileSystemOptions;
 import org.apache.commons.vfs2.cache.WeakRefFilesCache;
 import org.apache.commons.vfs2.impl.DefaultFileSystemManager;
+import org.apache.commons.vfs2.impl.StandardFileSystemManager;
 import org.apache.commons.vfs2.provider.local.LocalFile;
-import org.apache.commons.vfs2.provider.sftp.SftpFileObject;
 import org.pentaho.di.core.Const;
 import org.pentaho.di.core.exception.KettleFileException;
 import org.pentaho.di.core.util.UUIDUtil;
@@ -51,7 +42,18 @@ import org.pentaho.di.core.vfs.configuration.KettleFileSystemConfigBuilderFactor
 import org.pentaho.di.core.vfs.configuration.KettleGenericFileSystemConfigBuilder;
 import org.pentaho.di.i18n.BaseMessages;
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.util.Comparator;
+
 public class KettleVFS {
+  public static final String TEMP_DIR = System.getProperty( "java.io.tmpdir" );
+
   private static Class<?> PKG = KettleVFS.class; // for i18n purposes, needed by Translator2!!
 
   private static final KettleVFS kettleVFS = new KettleVFS();
@@ -146,20 +148,11 @@ public class KettleVFS {
         }
       }
 
-      FileObject fileObject = null;
-
       if ( fsOptions != null ) {
-        fileObject = fsManager.resolveFile( filename, fsOptions );
+        return fsManager.resolveFile( filename, fsOptions );
       } else {
-        fileObject = fsManager.resolveFile( filename );
+        return fsManager.resolveFile( filename );
       }
-
-      if ( fileObject instanceof SftpFileObject ) {
-        fileObject = new SftpFileObjectWithWindowsSupport( (SftpFileObject) fileObject,
-                SftpFileSystemWindowsProvider.getSftpFileSystemWindows( (SftpFileObject) fileObject ) );
-      }
-
-      return fileObject;
     } catch ( IOException e ) {
       throw new KettleFileException( "Unable to get VFS File object for filename '"
         + cleanseFilename( vfsFilename ) + "' : " + e.getMessage(), e );
@@ -376,8 +369,58 @@ public class KettleVFS {
     return fileObject.getName().getFriendlyURI();
   }
 
+  /**
+   * Creates a file using "java.io.tmpdir" directory
+   *
+   * @param prefix - file name
+   * @param prefix - file extension
+   * @return FileObject
+   * @throws KettleFileException
+   */
+  public static FileObject createTempFile( String prefix, Suffix suffix ) throws KettleFileException {
+    return createTempFile( prefix, suffix, TEMP_DIR );
+  }
+
+  /**
+   * Creates a file using "java.io.tmpdir" directory
+   *
+   * @param prefix        - file name
+   * @param suffix        - file extension
+   * @param variableSpace is used to get system variables
+   * @return FileObject
+   * @throws KettleFileException
+   */
+  public static FileObject createTempFile( String prefix, Suffix suffix, VariableSpace variableSpace )
+    throws KettleFileException {
+    return createTempFile( prefix, suffix, TEMP_DIR, variableSpace );
+  }
+
+  /**
+   *
+   * @param prefix    - file name
+   * @param suffix    - file extension
+   * @param directory - directory where file will be created
+   * @return FileObject
+   * @throws KettleFileException
+   */
+  public static FileObject createTempFile( String prefix, Suffix suffix, String directory ) throws KettleFileException {
+    return createTempFile( prefix, suffix, directory, null );
+  }
+
   public static FileObject createTempFile( String prefix, String suffix, String directory ) throws KettleFileException {
     return createTempFile( prefix, suffix, directory, null );
+  }
+
+  /**
+   * @param prefix    - file name
+   * @param directory path to directory where file will be created
+   * @param space     is used to get system variables
+   * @return FileObject
+   * @throws KettleFileException
+   */
+  public static FileObject createTempFile( String prefix, Suffix suffix, String directory, VariableSpace space )
+    throws KettleFileException {
+    return createTempFile( prefix, suffix.ext, directory, space );
   }
 
   public static FileObject createTempFile( String prefix, String suffix, String directory, VariableSpace space ) throws KettleFileException {
@@ -444,7 +487,7 @@ public class KettleVFS {
     boolean found = false;
     String[] schemes = fsManager.getSchemes();
     for ( int i = 0; i < schemes.length; i++ ) {
-      if ( vfsFileName.startsWith( schemes[i] + ":" ) ) {
+      if ( vfsFileName.startsWith( schemes[ i ] + ":" ) ) {
         found = true;
         break;
       }
@@ -457,6 +500,35 @@ public class KettleVFS {
     if ( getInstance().getFileSystemManager() instanceof ConcurrentFileSystemManager ) {
       ( (ConcurrentFileSystemManager) getInstance().getFileSystemManager() )
         .closeEmbeddedFileSystem( embeddedMetastoreKey );
+    }
+  }
+
+  public void reset() {
+    defaultVariableSpace = new Variables();
+    defaultVariableSpace.initializeVariablesFrom( null );
+    fsm.close();
+    try {
+      fsm.setFilesCache( new WeakRefFilesCache() );
+      fsm.init();
+    } catch ( FileSystemException ignored ) {
+    }
+
+  }
+
+  /**
+   * @see StandardFileSystemManager#freeUnusedResources()
+   */
+  public static void freeUnusedResources() {
+    ( (StandardFileSystemManager) getInstance().getFileSystemManager() ).freeUnusedResources();
+  }
+
+  public enum Suffix {
+    ZIP( ".zip" ), TMP( ".tmp" ), JAR( ".jar" );
+
+    private String ext;
+
+    Suffix( String ext ) {
+      this.ext = ext;
     }
   }
 

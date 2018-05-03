@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2016 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -24,10 +24,10 @@ package org.pentaho.di.trans.steps.loadfileinput;
 
 import java.io.BufferedInputStream;
 import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.util.Date;
 import java.util.List;
 
+import org.apache.commons.io.IOUtils;
 import org.apache.commons.vfs2.FileObject;
 import org.pentaho.di.core.Const;
 import org.pentaho.di.core.util.Utils;
@@ -57,16 +57,16 @@ import org.pentaho.di.trans.step.StepMetaInterface;
 public class LoadFileInput extends BaseStep implements StepInterface {
   private static Class<?> PKG = LoadFileInputMeta.class; // for i18n purposes, needed by Translator2!!
 
-  private LoadFileInputMeta meta;
-  private LoadFileInputData data;
+  LoadFileInputMeta meta;
+  LoadFileInputData data;
 
   public LoadFileInput( StepMeta stepMeta, StepDataInterface stepDataInterface, int copyNr, TransMeta transMeta,
     Trans trans ) {
     super( stepMeta, stepDataInterface, copyNr, transMeta, trans );
   }
 
-  private void addFileToResultFilesname( FileObject file ) throws Exception {
-    if ( meta.addResultFile() ) {
+  private void addFileToResultFilesName( FileObject file ) throws Exception {
+    if ( meta.getAddResultFile() ) {
       // Add this to the result file names...
       ResultFile resultFile =
         new ResultFile( ResultFile.FILE_TYPE_GENERAL, file, getTransMeta().getName(), getStepname() );
@@ -77,7 +77,7 @@ public class LoadFileInput extends BaseStep implements StepInterface {
 
   boolean openNextFile() {
     try {
-      if ( meta.getIsInFields() ) {
+      if ( meta.getFileInFields() ) {
         data.readrow = getRow(); // Grab another row ...
 
         if ( data.readrow == null ) { // finished processing!
@@ -96,10 +96,10 @@ public class LoadFileInput extends BaseStep implements StepInterface {
           meta.getFields( data.outputRowMeta, getStepname(), null, null, this, repository, metaStore );
 
           // Create convert meta-data objects that will contain Date & Number formatters
-          //
+          // All non binary content is handled as a String. It would be converted to the target type after the processing.
           data.convertRowMeta = data.outputRowMeta.cloneToType( ValueMetaInterface.TYPE_STRING );
 
-          if ( meta.getIsInFields() ) {
+          if ( meta.getFileInFields() ) {
             // Check is filename field is provided
             if ( Utils.isEmpty( meta.getDynamicFilenameField() ) ) {
               logError( BaseMessages.getString( PKG, "LoadFileInput.Log.NoField" ) );
@@ -131,20 +131,11 @@ public class LoadFileInput extends BaseStep implements StepInterface {
             PKG, "LoadFileInput.Log.Stream", meta.getDynamicFilenameField(), Fieldvalue ) );
         }
 
-        FileObject file = null;
         try {
           // Source is a file.
           data.file = KettleVFS.getFileObject( Fieldvalue );
         } catch ( Exception e ) {
           throw new KettleException( e );
-        } finally {
-          try {
-            if ( file != null ) {
-              file.close();
-            }
-          } catch ( Exception e ) {
-            // Ignore errors
-          }
         }
       } else {
         if ( data.filenr >= data.files.nrOfFiles() ) {
@@ -206,7 +197,7 @@ public class LoadFileInput extends BaseStep implements StepInterface {
         // get File content
         getFileContent();
 
-        addFileToResultFilesname( data.file );
+        addFileToResultFilesName( data.file );
 
         if ( isDetailed() ) {
           logDetailed( BaseMessages.getString( PKG, "LoadFileInput.Log.FileOpened", data.file.toString() ) );
@@ -255,9 +246,9 @@ public class LoadFileInput extends BaseStep implements StepInterface {
 
   }
 
-  private void getFileContent() throws KettleException {
+  void getFileContent() throws KettleException {
     try {
-      data.filecontent = getTextFileContent( data.file.toString(), meta.getEncoding() );
+      data.filecontent = getFileBinaryContent( data.file.toString() );
     } catch ( java.lang.OutOfMemoryError o ) {
       logError( "There is no enaugh memory to load the content of the file [" + data.file.getName() + "]" );
       throw new KettleException( o );
@@ -267,46 +258,24 @@ public class LoadFileInput extends BaseStep implements StepInterface {
   }
 
   /**
-   * Read a text file.
+   * Read a file.
    *
    * @param vfsFilename
    *          the filename or URL to read from
-   * @param charSetName
-   *          the character set of the string (UTF-8, ISO8859-1, etc)
-   * @return The content of the file as a String
+   * @return The content of the file as a byte[]
    * @throws KettleException
    */
-  public static String getTextFileContent( String vfsFilename, String encoding ) throws KettleException {
+  public static byte[] getFileBinaryContent( String vfsFilename ) throws KettleException {
     InputStream inputStream = null;
-    InputStreamReader reader = null;
 
-    String retval = null;
+    byte[] retval = null;
     try {
       inputStream = KettleVFS.getInputStream( vfsFilename );
-
-      if ( !Utils.isEmpty( encoding ) ) {
-        reader = new InputStreamReader( new BufferedInputStream( inputStream ), encoding );
-      } else {
-        reader = new InputStreamReader( new BufferedInputStream( inputStream ) );
-      }
-
-      int c;
-      StringBuilder StringBuilder = new StringBuilder();
-      while ( ( c = reader.read() ) != -1 ) {
-        StringBuilder.append( (char) c );
-      }
-
-      retval = StringBuilder.toString();
+      retval = IOUtils.toByteArray( new BufferedInputStream( inputStream ) );
     } catch ( Exception e ) {
       throw new KettleException( BaseMessages.getString(
         PKG, "LoadFileInput.Error.GettingFileContent", vfsFilename, e.toString() ) );
     } finally {
-      if ( reader != null ) {
-        try {
-          reader.close();
-        } catch ( Exception e ) { /* Ignore */
-        }
-      }
       if ( inputStream != null ) {
         try {
           inputStream.close();
@@ -351,7 +320,7 @@ public class LoadFileInput extends BaseStep implements StepInterface {
     return rowData;
   }
 
-  private Object[] getOneRow() throws KettleException {
+  Object[] getOneRow() throws KettleException {
     if ( !openNextFile() ) {
       return null;
     }
@@ -362,7 +331,7 @@ public class LoadFileInput extends BaseStep implements StepInterface {
     try {
       // Create new row or clone
       if ( meta.getIsInFields() ) {
-        System.arraycopy( data.readrow, 0, outputRowData, 0, data.readrow.length );
+        outputRowData = data.readrow.clone();
       }
 
       // Read fields...
@@ -370,25 +339,51 @@ public class LoadFileInput extends BaseStep implements StepInterface {
         // Get field
         LoadFileInputField loadFileInputField = meta.getInputFields()[i];
 
-        String o = null;
+        Object o = null;
+        int indexField = data.totalpreviousfields + i;
+        ValueMetaInterface targetValueMeta = data.outputRowMeta.getValueMeta( indexField );
+        ValueMetaInterface sourceValueMeta = data.convertRowMeta.getValueMeta( indexField );
+
         switch ( loadFileInputField.getElementType() ) {
           case LoadFileInputField.ELEMENT_TYPE_FILECONTENT:
 
             // DO Trimming!
             switch ( loadFileInputField.getTrimType() ) {
               case LoadFileInputField.TYPE_TRIM_LEFT:
-                data.filecontent = Const.ltrim( data.filecontent );
+                if ( meta.getEncoding() != null ) {
+                  data.filecontent = Const.ltrim( new String( data.filecontent, meta.getEncoding() ) ).getBytes();
+                } else {
+                  data.filecontent = Const.ltrim( new String( data.filecontent ) ).getBytes();
+                }
                 break;
               case LoadFileInputField.TYPE_TRIM_RIGHT:
-                data.filecontent = Const.rtrim( data.filecontent );
+                if ( meta.getEncoding() != null ) {
+                  data.filecontent = Const.rtrim( new String( data.filecontent, meta.getEncoding() ) ).getBytes();
+                } else {
+                  data.filecontent = Const.rtrim( new String( data.filecontent ) ).getBytes();
+                }
                 break;
               case LoadFileInputField.TYPE_TRIM_BOTH:
-                data.filecontent = Const.trim( data.filecontent );
+                if ( meta.getEncoding() != null ) {
+                  data.filecontent = Const.trim( new String( data.filecontent, meta.getEncoding() ) ).getBytes();
+                } else {
+                  data.filecontent = Const.trim( new String( data.filecontent ) ).getBytes();
+                }
                 break;
               default:
                 break;
             }
-            o = data.filecontent;
+            if ( targetValueMeta.getType() != ValueMetaInterface.TYPE_BINARY ) {
+              // handle as a String
+              if (  meta.getEncoding() != null ) {
+                o = new String( data.filecontent, meta.getEncoding() );
+              } else {
+                o = new String( data.filecontent );
+              }
+            } else {
+              // save as byte[] without any conversion
+              o = data.filecontent;
+            }
             break;
           case LoadFileInputField.ELEMENT_TYPE_FILESIZE:
             o = String.valueOf( data.fileSize );
@@ -397,12 +392,13 @@ public class LoadFileInput extends BaseStep implements StepInterface {
             break;
         }
 
-        int indexField = data.totalpreviousfields + i;
-        // Do conversions
-        //
-        ValueMetaInterface targetValueMeta = data.outputRowMeta.getValueMeta( indexField );
-        ValueMetaInterface sourceValueMeta = data.convertRowMeta.getValueMeta( indexField );
-        outputRowData[indexField] = targetValueMeta.convertData( sourceValueMeta, o );
+        if ( targetValueMeta.getType() == ValueMetaInterface.TYPE_BINARY ) {
+          // save as byte[] without any conversion
+          outputRowData[indexField] = o;
+        } else {
+          // convert string (processing type) to the target type
+          outputRowData[indexField] = targetValueMeta.convertData( sourceValueMeta, o );
+        }
 
         // Do we need to repeat this field if it is null?
         if ( loadFileInputField.isRepeated() ) {
@@ -460,7 +456,7 @@ public class LoadFileInput extends BaseStep implements StepInterface {
       data.rownr++;
 
     } catch ( Exception e ) {
-      throw new KettleException( "Impossible de charger le fichier", e );
+      throw new KettleException( "Error during processing a row", e );
     }
 
     return outputRowData;
@@ -482,7 +478,7 @@ public class LoadFileInput extends BaseStep implements StepInterface {
                                                                                                         // populated
 
           // Create convert meta-data objects that will contain Date & Number formatters
-          //
+          // All non binary content is handled as a String. It would be converted to the target type after the processing.
           data.convertRowMeta = data.outputRowMeta.cloneToType( ValueMetaInterface.TYPE_STRING );
         } catch ( Exception e ) {
           logError( "Error at step initialization: " + e.toString() );

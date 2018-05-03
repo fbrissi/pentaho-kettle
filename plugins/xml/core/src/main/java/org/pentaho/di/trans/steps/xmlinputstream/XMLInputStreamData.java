@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2017 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -23,6 +23,7 @@
 package org.pentaho.di.trans.steps.xmlinputstream;
 
 import java.io.InputStream;
+import java.util.Map;
 
 import javax.xml.stream.XMLEventReader;
 import javax.xml.stream.XMLInputFactory;
@@ -39,6 +40,7 @@ import org.pentaho.di.trans.step.StepDataInterface;
 public class XMLInputStreamData extends BaseStepData implements StepDataInterface {
 
   public RowMetaInterface outputRowMeta;
+  public RowMetaInterface finalOutputRowMeta;
 
   public XMLInputFactory staxInstance;
 
@@ -52,6 +54,9 @@ public class XMLInputStreamData extends BaseStepData implements StepDataInterfac
   public long nrRowsToSkip;
   public long rowLimit;
   public String encoding;
+  public int previousFieldsNumber = 0;
+  public Map<String, Object[]> inputDataRows;
+  public Object[] currentInputRow;
 
   // runtime data
   public Long rowNumber;

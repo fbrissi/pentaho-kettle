@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2017 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2017 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -24,10 +24,13 @@ package org.pentaho.di.trans.steps.analyticquery;
 
 
 import org.junit.Before;
+import org.junit.ClassRule;
 import org.junit.Test;
 import org.pentaho.di.core.injection.BaseMetadataInjectionTest;
+import org.pentaho.di.junit.rules.RestorePDIEngineEnvironment;
 
 public class AnalyticQueryMetaInjectionTest extends BaseMetadataInjectionTest<AnalyticQueryMeta> {
+  @ClassRule public static RestorePDIEngineEnvironment env = new RestorePDIEngineEnvironment();
   @Before
   public void setup() {
     setup( new AnalyticQueryMeta() );

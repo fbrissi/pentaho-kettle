@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2013 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2017 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -53,7 +53,10 @@ public @interface Step {
 
   String description() default "";
 
-  String image();
+  /**
+   * @return The image resource path
+   */
+  String image() default "";
 
   /**
    * @return True if a separate class loader is needed every time this class is instantiated
@@ -66,9 +69,18 @@ public @interface Step {
 
   String i18nPackageName() default "";
 
+  /**
+   * @return The documentation url
+   */
   String documentationUrl() default "";
 
+  /**
+   * @return The cases url
+   */
   String casesUrl() default "";
 
+  /**
+   * @return The forum url
+   */
   String forumUrl() default "";
 }

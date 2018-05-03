@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2017 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -198,8 +198,12 @@ public abstract class AbstractMeta implements ChangedFlagInterface, UndoInterfac
 
   protected int undo_position;
 
+  protected RunOptions runOptions = new RunOptions();
+
   private boolean showDialog = true;
   private boolean alwaysShowRunOptions = true;
+
+  private Boolean versioningEnabled;
 
   public boolean isShowDialog() {
     return showDialog;
@@ -1489,6 +1493,16 @@ public abstract class AbstractMeta implements ChangedFlagInterface, UndoInterfac
   /*
    * (non-Javadoc)
    *
+   * @see org.pentaho.di.core.parameters.NamedParams#mergeParametersWith(org.pentaho.di.core.parameters.NamedParams, boolean replace)
+   */
+  @Override
+  public void mergeParametersWith( NamedParams params, boolean replace ) {
+    namedParams.mergeParametersWith( params, replace );
+  }
+
+  /*
+   * (non-Javadoc)
+   *
    * @see org.pentaho.di.core.parameters.NamedParams#activateParameters()
    */
   @Override
@@ -2068,4 +2082,39 @@ public abstract class AbstractMeta implements ChangedFlagInterface, UndoInterfac
     this.embeddedMetastoreProviderKey = embeddedMetastoreProviderKey;
   }
 
+  @Override
+  public void setVersioningEnabled( Boolean versioningEnabled ) {
+    this.versioningEnabled = versioningEnabled;
+  }
+
+  @Override
+  public Boolean getVersioningEnabled() {
+    return this.versioningEnabled;
+  }
+
+  private class RunOptions {
+    boolean clearingLog;
+    boolean safeModeEnabled;
+
+    RunOptions() {
+      clearingLog = true;
+      safeModeEnabled = false;
+    }
+  }
+
+  public boolean isClearingLog() {
+    return runOptions.clearingLog;
+  }
+
+  public void setClearingLog( boolean clearingLog ) {
+    this.runOptions.clearingLog = clearingLog;
+  }
+
+  public boolean isSafeModeEnabled() {
+    return runOptions.safeModeEnabled;
+  }
+
+  public void setSafeModeEnabled( boolean safeModeEnabled ) {
+    this.runOptions.safeModeEnabled = safeModeEnabled;
+  }
 }

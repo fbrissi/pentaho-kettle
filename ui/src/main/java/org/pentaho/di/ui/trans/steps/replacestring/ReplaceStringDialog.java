@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2016 by Pentaho : http://www.pentaho.com
+ * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -21,12 +21,6 @@
  ******************************************************************************/
 
 package org.pentaho.di.ui.trans.steps.replacestring;
-
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
 
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.events.ModifyEvent;
@@ -47,10 +41,10 @@ import org.eclipse.swt.widgets.Shell;
 import org.eclipse.swt.widgets.TableItem;
 import org.eclipse.swt.widgets.Text;
 import org.pentaho.di.core.Const;
-import org.pentaho.di.core.util.Utils;
 import org.pentaho.di.core.exception.KettleException;
 import org.pentaho.di.core.row.RowMetaInterface;
 import org.pentaho.di.core.row.ValueMetaInterface;
+import org.pentaho.di.core.util.Utils;
 import org.pentaho.di.i18n.BaseMessages;
 import org.pentaho.di.trans.TransMeta;
 import org.pentaho.di.trans.step.BaseStepMeta;
@@ -62,6 +56,12 @@ import org.pentaho.di.ui.core.widget.ColumnInfo;
 import org.pentaho.di.ui.core.widget.TableView;
 import org.pentaho.di.ui.trans.step.BaseStepDialog;
 import org.pentaho.di.ui.trans.step.TableItemInsertListener;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * Search and replace in string.
@@ -142,7 +142,7 @@ public class ReplaceStringDialog extends BaseStepDialog implements StepDialogInt
     fdlKey.top = new FormAttachment( wStepname, 2 * margin );
     wlKey.setLayoutData( fdlKey );
 
-    int nrFieldCols = 9;
+    int nrFieldCols = 10;
     int nrFieldRows = ( input.getFieldInStream() != null ? input.getFieldInStream().length : 1 );
 
     ciKey = new ColumnInfo[nrFieldCols];
@@ -185,6 +185,10 @@ public class ReplaceStringDialog extends BaseStepDialog implements StepDialogInt
       new ColumnInfo(
         BaseMessages.getString( PKG, "ReplaceStringDialog.ColumnInfo.CaseSensitive" ),
         ColumnInfo.COLUMN_TYPE_CCOMBO, ReplaceStringMeta.caseSensitiveDesc );
+    ciKey[9] =
+      new ColumnInfo(
+        BaseMessages.getString( PKG, "ReplaceStringDialog.ColumnInfo.IsUnicode" ),
+        ColumnInfo.COLUMN_TYPE_CCOMBO, ReplaceStringMeta.isUnicodeDesc );
 
     ciKey[1].setToolTip( BaseMessages.getString( PKG, "ReplaceStringDialog.ColumnInfo.OutStreamField.Tooltip" ) );
     ciKey[1].setUsingVariables( true );
@@ -343,6 +347,7 @@ public class ReplaceStringDialog extends BaseStepDialog implements StepDialogInt
 
         item.setText( 8, ReplaceStringMeta.getWholeWordDesc( input.getWholeWord()[i] ) );
         item.setText( 9, ReplaceStringMeta.getCaseSensitiveDesc( input.getCaseSensitive()[i] ) );
+        item.setText( 10, ReplaceStringMeta.getIsUnicodeDesc( input.isUnicode()[i] ) );
       }
     }
 
@@ -388,6 +393,7 @@ public class ReplaceStringDialog extends BaseStepDialog implements StepDialogInt
 
       inf.getWholeWord()[i] = ReplaceStringMeta.getWholeWordByDesc( item.getText( 8 ) );
       inf.getCaseSensitive()[i] = ReplaceStringMeta.getCaseSensitiveByDesc( item.getText( 9 ) );
+      inf.isUnicode()[i] = ReplaceStringMeta.getIsUnicodeByDesc( item.getText( 10 ) );
     }
 
     stepname = wStepname.getText(); // return value
@@ -416,6 +422,7 @@ public class ReplaceStringDialog extends BaseStepDialog implements StepDialogInt
               tableItem.setText( 6, BaseMessages.getString( PKG, "System.Combo.No" ) );
               tableItem.setText( 8, BaseMessages.getString( PKG, "System.Combo.No" ) );
               tableItem.setText( 9, BaseMessages.getString( PKG, "System.Combo.No" ) );
+              tableItem.setText( 10, BaseMessages.getString( PKG, "System.Combo.No" ) );
               return true;
             } else {
               return false;

@@ -1,5 +1,5 @@
 /*!
- * Copyright 2017 Pentaho Corporation. All rights reserved.
+ * Copyright 2017 Hitachi Vantara. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,9 +15,8 @@
  */
 
 define([
-  "../../../components/utils",
   "angular"
-], function(utils, angular) {
+], function(angular) {
   resize.$inject = ["$window", "$timeout"];
 
   /**
@@ -27,15 +26,12 @@ define([
    */
   function resize($window, $timeout) {
     return {
-      restrict: "A",
-      link: function(scope, element, attrs) {
+      restrict: "E",
+      link: function(scope) {
         var w = angular.element($window);
 
-        scope.$watch(attrs.resizeFolders, function() {
-          resizeFolderWidths();
-        });
-
         w.on("resize", function() {
+          scope.vm.width = 0;
           $timeout(function() {
             resizeFolderWidths();
             scope.$apply();
@@ -47,11 +43,7 @@ define([
          * or to the client width of the folder container
          */
         function resizeFolderWidths() {
-          var maxWidth = scope.vm.maxWidth;
-          var clientWidth = element[0].parentElement.parentElement.clientWidth;
-          var overflowAuto = maxWidth > clientWidth;
-          scope.vm.width = maxWidth > clientWidth ? maxWidth : clientWidth;
-          angular.element(element[0].parentElement.parentElement).css("overflow-x", overflowAuto ? "auto" : "hidden");
+          scope.vm.width = document.getElementById("directoryTreeArea").scrollWidth;
         }
       }
     };
