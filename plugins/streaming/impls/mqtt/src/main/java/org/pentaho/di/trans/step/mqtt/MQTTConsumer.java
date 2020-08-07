@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2020 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -22,7 +22,6 @@
 
 package org.pentaho.di.trans.step.mqtt;
 
-import com.google.common.base.Preconditions;
 import org.pentaho.di.core.row.RowMeta;
 import org.pentaho.di.trans.Trans;
 import org.pentaho.di.trans.TransMeta;
@@ -39,21 +38,21 @@ import static org.pentaho.di.i18n.BaseMessages.getString;
  * Streaming consumer of MQTT input.  @see <a href="http://mqtt.org/">mqtt</a>
  */
 public class MQTTConsumer extends BaseStreamStep implements StepInterface {
-  private static Class<?> PKG = MQTTConsumer.class; // for i18n purposes, needed by Translator2!!   $NON-NLS-1$
+  private static final  Class<?> PKG = MQTTConsumer.class; // for i18n purposes, needed by Translator2!!   $NON-NLS-1$
   public MQTTConsumer( StepMeta stepMeta, StepDataInterface stepDataInterface, int copyNr, TransMeta transMeta,
                        Trans trans ) {
     super( stepMeta, stepDataInterface, copyNr, transMeta, trans );
 
   }
 
-  public boolean init( StepMetaInterface stepMetaInterface, StepDataInterface stepDataInterface ) {
+  @Override public boolean init( StepMetaInterface stepMetaInterface, StepDataInterface stepDataInterface ) {
     boolean init = super.init( stepMetaInterface, stepDataInterface );
-    Preconditions.checkNotNull( stepMetaInterface );
-    MQTTConsumerMeta mqttConsumerMeta = (MQTTConsumerMeta) stepMetaInterface;
+    MQTTConsumerMeta mqttConsumerMeta = (MQTTConsumerMeta) this.variablizedStepMeta;
 
     try {
       RowMeta rowMeta = mqttConsumerMeta.getRowMeta( getStepname(), this );
-      window = new FixedTimeStreamWindow<>( subtransExecutor, rowMeta, getDuration(), getBatchSize() );
+      window =
+        new FixedTimeStreamWindow<>( getSubtransExecutor(), rowMeta, getDuration(), getBatchSize(), getParallelism() );
       source = new MQTTStreamSource( mqttConsumerMeta, this );
     } catch ( Exception e ) {
       getLogChannel().logError( getString( PKG, "MQTTInput.Error.FailureGettingFields" ), e );

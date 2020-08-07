@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2019 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -31,7 +31,10 @@ package org.pentaho.di.trans.steps.pgbulkloader;
 //
 
 import java.math.BigDecimal;
+import java.nio.charset.Charset;
 import java.sql.Connection;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.Statement;
 
 import org.pentaho.di.core.Const;
@@ -67,6 +70,7 @@ import org.postgresql.PGConnection;
 public class PGBulkLoader extends BaseStep implements StepInterface {
   private static Class<?> PKG = PGBulkLoaderMeta.class; // for i18n purposes, needed by Translator2!!
 
+  private Charset clientEncoding = Charset.defaultCharset();
   private PGBulkLoaderMeta meta;
   private PGBulkLoaderData data;
   private PGCopyOutputStream pgCopyOut;
@@ -133,11 +137,36 @@ public class PGBulkLoader extends BaseStep implements StepInterface {
     return contents.toString();
   }
 
+  void checkClientEncoding() throws Exception {
+    Connection connection = data.db.getConnection();
+
+    Statement statement = connection.createStatement();
+
+    try {
+      try ( ResultSet rs = statement.executeQuery( "show client_encoding" ) ) {
+        if ( !rs.next() || rs.getMetaData().getColumnCount() != 1 ) {
+          logBasic( "Cannot detect client_encoding, using system default encoding" );
+          return;
+        }
+
+        String clientEncodingStr = rs.getString( 1 );
+        logBasic( "Detect client_encoding: " + clientEncodingStr );
+        clientEncoding = Charset.forName( clientEncodingStr );
+      }
+    } catch ( SQLException | IllegalArgumentException ex ) {
+      logError( "Cannot detect PostgreSQL client_encoding, using system default encoding", ex );
+    } finally {
+      statement.close();
+    }
+  }
+
   private void do_copy( PGBulkLoaderMeta meta, boolean wait ) throws KettleException {
     data.db = getDatabase( this, meta );
     String copyCmd = getCopyCommand();
     try {
       connect();
+
+      checkClientEncoding();
 
       processTruncate();
 
@@ -209,7 +238,7 @@ public class PGBulkLoader extends BaseStep implements StepInterface {
 
         // Close the output stream...
         // will be null if no records (empty stream)
-        if ( data != null ) {
+        if ( data != null && pgCopyOut != null ) {
           pgCopyOut.flush();
           pgCopyOut.endCopy();
 
@@ -252,7 +281,8 @@ public class PGBulkLoader extends BaseStep implements StepInterface {
     }
   }
 
-  private void writeRowToPostgres( RowMetaInterface rowMeta, Object[] r ) throws KettleException {
+  @VisibleForTesting
+  void writeRowToPostgres( RowMetaInterface rowMeta, Object[] r ) throws KettleException {
 
     try {
       // So, we have this output stream to which we can write CSV data to.
@@ -280,15 +310,16 @@ public class PGBulkLoader extends BaseStep implements StepInterface {
               // We need to escape the quote characters in every string
               String quoteStr = new String( data.quote );
               String escapedString = valueMeta.getString( valueData ).replace( quoteStr, quoteStr + quoteStr );
-              pgCopyOut.write( escapedString.getBytes() );
+              pgCopyOut.write( escapedString.getBytes( clientEncoding ) );
 
               pgCopyOut.write( data.quote );
               break;
             case ValueMetaInterface.TYPE_INTEGER:
+            case ValueMetaInterface.TYPE_BOOLEAN:
               if ( valueMeta.isStorageBinaryString() ) {
                 pgCopyOut.write( (byte[]) valueData );
               } else {
-                pgCopyOut.write( Long.toString( valueMeta.getInteger( valueData ) ).getBytes() );
+                pgCopyOut.write( Long.toString( valueMeta.getInteger( valueData ) ).getBytes( clientEncoding ) );
               }
               break;
             case ValueMetaInterface.TYPE_DATE:
@@ -303,7 +334,7 @@ public class PGBulkLoader extends BaseStep implements StepInterface {
                   } else {
                     String dateString = valueMeta.getString( valueData );
                     if ( dateString != null ) {
-                      pgCopyOut.write( dateString.getBytes() );
+                      pgCopyOut.write( dateString.getBytes( clientEncoding ) );
                     }
                   }
                   break;
@@ -313,7 +344,7 @@ public class PGBulkLoader extends BaseStep implements StepInterface {
                 case PGBulkLoaderMeta.NR_DATE_MASK_DATE:
                   String dateString = data.dateMeta.getString( valueMeta.getDate( valueData ) );
                   if ( dateString != null ) {
-                    pgCopyOut.write( dateString.getBytes() );
+                    pgCopyOut.write( dateString.getBytes( clientEncoding ) );
                   }
                   break;
 
@@ -322,7 +353,7 @@ public class PGBulkLoader extends BaseStep implements StepInterface {
                 case PGBulkLoaderMeta.NR_DATE_MASK_DATETIME:
                   String dateTimeString = data.dateTimeMeta.getString( valueMeta.getDate( valueData ) );
                   if ( dateTimeString != null ) {
-                    pgCopyOut.write( dateTimeString.getBytes() );
+                    pgCopyOut.write( dateTimeString.getBytes( clientEncoding ) );
                   }
                   break;
 
@@ -342,7 +373,7 @@ public class PGBulkLoader extends BaseStep implements StepInterface {
                   } else {
                     String dateString = valueMeta.getString( valueData );
                     if ( dateString != null ) {
-                      pgCopyOut.write( dateString.getBytes() );
+                      pgCopyOut.write( dateString.getBytes( clientEncoding ) );
                     }
                   }
                   break;
@@ -352,7 +383,7 @@ public class PGBulkLoader extends BaseStep implements StepInterface {
                 case PGBulkLoaderMeta.NR_DATE_MASK_DATE:
                   String dateString = data.dateMeta.getString( valueMeta.getDate( valueData ) );
                   if ( dateString != null ) {
-                    pgCopyOut.write( dateString.getBytes() );
+                    pgCopyOut.write( dateString.getBytes( clientEncoding ) );
                   }
                   break;
 
@@ -361,7 +392,7 @@ public class PGBulkLoader extends BaseStep implements StepInterface {
                 case PGBulkLoaderMeta.NR_DATE_MASK_DATETIME:
                   String dateTimeString = data.dateTimeMeta.getString( valueMeta.getDate( valueData ) );
                   if ( dateTimeString != null ) {
-                    pgCopyOut.write( dateTimeString.getBytes() );
+                    pgCopyOut.write( dateTimeString.getBytes( clientEncoding ) );
                   }
                   break;
 
@@ -369,18 +400,11 @@ public class PGBulkLoader extends BaseStep implements StepInterface {
                   throw new KettleException( "PGBulkLoader doesn't know how to handle timestamp (neither passthrough, nor date or datetime for field " + valueMeta.getName() );
               }
               break;
-            case ValueMetaInterface.TYPE_BOOLEAN:
-              if ( valueMeta.isStorageBinaryString() ) {
-                pgCopyOut.write( (byte[]) valueData );
-              } else {
-                pgCopyOut.write( Double.toString( valueMeta.getNumber( valueData ) ).getBytes() );
-              }
-              break;
             case ValueMetaInterface.TYPE_NUMBER:
               if ( valueMeta.isStorageBinaryString() ) {
                 pgCopyOut.write( (byte[]) valueData );
               } else {
-                pgCopyOut.write( Double.toString( valueMeta.getNumber( valueData ) ).getBytes() );
+                pgCopyOut.write( Double.toString( valueMeta.getNumber( valueData ) ).getBytes( clientEncoding ) );
               }
               break;
             case ValueMetaInterface.TYPE_BIGNUMBER:
@@ -389,7 +413,7 @@ public class PGBulkLoader extends BaseStep implements StepInterface {
               } else {
                 BigDecimal big = valueMeta.getBigNumber( valueData );
                 if ( big != null ) {
-                  pgCopyOut.write( big.toString().getBytes() );
+                  pgCopyOut.write( big.toString().getBytes( clientEncoding ) );
                 }
               }
               break;
@@ -408,6 +432,13 @@ public class PGBulkLoader extends BaseStep implements StepInterface {
 
   }
 
+  protected void verifyDatabaseConnection() throws KettleException {
+    // Confirming Database Connection is defined.
+    if ( meta.getDatabaseMeta() == null ) {
+      throw new KettleException( BaseMessages.getString( PKG, "PGBulkLoaderMeta.GetSQL.NoConnectionDefined" ) );
+    }
+  }
+
   public boolean init( StepMetaInterface smi, StepDataInterface sdi ) {
     meta = (PGBulkLoaderMeta) smi;
     data = (PGBulkLoaderData) sdi;
@@ -416,6 +447,15 @@ public class PGBulkLoader extends BaseStep implements StepInterface {
     String separator = environmentSubstitute( meta.getDelimiter() );
 
     if ( super.init( smi, sdi ) ) {
+
+      // Confirming Database Connection is defined.
+      try {
+        verifyDatabaseConnection();
+      } catch ( KettleException ex ) {
+        logError( ex.getMessage() );
+        return false;
+      }
+
       if ( enclosure != null ) {
         data.quote = enclosure.getBytes();
       } else {

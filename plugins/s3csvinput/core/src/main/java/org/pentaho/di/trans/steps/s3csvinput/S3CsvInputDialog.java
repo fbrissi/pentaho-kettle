@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2019 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -27,6 +27,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.text.DecimalFormat;
 
+import com.amazonaws.services.s3.model.Bucket;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.custom.CCombo;
 import org.eclipse.swt.events.ModifyEvent;
@@ -47,8 +48,9 @@ import org.eclipse.swt.widgets.Listener;
 import org.eclipse.swt.widgets.Shell;
 import org.eclipse.swt.widgets.TableItem;
 import org.eclipse.swt.widgets.Text;
-import org.jets3t.service.model.S3Bucket;
 import org.pentaho.di.core.Const;
+import org.pentaho.di.core.row.value.ValueMetaBase;
+import org.pentaho.di.core.util.EnvUtil;
 import org.pentaho.di.core.util.Utils;
 import org.pentaho.di.core.exception.KettleStepException;
 import org.pentaho.di.core.row.RowMeta;
@@ -535,8 +537,9 @@ public class S3CsvInputDialog extends BaseStepDialog implements StepDialogInterf
         //
         try {
           S3CsvInputMeta meta = new S3CsvInputMeta();
+          setAwsCredentials( meta );
           getInfo( meta );
-          S3ObjectsProvider s3ObjProvider = new S3ObjectsProvider( meta.getS3Service( transMeta ) );
+          S3ObjectsProvider s3ObjProvider = new S3ObjectsProvider( meta.getS3Client( transMeta ) );
 
           EnterSelectionDialog dialog = new EnterSelectionDialog( shell, s3ObjProvider.getBucketsNames(),
               Messages.getString( "S3CsvInputDialog.Exception.SelectBucket.Title" ),
@@ -562,9 +565,9 @@ public class S3CsvInputDialog extends BaseStepDialog implements StepDialogInterf
         public void widgetSelected( SelectionEvent event ) {
           try {
             S3CsvInputMeta meta = new S3CsvInputMeta();
+            setAwsCredentials( meta );
             getInfo( meta );
-
-            S3ObjectsProvider s3ObjProvider = new S3ObjectsProvider( meta.getS3Service( transMeta ) );
+            S3ObjectsProvider s3ObjProvider = new S3ObjectsProvider( meta.getS3Client( transMeta ) );
             String[] objectnames = s3ObjProvider.getS3ObjectsNames( meta.getBucket() );
 
             EnterSelectionDialog dialog = new EnterSelectionDialog( shell, objectnames,
@@ -577,6 +580,7 @@ public class S3CsvInputDialog extends BaseStepDialog implements StepDialogInterf
                 dialog.setSelectedNrs( new int[] { index, } );
               }
             }
+
             String objectname = dialog.open();
             if ( objectname != null ) {
               wFilename.setText( objectname );
@@ -589,8 +593,6 @@ public class S3CsvInputDialog extends BaseStepDialog implements StepDialogInterf
         }
       } );
     }
-
-
     // Detect X or ALT-F4 or something that kills this window...
     shell.addShellListener( new ShellAdapter() {
       @Override
@@ -613,6 +615,16 @@ public class S3CsvInputDialog extends BaseStepDialog implements StepDialogInterf
       }
     }
     return stepname;
+  }
+
+  private void setAwsCredentials( S3CsvInputMeta meta ) {
+    /* For legacy transformations containing AWS S3 access credentials, {@link Const#KETTLE_USE_AWS_DEFAULT_CREDENTIALS} can force Spoon to use
+     * the Amazon Default Credentials Provider Chain instead of using the credentials embedded in the transformation metadata. */
+    if ( !ValueMetaBase.convertStringToBoolean(
+      Const.NVL( EnvUtil.getSystemProperty( Const.KETTLE_USE_AWS_DEFAULT_CREDENTIALS ), "N" ) ) ) {
+      meta.setAwsAccessKey( transMeta.environmentSubstitute( Const.NVL( inputMeta.getAwsAccessKey(), "" ) ) );
+      meta.setAwsSecretKey( transMeta.environmentSubstitute( Const.NVL( inputMeta.getAwsSecretKey(), "" ) ) );
+    }
   }
 
   public void getData() {
@@ -668,7 +680,6 @@ public class S3CsvInputDialog extends BaseStepDialog implements StepDialogInterf
   }
 
   private void getInfo( S3CsvInputMeta inputMeta ) {
-
     inputMeta.setBucket( wBucket.getText() );
 
     if ( isReceivingInput ) {
@@ -734,8 +745,8 @@ public class S3CsvInputDialog extends BaseStepDialog implements StepDialogInterf
 
       wFields.table.removeAll();
 
-      S3ObjectsProvider s3ObjProvider = new S3ObjectsProvider( meta.getS3Service( transMeta ) );
-      S3Bucket s3bucket = s3ObjProvider.getBucket( bucketname );
+      S3ObjectsProvider s3ObjProvider = new S3ObjectsProvider( meta.getS3Client( transMeta ) );
+      Bucket s3bucket = s3ObjProvider.getBucket( bucketname );
 
       if ( s3bucket == null ) {
         throw new Exception( Messages.getString( "S3DefaultService.Exception.UnableToFindBucket.Message", bucketname ) );
@@ -754,7 +765,8 @@ public class S3CsvInputDialog extends BaseStepDialog implements StepDialogInterf
 
       // Only get the first lines, not the complete file
       // And grab an input stream to the data...
-      inputStream = s3ObjProvider.getS3Object( s3bucket, filename, 0L, (long) samples * (long) maxLineSize ).getDataInputStream();
+      inputStream =
+        s3ObjProvider.getS3Object( s3bucket, filename, 0L, (long) samples * (long) maxLineSize ).getObjectContent();
 
       InputStreamReader reader = new InputStreamReader( inputStream );
 

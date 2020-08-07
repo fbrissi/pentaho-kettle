@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2017 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -33,6 +33,7 @@ import org.eclipse.swt.layout.FormAttachment;
 import org.eclipse.swt.layout.FormData;
 import org.eclipse.swt.layout.FormLayout;
 import org.eclipse.swt.widgets.Button;
+import org.eclipse.swt.widgets.Control;
 import org.eclipse.swt.widgets.Dialog;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Event;
@@ -87,7 +88,7 @@ public class EnterStringDialog extends Dialog {
 
   private PropsUI props;
 
-  private boolean manditory;
+  private boolean mandatory;
 
   /**
    * This constructs without allowing for variable substitution. This constructor allows for backwards compatibility for
@@ -115,7 +116,7 @@ public class EnterStringDialog extends Dialog {
    * @param lineText
    * @param allowVariables
    *          Indicates to allow environmental substitution
-   * @param TransMeta
+   * @param transMeta
    *          This object has the has the environmental variables
    */
   public EnterStringDialog( Shell parent, String string, String shellText, String lineText,
@@ -132,6 +133,7 @@ public class EnterStringDialog extends Dialog {
   public String open() {
     Shell parent = getParent();
     Display display = parent.getDisplay();
+    Control lastControl = null;
 
     shell = new Shell( parent, SWT.DIALOG_TRIM | SWT.RESIZE | SWT.APPLICATION_MODAL | SWT.SHEET );
     props.setLook( shell );
@@ -158,10 +160,12 @@ public class EnterStringDialog extends Dialog {
       wStringVar = new TextVar( transMeta, shell, SWT.SINGLE | SWT.LEFT | SWT.BORDER );
       wStringVar.setText( string );
       props.setLook( wStringVar );
+      lastControl = wStringVar;
     } else {
       wString = new Text( shell, SWT.SINGLE | SWT.LEFT | SWT.BORDER );
       wString.setText( string );
       props.setLook( wString );
+      lastControl = wString;
     }
 
     fdString = new FormData();
@@ -191,7 +195,7 @@ public class EnterStringDialog extends Dialog {
     wCancel = new Button( shell, SWT.PUSH );
     wCancel.setText( BaseMessages.getString( PKG, "System.Button.Cancel" ) );
 
-    BaseStepDialog.positionBottomButtons( shell, new Button[] { wOK, wCancel }, margin, wString );
+    BaseStepDialog.positionBottomButtons( shell, new Button[] { wOK, wCancel }, margin, lastControl );
 
     // Add listeners
     lsCancel = new Listener() {
@@ -244,7 +248,7 @@ public class EnterStringDialog extends Dialog {
 
   protected void setFlags() {
     String string = ( allowVariables ? wStringVar.getText() : wString.getText() );
-    boolean enabled = !manditory || !Utils.isEmpty( string );
+    boolean enabled = !mandatory || !Utils.isEmpty( string );
     wOK.setEnabled( enabled );
   }
 
@@ -278,15 +282,32 @@ public class EnterStringDialog extends Dialog {
   /**
    * @return the manditory
    */
+  @Deprecated
   public boolean isManditory() {
-    return manditory;
+    return this.isMandatory();
+  }
+
+  /**
+   * @return the mandatory
+   */
+  public boolean isMandatory() {
+    return mandatory;
   }
 
   /**
    * @param manditory
    *          the manditory to set
    */
+  @Deprecated
   public void setManditory( boolean manditory ) {
-    this.manditory = manditory;
+    this.setMandatory( manditory );
+  }
+
+  /**
+   * @param mandatory
+   *          the manditory to set
+   */
+  public void setMandatory( boolean mandatory ) {
+    this.mandatory = mandatory;
   }
 }

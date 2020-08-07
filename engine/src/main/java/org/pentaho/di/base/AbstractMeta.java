@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2020 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -23,14 +23,12 @@
 package org.pentaho.di.base;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Supplier;
+import com.google.common.base.Suppliers;
 import com.google.common.collect.ImmutableList;
-
 import org.pentaho.di.cluster.SlaveServer;
 import org.pentaho.di.core.AttributesInterface;
 import org.pentaho.di.core.Const;
-import org.pentaho.di.core.osgi.api.MetastoreLocatorOsgi;
-import org.pentaho.di.core.osgi.api.NamedClusterServiceOsgi;
-import org.pentaho.di.core.util.Utils;
 import org.pentaho.di.core.EngineMetaInterface;
 import org.pentaho.di.core.NotePadMeta;
 import org.pentaho.di.core.Props;
@@ -54,6 +52,8 @@ import org.pentaho.di.core.logging.DefaultLogLevel;
 import org.pentaho.di.core.logging.LogChannel;
 import org.pentaho.di.core.logging.LogLevel;
 import org.pentaho.di.core.logging.LoggingObjectInterface;
+import org.pentaho.di.core.osgi.api.MetastoreLocatorOsgi;
+import org.pentaho.di.core.osgi.api.NamedClusterServiceOsgi;
 import org.pentaho.di.core.parameters.DuplicateParamException;
 import org.pentaho.di.core.parameters.NamedParams;
 import org.pentaho.di.core.parameters.NamedParamsDefault;
@@ -61,6 +61,7 @@ import org.pentaho.di.core.parameters.UnknownParamException;
 import org.pentaho.di.core.row.RowMetaInterface;
 import org.pentaho.di.core.row.value.ValueMetaString;
 import org.pentaho.di.core.undo.TransAction;
+import org.pentaho.di.core.util.Utils;
 import org.pentaho.di.core.variables.VariableSpace;
 import org.pentaho.di.core.variables.Variables;
 import org.pentaho.di.core.vfs.KettleVFS;
@@ -91,6 +92,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 public abstract class AbstractMeta implements ChangedFlagInterface, UndoInterface, HasDatabasesInterface, VariableSpace,
   EngineMetaInterface, NamedParams, HasSlaveServersInterface, AttributesInterface, HasRepositoryInterface,
@@ -139,13 +141,13 @@ public abstract class AbstractMeta implements ChangedFlagInterface, UndoInterfac
 
   protected List<DatabaseMeta> databases;
 
-  protected List<NameChangedListener> nameChangedListeners;
+  protected Set<NameChangedListener> nameChangedListeners = Collections.newSetFromMap( new ConcurrentHashMap<NameChangedListener, Boolean>() );
 
-  protected List<FilenameChangedListener> filenameChangedListeners;
+  protected Set<FilenameChangedListener> filenameChangedListeners = Collections.newSetFromMap( new ConcurrentHashMap<FilenameChangedListener, Boolean>() );
 
-  protected List<ContentChangedListener> contentChangedListeners;
+  protected Set<ContentChangedListener> contentChangedListeners = Collections.newSetFromMap( new ConcurrentHashMap<ContentChangedListener, Boolean>() );
 
-  protected List<CurrentDirectoryChangedListener> currentDirectoryChangedListeners;
+  protected Set<CurrentDirectoryChangedListener> currentDirectoryChangedListeners = Collections.newSetFromMap( new ConcurrentHashMap<CurrentDirectoryChangedListener, Boolean>() );
 
   protected List<SlaveServer> slaveServers;
 
@@ -180,7 +182,16 @@ public abstract class AbstractMeta implements ChangedFlagInterface, UndoInterfac
   @VisibleForTesting
   protected NamedClusterEmbedManager namedClusterEmbedManager;
 
-  protected String embeddedMetastoreProviderKey;
+  @SuppressWarnings( "java:S4738" )  // using guava for memoize
+  // memoized, load-once-on-demand supplier for the embedded provider key.
+  private Supplier<String> embeddedMetastoreProvKeySupplier = Suppliers.memoize( this::getEmbeddedMetastoreKey );
+
+  private String getEmbeddedMetastoreKey() {
+    if ( getMetastoreLocatorOsgi() != null ) {
+      return getMetastoreLocatorOsgi().setEmbeddedMetastore( getEmbeddedMetaStore() );
+    }
+    return null;
+  }
 
   /**
    * If this is null, we load from the default shared objects file : $KETTLE_HOME/.kettle/shared.xml
@@ -488,9 +499,6 @@ public abstract class AbstractMeta implements ChangedFlagInterface, UndoInterfac
    * @param listener the listener
    */
   public void addNameChangedListener( NameChangedListener listener ) {
-    if ( nameChangedListeners == null ) {
-      nameChangedListeners = new ArrayList<NameChangedListener>();
-    }
     if ( listener != null ) {
       nameChangedListeners.add( listener );
     }
@@ -502,16 +510,16 @@ public abstract class AbstractMeta implements ChangedFlagInterface, UndoInterfac
    * @param listener the listener
    */
   public void removeNameChangedListener( NameChangedListener listener ) {
-    nameChangedListeners.remove( listener );
+    if ( listener != null ) {
+      nameChangedListeners.remove( listener );
+    }
   }
 
   /**
    * Removes all the name changed listeners
    */
   public void clearNameChangedListeners() {
-    if ( nameChangedListeners != null ) {
-      nameChangedListeners.clear();
-    }
+    nameChangedListeners.clear();
   }
 
   /**
@@ -522,10 +530,8 @@ public abstract class AbstractMeta implements ChangedFlagInterface, UndoInterfac
    */
   protected void fireNameChangedListeners( String oldName, String newName ) {
     if ( nameChanged( oldName, newName ) ) {
-      if ( nameChangedListeners != null ) {
-        for ( NameChangedListener listener : nameChangedListeners ) {
-          listener.nameChanged( this, oldName, newName );
-        }
+      for ( NameChangedListener listener : nameChangedListeners ) {
+        listener.nameChanged( this, oldName, newName );
       }
     }
   }
@@ -536,9 +542,6 @@ public abstract class AbstractMeta implements ChangedFlagInterface, UndoInterfac
    * @param listener the listener
    */
   public void addFilenameChangedListener( FilenameChangedListener listener ) {
-    if ( filenameChangedListeners == null ) {
-      filenameChangedListeners = new ArrayList<FilenameChangedListener>();
-    }
     if ( listener != null ) {
       filenameChangedListeners.add( listener );
     }
@@ -550,7 +553,9 @@ public abstract class AbstractMeta implements ChangedFlagInterface, UndoInterfac
    * @param listener the listener
    */
   public void removeFilenameChangedListener( FilenameChangedListener listener ) {
-    filenameChangedListeners.remove( listener );
+    if ( listener != null ) {
+      filenameChangedListeners.remove( listener );
+    }
   }
 
   /**
@@ -561,10 +566,8 @@ public abstract class AbstractMeta implements ChangedFlagInterface, UndoInterfac
    */
   protected void fireFilenameChangedListeners( String oldFilename, String newFilename ) {
     if ( nameChanged( oldFilename, newFilename ) ) {
-      if ( filenameChangedListeners != null ) {
-        for ( FilenameChangedListener listener : filenameChangedListeners ) {
-          listener.filenameChanged( this, oldFilename, newFilename );
-        }
+      for ( FilenameChangedListener listener : filenameChangedListeners ) {
+        listener.filenameChanged( this, oldFilename, newFilename );
       }
     }
   }
@@ -575,10 +578,9 @@ public abstract class AbstractMeta implements ChangedFlagInterface, UndoInterfac
    * @param listener
    */
   public void addContentChangedListener( ContentChangedListener listener ) {
-    if ( contentChangedListeners == null ) {
-      contentChangedListeners = new ArrayList<ContentChangedListener>();
+    if ( listener != null ) {
+      contentChangedListeners.add( listener );
     }
-    contentChangedListeners.add( listener );
   }
 
   /**
@@ -587,15 +589,13 @@ public abstract class AbstractMeta implements ChangedFlagInterface, UndoInterfac
    * @param listener
    */
   public void removeContentChangedListener( ContentChangedListener listener ) {
-    contentChangedListeners.remove( listener );
+    if ( listener != null ) {
+      contentChangedListeners.remove( listener );
+    }
   }
 
   public List<ContentChangedListener> getContentChangedListeners() {
-    if ( contentChangedListeners == null ) {
-      return ImmutableList.of();
-    } else {
-      return ImmutableList.copyOf( contentChangedListeners );
-    }
+    return ImmutableList.copyOf( contentChangedListeners );
   }
 
   /**
@@ -606,15 +606,13 @@ public abstract class AbstractMeta implements ChangedFlagInterface, UndoInterfac
   }
 
   protected void fireContentChangedListeners( boolean ch ) {
-    if ( contentChangedListeners != null ) {
-      if ( ch ) {
-        for ( ContentChangedListener listener : contentChangedListeners ) {
-          listener.contentChanged( this );
-        }
-      } else {
-        for ( ContentChangedListener listener : contentChangedListeners ) {
-          listener.contentSafe( this );
-        }
+    if ( ch ) {
+      for ( ContentChangedListener listener : contentChangedListeners ) {
+        listener.contentChanged( this );
+      }
+    } else {
+      for ( ContentChangedListener listener : contentChangedListeners ) {
+        listener.contentSafe( this );
       }
     }
   }
@@ -623,9 +621,6 @@ public abstract class AbstractMeta implements ChangedFlagInterface, UndoInterfac
    * Remove listener
    */
   public void addCurrentDirectoryChangedListener( CurrentDirectoryChangedListener listener ) {
-    if ( currentDirectoryChangedListeners == null ) {
-      currentDirectoryChangedListeners = new ArrayList<>();
-    }
     if ( listener != null && !currentDirectoryChangedListeners.contains( listener ) ) {
       currentDirectoryChangedListeners.add( listener );
     }
@@ -635,8 +630,18 @@ public abstract class AbstractMeta implements ChangedFlagInterface, UndoInterfac
    * Add a listener to be notified of design-time changes to current directory variable
    */
   public void removeCurrentDirectoryChangedListener( CurrentDirectoryChangedListener listener ) {
-    if ( currentDirectoryChangedListeners != null ) {
+    if ( listener != null ) {
       currentDirectoryChangedListeners.remove( listener );
+    }
+  }
+
+  /*
+   * Remove all listeners; to be used during imports and other times when the directory property is changed but
+   * we do not want to trigger the steps to update.
+   */
+  public void clearCurrentDirectoryChangedListeners() {
+    if ( currentDirectoryChangedListeners != null ) {
+      currentDirectoryChangedListeners.clear();
     }
   }
 
@@ -644,7 +649,7 @@ public abstract class AbstractMeta implements ChangedFlagInterface, UndoInterfac
    * Notify listeners of a change in current directory.
    */
   protected void fireCurrentDirectoryChanged( String previous, String current ) {
-    if ( currentDirectoryChangedListeners != null && nameChanged( previous, current ) ) {
+    if ( nameChanged( previous, current ) ) {
       for ( CurrentDirectoryChangedListener listener : currentDirectoryChangedListeners ) {
         listener.directoryChanged( this, previous, current );
       }
@@ -1524,7 +1529,7 @@ public abstract class AbstractMeta implements ChangedFlagInterface, UndoInterfac
       }
 
       if ( Utils.isEmpty( value ) ) {
-        setVariable( key, defValue );
+        setVariable( key, Const.NVL( defValue, "" ) );
       } else {
         setVariable( key, value );
       }
@@ -1936,7 +1941,7 @@ public abstract class AbstractMeta implements ChangedFlagInterface, UndoInterfac
     this.privateDatabases = privateDatabases;
   }
 
-  public void saveSharedObjects() throws KettleException {
+  @Override public void saveSharedObjects() throws KettleException {
     try {
       // Load all the shared objects...
       String soFile = environmentSubstitute( sharedObjectsFile );
@@ -2067,19 +2072,33 @@ public abstract class AbstractMeta implements ChangedFlagInterface, UndoInterfac
   }
 
   public void disposeEmbeddedMetastoreProvider() {
-    KettleVFS.closeEmbeddedFileSystem( embeddedMetastoreProviderKey );
-    if ( embeddedMetastoreProviderKey != null ) {
+    if ( embeddedMetastoreNoLongerUsed() && getEmbeddedMetastoreKey() != null ) {
+      KettleVFS.closeEmbeddedFileSystem( getEmbeddedMetastoreKey() );
       //Dispose of embedded metastore for this run
-      getMetastoreLocatorOsgi().disposeMetastoreProvider( embeddedMetastoreProviderKey );
+      getMetastoreLocatorOsgi().disposeMetastoreProvider( getEmbeddedMetastoreKey() );
     }
   }
 
-  public String getEmbeddedMetastoreProviderKey() {
-    return embeddedMetastoreProviderKey;
+  /**
+   * Check whether the embeddedMetastore is used anywhere else up the Trans / Job hierarchy.
+   * It's possible for a Parent JobMeta to be shared by multiple child job copies, for example,
+   * and we want to make sure it's only closed when the parent is done.
+   */
+  private boolean embeddedMetastoreNoLongerUsed() {
+    boolean topLevel = !( this.getParent() instanceof AbstractMeta );
+    return topLevel || !embeddedMetastoreUsedByAParent( embeddedMetaStore, this.getParent() );
   }
 
-  public void setEmbeddedMetastoreProviderKey( String embeddedMetastoreProviderKey ) {
-    this.embeddedMetastoreProviderKey = embeddedMetastoreProviderKey;
+  private boolean embeddedMetastoreUsedByAParent( EmbeddedMetaStore embeddedMetaStore, LoggingObjectInterface parent ) {
+    if ( parent instanceof AbstractMeta ) {
+      return ( (AbstractMeta) parent ).embeddedMetaStore == embeddedMetaStore
+        || embeddedMetastoreUsedByAParent( embeddedMetaStore, parent.getParent() );
+    }
+    return false;
+  }
+
+  public String getEmbeddedMetastoreProviderKey() {
+    return embeddedMetastoreProvKeySupplier.get();
   }
 
   @Override
@@ -2092,7 +2111,7 @@ public abstract class AbstractMeta implements ChangedFlagInterface, UndoInterfac
     return this.versioningEnabled;
   }
 
-  private class RunOptions {
+  private static class RunOptions {
     boolean clearingLog;
     boolean safeModeEnabled;
 

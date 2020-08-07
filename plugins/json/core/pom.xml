@@ -6,7 +6,7 @@
   <parent>
     <groupId>org.pentaho.di.plugins</groupId>
     <artifactId>json</artifactId>
-    <version>8.2.0.0-SNAPSHOT</version>
+    <version>9.1.0.0-SNAPSHOT</version>
   </parent>
 
   <artifactId>kettle-json-plugin-core</artifactId>
@@ -15,12 +15,10 @@
   <name>PDI Json Plugin Core</name>
 
   <properties>
-    <pdi.version>8.2.0.0-SNAPSHOT</pdi.version>
-    <pentaho-metaverse.version>8.2.0.0-SNAPSHOT</pentaho-metaverse.version>
-    <platform.version>8.2.0.0-SNAPSHOT</platform.version>
+    <pdi.version>9.1.0.0-SNAPSHOT</pdi.version>
+    <pentaho-metaverse.version>9.1.0.0-SNAPSHOT</pentaho-metaverse.version>
+    <platform.version>9.1.0.0-SNAPSHOT</platform.version>
     <commons.io.version>1.4</commons.io.version>
-    <commons-vfs2.version>2.2</commons-vfs2.version>
-    <commons-codec.version>1.9</commons-codec.version>
     <commons-lang.version>2.6</commons-lang.version>
     <encoder.version>1.2</encoder.version>
     <guava.version>17.0</guava.version>
@@ -32,7 +30,7 @@
     <maven.build.timestamp.format>yyyy/MM/dd hh:mm</maven.build.timestamp.format>
     <poi.version>3.17</poi.version>
     <dependency.com.tinkerpop.blueprints.version>2.6.0</dependency.com.tinkerpop.blueprints.version>
-    <jackson.version>2.9.4</jackson.version>
+    <dependency.org.powermock.version>1.6.0</dependency.org.powermock.version>
   </properties>
 
   <dependencies>
@@ -117,7 +115,6 @@
     <dependency>
       <groupId>org.apache.commons</groupId>
       <artifactId>commons-vfs2</artifactId>
-      <version>${commons-vfs2.version}</version>
     </dependency>
     <dependency>
       <groupId>commons-io</groupId>
@@ -134,37 +131,13 @@
       <artifactId>json-simple</artifactId>
       <version>1.1</version>
     </dependency>
-     <dependency>
-      <groupId>com.fasterxml.jackson.core</groupId>
-      <artifactId>jackson-core</artifactId>
-      <version>${jackson.version}</version>
-      <exclusions>
-        <exclusion>
-          <artifactId>*</artifactId>
-          <groupId>*</groupId>
-        </exclusion>
-      </exclusions>
-    </dependency>
-    <dependency>
-      <groupId>com.fasterxml.jackson.core</groupId>
-      <artifactId>jackson-annotations</artifactId>
-      <version>${jackson.version}</version>
-      <exclusions>
-        <exclusion>
-          <artifactId>*</artifactId>
-          <groupId>*</groupId>
-        </exclusion>
-      </exclusions>
-    </dependency>
     <dependency>
       <groupId>com.fasterxml.jackson.core</groupId>
       <artifactId>jackson-databind</artifactId>
-      <version>${jackson.version}</version>
     </dependency>
     <dependency>
-      <groupId>com.fasterxml.jackson.jaxrs</groupId>
-      <artifactId>jackson-jaxrs-json-provider</artifactId>
-      <version>${jackson.version}</version>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-core</artifactId>
     </dependency>
     <dependency>
       <groupId>org.apache.poi</groupId>
@@ -221,18 +194,6 @@
       <scope>test</scope>
     </dependency>
     <dependency>
-      <groupId>org.slf4j</groupId>
-      <artifactId>slf4j-api</artifactId>
-      <version>1.7.7</version>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
-      <groupId>org.slf4j</groupId>
-      <artifactId>slf4j-log4j12</artifactId>
-      <version>1.7.7</version>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
       <groupId>pentaho-kettle</groupId>
       <artifactId>kettle-engine</artifactId>
       <version>${pdi.version}</version>
@@ -250,6 +211,23 @@
       <groupId>com.tinkerpop.blueprints</groupId>
       <artifactId>blueprints-core</artifactId>
       <version>${dependency.com.tinkerpop.blueprints.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.powermock</groupId>
+      <artifactId>powermock-core</artifactId>
+      <version>${dependency.org.powermock.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <!-- neccessary -->
+    <dependency>
+      <groupId>org.osgi</groupId>
+      <artifactId>org.osgi.core</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.security</groupId>
+      <artifactId>spring-security-core</artifactId>
       <scope>test</scope>
     </dependency>
   </dependencies>

@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2019 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -28,6 +28,8 @@ import org.pentaho.di.core.CheckResult;
 import org.pentaho.di.core.CheckResultInterface;
 import org.pentaho.di.core.Const;
 import org.pentaho.di.core.annotations.Step;
+import org.pentaho.di.core.injection.Injection;
+import org.pentaho.di.core.injection.InjectionSupported;
 import org.pentaho.di.core.util.Utils;
 import org.pentaho.di.core.database.DatabaseMeta;
 import org.pentaho.di.core.exception.KettleException;
@@ -61,6 +63,7 @@ import org.w3c.dom.Node;
 @Step( id = "CheckSum", i18nPackageName = "org.pentaho.di.trans.steps.checksum", name = "CheckSum.Name",
     description = "CheckSum.Description",
     categoryDescription = "i18n:org.pentaho.di.trans.step:BaseStep.Category.Transform" )
+@InjectionSupported( localizationPrefix = "CheckSum.Injection.", groups = { "FIELDS" }  )
 public class CheckSumMeta extends BaseStepMeta implements StepMetaInterface {
   private static Class<?> PKG = CheckSumMeta.class; // for i18n purposes, needed by Translator2!!
 
@@ -95,16 +98,26 @@ public class CheckSumMeta extends BaseStepMeta implements StepMetaInterface {
   public static final int result_TYPE_BINARY = 2;
 
   /** by which fields to display? */
+  @Injection( name = "FIELD_NAME", group = "FIELDS" )
   private String[] fieldName;
 
+  @Injection( name = "RESULT_FIELD"  )
   private String resultfieldName;
 
+  @Injection( name = "TYPE" )
   private String checksumtype;
 
+  @Injection( name = "COMPATIBILITY_MODE" )
   private boolean compatibilityMode;
+
+  @Injection( name = "OLD_CHECKSUM_BEHAVIOR" )
   private boolean oldChecksumBehaviour;
 
+  @Injection( name = "FIELD_SEPARATOR_STRING" )
+  private String fieldSeparatorString;
+
   /** result type */
+  @Injection( name = "RESULT_TYPE" )
   private int resultType;
 
   public CheckSumMeta() {
@@ -231,6 +244,14 @@ public class CheckSumMeta extends BaseStepMeta implements StepMetaInterface {
     this.fieldName = fieldName;
   }
 
+  public String getFieldSeparatorString() {
+    return fieldSeparatorString;
+  }
+
+  public void setFieldSeparatorString( String fieldSeparatorString ) {
+    this.fieldSeparatorString = fieldSeparatorString;
+  }
+
   private void readData( Node stepnode ) throws KettleXMLException {
     try {
       checksumtype = XMLHandler.getTagValue( stepnode, "checksumtype" );
@@ -238,6 +259,7 @@ public class CheckSumMeta extends BaseStepMeta implements StepMetaInterface {
       resultType = getResultTypeByCode( Const.NVL( XMLHandler.getTagValue( stepnode, "resultType" ), "" ) );
       compatibilityMode = parseCompatibilityMode( XMLHandler.getTagValue( stepnode, "compatibilityMode" ) );
       oldChecksumBehaviour = parseOldChecksumBehaviour( XMLHandler.getTagValue( stepnode, "oldChecksumBehaviour" ) );
+      setFieldSeparatorString( XMLHandler.getTagValue( stepnode, "fieldSeparatorString" ) );
 
       Node fields = XMLHandler.getSubNode( stepnode, "fields" );
       int nrfields = XMLHandler.countNodes( fields, "field" );
@@ -284,6 +306,9 @@ public class CheckSumMeta extends BaseStepMeta implements StepMetaInterface {
     retval.append( "      " ).append( XMLHandler.addTagValue( "resultType", getResultTypeCode( resultType ) ) );
     retval.append( "      " ).append( XMLHandler.addTagValue( "compatibilityMode", compatibilityMode ) );
     retval.append( "      " ).append( XMLHandler.addTagValue( "oldChecksumBehaviour", oldChecksumBehaviour ) );
+    if ( getFieldSeparatorString() != null ) {
+      retval.append( retval.append( "      " ).append( XMLHandler.addTagValue( "fieldSeparatorString", getFieldSeparatorString() ) ) );
+    }
 
     retval.append( "    <fields>" ).append( Const.CR );
     for ( int i = 0; i < fieldName.length; i++ ) {
@@ -301,6 +326,7 @@ public class CheckSumMeta extends BaseStepMeta implements StepMetaInterface {
     resultfieldName = null;
     checksumtype = checksumtypeCodes[0];
     resultType = result_TYPE_HEXADECIMAL;
+    fieldSeparatorString = null;
     int nrfields = 0;
 
     allocate( nrfields );
@@ -319,6 +345,7 @@ public class CheckSumMeta extends BaseStepMeta implements StepMetaInterface {
       resultType = getResultTypeByCode( Const.NVL( rep.getStepAttributeString( id_step, "resultType" ), "" ) );
       compatibilityMode = parseCompatibilityMode( rep.getStepAttributeString( id_step, "compatibilityMode" ) );
       oldChecksumBehaviour = parseOldChecksumBehaviour( rep.getStepAttributeString( id_step, "oldChecksumBehaviour" ) );
+      setFieldSeparatorString( rep.getStepAttributeString( id_step, "fieldSeparatorString" ) );
 
       int nrfields = rep.countNrStepAttributes( id_step, "field_name" );
 
@@ -341,6 +368,10 @@ public class CheckSumMeta extends BaseStepMeta implements StepMetaInterface {
       rep.saveStepAttribute( id_transformation, id_step, "resultType", getResultTypeCode( resultType ) );
       rep.saveStepAttribute( id_transformation, id_step, "compatibilityMode", compatibilityMode );
       rep.saveStepAttribute( id_transformation, id_step, "oldChecksumBehaviour", oldChecksumBehaviour );
+
+      if ( getFieldSeparatorString() != null ) {
+        rep.saveStepAttribute( id_transformation, id_step, "fieldSeparatorString", getFieldSeparatorString() );
+      }
 
       for ( int i = 0; i < fieldName.length; i++ ) {
         rep.saveStepAttribute( id_transformation, id_step, i, "field_name", fieldName[i] );

@@ -49,5 +49,4 @@
   <service interface="org.pentaho.di.trans.step.jms.context.JmsProvider">
     <bean class="org.pentaho.di.trans.step.jms.context.ActiveMQProvider" />
   </service>
-
 </blueprint>

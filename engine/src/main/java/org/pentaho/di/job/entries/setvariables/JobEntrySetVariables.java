@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2019 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -28,6 +28,7 @@ import org.pentaho.di.job.entry.validator.JobEntryValidatorUtils;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -241,9 +242,9 @@ public class JobEntrySetVariables extends JobEntryBase implements Cloneable, Job
             ) {
           Properties properties = new Properties();
           properties.load( reader );
-          for ( Object key : properties.keySet() ) {
-            variables.add( (String) key );
-            variableValues.add( (String) properties.get( key ) );
+          for ( Map.Entry entry : properties.entrySet() ) {
+            variables.add( (String) entry.getKey() );
+            variableValues.add( (String) entry.getValue() );
             variableTypes.add( fileVariableType );
           }
         } catch ( Exception e ) {
@@ -251,10 +252,29 @@ public class JobEntrySetVariables extends JobEntryBase implements Cloneable, Job
             PKG, "JobEntrySetVariables.Error.UnableReadPropertiesFile", realFilename ) );
         }
       }
-      for ( int i = 0; i < variableName.length; i++ ) {
-        variables.add( variableName[i] );
-        variableValues.add( variableValue[i] );
-        variableTypes.add( variableType[i] );
+
+      if ( variableName != null ) {
+        for ( int i = 0; i < variableName.length; i++ ) {
+          variables.add( variableName[ i ] );
+          variableValues.add( variableValue[ i ] );
+          variableTypes.add( variableType[ i ] );
+        }
+      }
+
+      // if parentJob exists - clear/reset all entrySetVariables before applying the actual ones
+      if ( parentJob != null ) {
+        for ( String key : getEntryStepSetVariablesMap().keySet() ) {
+          String parameterValue = parentJob.getParameterValue( key );
+          // if variable is not a namedParameter then it is a EntryStepSetVariable - reset value to ""
+          if ( parameterValue == null ) {
+            parentJob.setVariable( key, "" );
+            setVariable( key, "" );
+          } else {
+            // if it is a parameter, then get the initial saved value of parent -  saved in entryStepSetVariables Map
+            parentJob.setVariable( key, getEntryStepSetVariable( key ) );
+            setVariable( key, getEntryStepSetVariable( key ) );
+          }
+        }
       }
 
       for ( int i = 0; i < variables.size(); i++ ) {
@@ -270,7 +290,11 @@ public class JobEntrySetVariables extends JobEntryBase implements Cloneable, Job
         // OK, where do we set this value...
         switch ( type ) {
           case VARIABLE_TYPE_JVM:
-            System.setProperty( varname, value );
+            if ( value != null ) {
+              System.setProperty( varname, value );
+            } else {
+              System.clearProperty( varname ); // PDI-17536
+            }
             setVariable( varname, value );
             Job parentJobTraverse = parentJob;
             while ( parentJobTraverse != null ) {
@@ -291,8 +315,20 @@ public class JobEntrySetVariables extends JobEntryBase implements Cloneable, Job
 
           case VARIABLE_TYPE_CURRENT_JOB:
             setVariable( varname, value );
+
             if ( parentJob != null ) {
+              String parameterValue = parentJob.getParameterValue( varname );
+              // if not a parameter, set the value
+              if ( parameterValue == null  ) {
+                setEntryStepSetVariable( varname, value );
+              } else {
+                //if parameter, save the initial parameter value for use in reset/clear variables in future calls
+                if ( parameterValue != null && parameterValue != value && !entryStepSetVariablesMap.containsKey( varname ) ) {
+                  setEntryStepSetVariable( varname, parameterValue );
+                }
+              }
               parentJob.setVariable( varname, value );
+
             } else {
               throw new KettleJobException( BaseMessages.getString(
                 PKG, "JobEntrySetVariables.Error.UnableSetVariableCurrentJob", varname ) );

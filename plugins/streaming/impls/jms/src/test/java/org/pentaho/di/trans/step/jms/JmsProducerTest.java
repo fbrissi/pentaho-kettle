@@ -22,7 +22,6 @@
 
 package org.pentaho.di.trans.step.jms;
 
-import org.apache.activemq.artemis.jms.client.ActiveMQConnectionFactory;
 import org.apache.activemq.artemis.junit.EmbeddedJMSResource;
 import org.junit.Before;
 import org.junit.BeforeClass;
@@ -42,10 +41,10 @@ import org.pentaho.di.core.util.GenericStepData;
 import org.pentaho.di.trans.Trans;
 import org.pentaho.di.trans.TransMeta;
 import org.pentaho.di.trans.step.StepMeta;
+import org.pentaho.di.trans.step.StepMetaDataCombi;
 import org.pentaho.di.trans.step.jms.context.ActiveMQProvider;
 import org.pentaho.di.trans.step.jms.context.JmsProvider;
 
-import javax.jms.ConnectionFactory;
 import javax.jms.JMSContext;
 import javax.jms.JMSProducer;
 import java.util.ArrayList;
@@ -53,9 +52,11 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -67,12 +68,16 @@ import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-@RunWith( MockitoJUnitRunner.class )
+@RunWith ( MockitoJUnitRunner.class )
 public class JmsProducerTest {
   @Mock LogChannelInterfaceFactory logChannelFactory;
   @Mock LogChannelInterface logChannel;
+  @Mock JMSContext jmsContext;
+  @Mock JmsProvider jmsProvider;
+  @Mock JMSProducer jmsProducer;
 
   @Rule public EmbeddedJMSResource resource = new EmbeddedJMSResource( 0 );
 
@@ -82,7 +87,6 @@ public class JmsProducerTest {
   private JmsProducer step;
   private JmsProducerMeta meta;
   private GenericStepData data;
-  private JMSProducer producer;
 
   @BeforeClass
   public static void setupClass() throws Exception {
@@ -110,7 +114,7 @@ public class JmsProducerTest {
     jmsDelegate.amqUsername = "";
     jmsDelegate.amqPassword = "";
     jmsDelegate.destinationName = "testDestination";
-    jmsDelegate.receiveTimeout = "0";
+
 
     meta = new JmsProducerMeta( jmsDelegate );
 
@@ -122,20 +126,6 @@ public class JmsProducerTest {
     data = new GenericStepData();
 
     step = spy( new JmsProducer( stepMeta, data, 1, transMeta, trans ) );
-
-    //Create a real JMSContext
-    ConnectionFactory factory = new ActiveMQConnectionFactory( step.environmentSubstitute( jmsDelegate.amqUrl ) );
-    JMSContext jmsContext = spy( factory.createContext( step.environmentSubstitute( jmsDelegate.amqUsername ),
-      step.environmentSubstitute( jmsDelegate.amqPassword ) ) );
-
-    //Return the real context when JmsProvider.getContext(...) is called
-    doReturn( jmsContext ).when( activeMQProvider ).getContext( any(), any() );
-
-    //Create a real JMSProducer
-    producer = jmsContext.createProducer();
-
-    //Return the real JMSProducer when JMSContext.createProducer() is called
-    doReturn( producer ).when( jmsContext ).createProducer();
 
     //Return row data when step.getRow() is called
     Object[] row = new Object[] { "one", "two" };
@@ -152,12 +142,14 @@ public class JmsProducerTest {
     step.setInputRowMeta( inputRowMeta );
   }
 
-  @Test public void testProperties() throws InterruptedException, KettleException {
-    step.init( meta, data );
+  @Test public void testProperties() throws InterruptedException, KettleException, TimeoutException,
+    ExecutionException {
     Map<String, String> propertyValuesByName = new LinkedHashMap<>();
     propertyValuesByName.put( PROPERTY_NAME_ONE, "property1Value" );
     propertyValuesByName.put( PROPERTY_NAME_TWO, "property2Value" );
     meta.setPropertyValuesByName( propertyValuesByName );
+
+    step.init( meta, data );
 
     trans.prepareExecution( new String[] {} );
     trans.startThreads();
@@ -172,14 +164,14 @@ public class JmsProducerTest {
     };
 
     ExecutorService service = Executors.newSingleThreadExecutor();
-    service.submit( processRowRunnable );
+    service.submit( processRowRunnable ).get( 5, TimeUnit.SECONDS );
     service.awaitTermination( 5, TimeUnit.SECONDS );
     step.stopRunning( meta, data );
     service.shutdown();
 
     //Ensure the producer properties were set
-    assertEquals( propertyValuesByName.get( PROPERTY_NAME_ONE ), producer.getStringProperty( PROPERTY_NAME_ONE ) );
-    assertEquals( propertyValuesByName.get( PROPERTY_NAME_TWO ), producer.getStringProperty( PROPERTY_NAME_TWO ) );
+    assertEquals( propertyValuesByName.get( PROPERTY_NAME_ONE ), step.producer.getStringProperty( PROPERTY_NAME_ONE ) );
+    assertEquals( propertyValuesByName.get( PROPERTY_NAME_TWO ), step.producer.getStringProperty( PROPERTY_NAME_TWO ) );
   }
 
   @Test
@@ -189,15 +181,18 @@ public class JmsProducerTest {
     //Defaults
     step.processRow( meta, data );
 
-    assertEquals( false, producer.getDisableMessageID() );
-    assertEquals( false, producer.getDisableMessageTimestamp() );
-    assertEquals( 2, producer.getDeliveryMode() );
-    assertEquals( 4, producer.getPriority() );
-    assertEquals( 0, producer.getTimeToLive() );
-    assertEquals( 0, producer.getDeliveryDelay() );
-    assertNull( producer.getJMSCorrelationID() );
-    assertNull( producer.getJMSType() );
+    assertEquals( false, step.producer.getDisableMessageID() );
+    assertEquals( false, step.producer.getDisableMessageTimestamp() );
+    assertEquals( 2, step.producer.getDeliveryMode() );
+    assertEquals( 4, step.producer.getPriority() );
+    assertEquals( 0, step.producer.getTimeToLive() );
+    assertEquals( 0, step.producer.getDeliveryDelay() );
+    assertNull( step.producer.getJMSCorrelationID() );
+    assertNull( step.producer.getJMSType() );
+  }
 
+  @Test
+  public void testUserDrivenSetOptions() throws KettleException {
     //User driven
     meta.setDisableMessageId( "true" );
     meta.setDisableMessageTimestamp( "false" );
@@ -209,16 +204,19 @@ public class JmsProducerTest {
     meta.setJmsType( "JMSType" );
 
     step.first = true;
+
+    step.init( meta, data );
+
     step.processRow( meta, data );
 
-    assertEquals( true, producer.getDisableMessageID() );
-    assertEquals( false, producer.getDisableMessageTimestamp() );
-    assertEquals( 1, producer.getDeliveryMode() );
-    assertEquals( 2, producer.getPriority() );
-    assertEquals( 3, producer.getTimeToLive() );
-    assertEquals( 4, producer.getDeliveryDelay() );
-    assertEquals( "ASDF", producer.getJMSCorrelationID() );
-    assertEquals( "JMSType", producer.getJMSType() );
+    assertEquals( true, step.producer.getDisableMessageID() );
+    assertEquals( false, step.producer.getDisableMessageTimestamp() );
+    assertEquals( 1, step.producer.getDeliveryMode() );
+    assertEquals( 2, step.producer.getPriority() );
+    assertEquals( 3, step.producer.getTimeToLive() );
+    assertEquals( 4, step.producer.getDeliveryDelay() );
+    assertEquals( "ASDF", step.producer.getJMSCorrelationID() );
+    assertEquals( "JMSType", step.producer.getJMSType() );
   }
 
   @Test
@@ -242,5 +240,28 @@ public class JmsProducerTest {
     meta.setTimeToLive( "asdf" );
 
     assertFalse( step.init( meta, data ) );
+  }
+
+  @Test
+  public void jmsContextClosedOnStop() throws Exception {
+    TransMeta transMeta = new TransMeta( getClass().getResource( "/jms-generate-produce.ktr" ).getPath() );
+    Trans trans = new Trans( transMeta );
+    trans.prepareExecution( new String[] {} );
+
+    StepMetaDataCombi combi = trans.getSteps().get( 1 );
+    JmsProducer step = (JmsProducer) combi.step;
+    JmsProducerMeta jmsMeta = step.meta;
+    jmsMeta.jmsDelegate.jmsProviders = Collections.singletonList( jmsProvider );
+    when( jmsProvider.supports( JmsProvider.ConnectionType.ACTIVEMQ ) ).thenReturn( true );
+    when( jmsProvider.getContext( jmsMeta.jmsDelegate ) ).thenReturn( jmsContext );
+    when( jmsContext.createProducer() ).thenReturn( jmsProducer );
+    when( jmsProducer.send( jmsMeta.jmsDelegate.getDestination(), "ackbar" ) ).then( ignore -> {
+      trans.stopAll();
+      return null;
+    } );
+
+    trans.startThreads();
+    trans.waitUntilFinished();
+    verify( jmsContext ).close();
   }
 }

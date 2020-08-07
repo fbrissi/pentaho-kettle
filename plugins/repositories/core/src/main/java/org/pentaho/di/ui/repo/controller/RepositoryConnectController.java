@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2019 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -95,6 +95,7 @@ public class RepositoryConnectController implements IConnectedRepositoryInstance
   private Supplier<Spoon> spoonSupplier;
   private List<RepositoryContollerListener> listeners = new ArrayList<>();
   private boolean relogin = false;
+  private Shell parentShell;
 
   public RepositoryConnectController( PluginRegistry pluginRegistry, Supplier<Spoon> spoonSupplier,
                                       RepositoriesMeta repositoriesMeta ) {
@@ -112,13 +113,19 @@ public class RepositoryConnectController implements IConnectedRepositoryInstance
     this( PluginRegistry.getInstance(), Spoon::getInstance, new RepositoriesMeta() );
   }
 
+  public void setParentShell( Shell shell ) {
+    this.parentShell = shell;
+  }
+
+  public Shell getParentShell( ) {
+    return this.parentShell;
+  }
+
   public boolean help() {
-    spoonSupplier.get().getShell().getDisplay().asyncExec( () -> {
-      Shell[] shells = spoonSupplier.get().getShell().getShells();
-      HelpUtils
-        .openHelpDialog( shells[ shells.length - 1 ], BaseMessages.getString( PKG, "RepositoryDialog.Dialog.Tile" ),
-          HELP_URL, BaseMessages.getString( PKG, "RepositoryDialog.Dialog.Header" ) );
-    } );
+    spoonSupplier.get().getShell().getDisplay().asyncExec( () ->
+      HelpUtils.openHelpDialog( this.parentShell,
+        BaseMessages.getString( PKG, "RepositoryDialog.Dialog.Tile" ),
+        HELP_URL, BaseMessages.getString( PKG, "RepositoryDialog.Dialog.Header" ) ) );
     return true;
   }
 
@@ -226,9 +233,7 @@ public class RepositoryConnectController implements IConnectedRepositoryInstance
   public boolean updateRepository( String id, Map<String, Object> items ) {
     RepositoryMeta repositoryMeta = repositoriesMeta.findRepository( (String) items.get( ORIGINAL_NAME ) );
     boolean isConnected = repositoryMeta == connectedRepository;
-    repositoryMeta.setName( (String) items.get( DISPLAY_NAME ) );
-    repositoryMeta.setDescription( (String) items.get( DESCRIPTION ) );
-    repositoryMeta.setDefault( (Boolean) items.get( IS_DEFAULT ) );
+    repositoryMeta.populate( items, repositoriesMeta );
     save();
     if ( isConnected ) {
       Spoon spoon = spoonSupplier.get();
@@ -241,6 +246,16 @@ public class RepositoryConnectController implements IConnectedRepositoryInstance
       } else {
         execute.run();
       }
+    }
+    try {
+      Repository repository =
+        pluginRegistry.loadClass( RepositoryPluginType.class, repositoryMeta.getId(), Repository.class );
+      repository.init( repositoryMeta );
+      if ( !testRepository( repository ) ) {
+        return false;
+      }
+    } catch ( KettleException e ) {
+      return false;
     }
     currentRepository = repositoryMeta;
     return true;
@@ -359,6 +374,7 @@ public class RepositoryConnectController implements IConnectedRepositoryInstance
       spoon.setRepository( repository );
       setConnectedRepository( repositoryMeta );
       fireListeners();
+      spoon.updateTreeForActiveAbstractMetas();
     };
     if ( spoon.getShell() != null ) {
       spoon.getShell().getDisplay().asyncExec( execute );
@@ -493,6 +509,12 @@ public class RepositoryConnectController implements IConnectedRepositoryInstance
   public boolean clearDefaultRepository() {
     for ( int i = 0; i < repositoriesMeta.nrRepositories(); i++ ) {
       repositoriesMeta.getRepository( i ).setDefault( false );
+    }
+    try {
+      repositoriesMeta.writeData();
+    } catch ( KettleException ke ) {
+      log.logError( "Unable to set default repository", ke );
+      return false;
     }
     return true;
   }

@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2019 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -23,19 +23,22 @@
 
 package org.pentaho.di.trans.step.jms;
 
-import io.reactivex.Observable;
-import io.reactivex.ObservableOnSubscribe;
 import org.pentaho.di.trans.streaming.common.BaseStreamStep;
 import org.pentaho.di.trans.streaming.common.BlockingQueueStreamSource;
 
 import javax.jms.JMSConsumer;
+import javax.jms.JMSException;
 import javax.jms.JMSRuntimeException;
 import javax.jms.Message;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
+import java.util.Arrays;
+import java.util.Date;
 import java.util.List;
+import java.util.TimeZone;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import static com.google.common.collect.ImmutableList.of;
-import static io.reactivex.schedulers.Schedulers.io;
 import static java.util.Collections.singletonList;
 import static org.pentaho.di.i18n.BaseMessages.getString;
 import static org.pentaho.di.trans.step.jms.JmsConstants.PKG;
@@ -54,46 +57,42 @@ public class JmsStreamSource extends BlockingQueueStreamSource<List<Object>> {
   }
 
   @Override public void open() {
-    consumer = jmsDelegate.getJmsContext( streamStep )
-      .createConsumer( jmsDelegate.getDestination( streamStep ) );
-    Observable
-      .create( receiveLoop() )  // jms loop
-      .subscribeOn( io() )   // subscribe and observe on new io threads
-      .observeOn( io() )
-      .doOnNext( message -> acceptRows( singletonList( of( message, jmsDelegate.destinationName ) ) ) )
-      .doOnComplete( this::close )
-      .doOnError( this::error )
-      .publish() // publish/connect will "start" the receive loop
-      .connect();
+    consumer = jmsDelegate.getJmsContext()
+      .createConsumer( jmsDelegate.getDestination() );
+    Executors.newSingleThreadExecutor().submit( this::receiveLoop  );
   }
 
   /**
    * Will receive messages from consumer.  If timeout is hit, consumer.receive(timeout)
    * will return null, and the observable will be completed.
    */
-  private ObservableOnSubscribe<Object> receiveLoop() {
-    return emitter -> {
-      Message message;
-      try {
-        while ( ( message = consumer.receive( receiverTimeout ) ) != null ) {
-          streamStep.logDebug( message.toString() );
-          emitter.onNext( message.getBody( Object.class ) );
-        }
-      } catch ( JMSRuntimeException jmsException ) {
-        emitter.onError( jmsException );
+  private void receiveLoop() {
+    Message message;
+    try {
+      while ( !closed.get() && ( message = consumer.receive( receiverTimeout ) ) != null ) {
+        streamStep.logDebug( message.toString() );
+        Date date = new Date( message.getJMSTimestamp() );
+        DateFormat formatter = new SimpleDateFormat( "MM-dd-yyyy HH:mm:ss a" );
+        formatter.setTimeZone( TimeZone.getTimeZone( "UTC" ) );
+        String jmsTimestamp = formatter.format( date );
+        acceptRows( singletonList( Arrays.asList( message.getBody( Object.class ), jmsDelegate.destinationName, message.getJMSMessageID(), jmsTimestamp, message.getJMSRedelivered() ) ) );
       }
+    } catch ( JMSRuntimeException | JMSException jmsException ) {
+      error( jmsException );
+    } finally {
+      super.close();
       if ( !closed.get() ) {
+        close();
         streamStep.logBasic( getString( PKG, "JmsStreamSource.HitReceiveTimeout" ) );
       }
-      emitter.onComplete();
-    };
+    }
   }
 
   @Override public void close() {
-    super.close();
-    closed.set( true );
-    if ( consumer != null ) {
+    //don't call super.close().  need to wait for the receiveLoop to be done
+    if ( consumer != null && !closed.getAndSet( true ) ) {
       consumer.close();
+      jmsDelegate.getJmsContext().close();
     }
   }
 }

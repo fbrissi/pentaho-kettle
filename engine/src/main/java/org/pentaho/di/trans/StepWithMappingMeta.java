@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2020 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -22,16 +22,12 @@
 
 package org.pentaho.di.trans;
 
-import static org.pentaho.di.core.Const.INTERNAL_VARIABLE_ENTRY_CURRENT_DIRECTORY;
-import static org.pentaho.di.core.Const.INTERNAL_VARIABLE_JOB_FILENAME_DIRECTORY;
-import static org.pentaho.di.core.Const.INTERNAL_VARIABLE_TRANSFORMATION_FILENAME_DIRECTORY;
-import static org.pentaho.di.core.Const.INTERNAL_VARIABLE_JOB_FILENAME_NAME;
-
 import org.apache.commons.lang.ArrayUtils;
 import org.pentaho.di.core.Const;
 import org.pentaho.di.core.ObjectLocationSpecificationMethod;
 import org.pentaho.di.core.exception.KettleException;
 import org.pentaho.di.core.logging.LogChannel;
+import org.pentaho.di.core.parameters.DuplicateParamException;
 import org.pentaho.di.core.parameters.NamedParams;
 import org.pentaho.di.core.parameters.UnknownParamException;
 import org.pentaho.di.core.util.CurrentDirectoryResolver;
@@ -48,13 +44,21 @@ import org.pentaho.di.repository.RepositoryDirectoryInterface;
 import org.pentaho.di.resource.ResourceDefinition;
 import org.pentaho.di.resource.ResourceNamingInterface;
 import org.pentaho.di.trans.step.StepMetaInterface;
+import org.pentaho.di.trans.steps.mapping.MappingIODefinition;
 import org.pentaho.metastore.api.IMetaStore;
 
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
+
+import static org.pentaho.di.core.Const.INTERNAL_VARIABLE_ENTRY_CURRENT_DIRECTORY;
+import static org.pentaho.di.core.Const.INTERNAL_VARIABLE_JOB_FILENAME_DIRECTORY;
+import static org.pentaho.di.core.Const.INTERNAL_VARIABLE_JOB_FILENAME_NAME;
+import static org.pentaho.di.core.Const.INTERNAL_VARIABLE_TRANSFORMATION_FILENAME_DIRECTORY;
 
 /**
  * This class is supposed to use in steps where the mapping to sub transformations takes place
@@ -96,8 +100,9 @@ public abstract class StepWithMappingMeta extends BaseSerializingMeta implements
     return tmpSpace;
   }
 
-  public static synchronized TransMeta loadMappingMeta( StepWithMappingMeta executorMeta, Repository rep,
-                                                        IMetaStore metaStore, VariableSpace space, boolean share ) throws KettleException {
+  public static TransMeta loadMappingMeta( StepWithMappingMeta executorMeta, Repository rep, IMetaStore metaStore, VariableSpace space, boolean share ) throws KettleException {
+    // Note - was a synchronized static method, but as no static variables are manipulated, this is entirely unnecessary
+
     TransMeta mappingTransMeta = null;
 
     CurrentDirectoryResolver r = new CurrentDirectoryResolver();
@@ -109,6 +114,10 @@ public abstract class StepWithMappingMeta extends BaseSerializingMeta implements
     switch ( executorMeta.getSpecificationMethod() ) {
       case FILENAME:
         String realFilename = tmpSpace.environmentSubstitute( executorMeta.getFileName() );
+        if ( space != null ) {
+          // This is a parent transformation and parent variable should work here. A child file name can be resolved via parent space.
+          realFilename = space.environmentSubstitute( realFilename );
+        }
         try {
           // OK, load the meta-data from file...
           // Don't set internal variables: they belong to the parent thread!
@@ -144,8 +153,21 @@ public abstract class StepWithMappingMeta extends BaseSerializingMeta implements
         break;
 
       case REPOSITORY_BY_NAME:
-        String realTransname = tmpSpace.environmentSubstitute( executorMeta.getTransName() );
-        String realDirectory = tmpSpace.environmentSubstitute( executorMeta.getDirectoryPath() );
+        String realTransname = tmpSpace.environmentSubstitute( Const.NVL( executorMeta.getTransName(), "" ) );
+        String realDirectory = tmpSpace.environmentSubstitute( Const.NVL( executorMeta.getDirectoryPath(), "" ) );
+
+        if ( space != null ) {
+          // This is a parent transformation and parent variable should work here. A child file name can be resolved via parent space.
+          realTransname = space.environmentSubstitute( realTransname );
+          realDirectory = space.environmentSubstitute( realDirectory );
+        }
+
+        if ( Utils.isEmpty( realDirectory ) && !Utils.isEmpty( realTransname ) ) {
+          int index = realTransname.lastIndexOf( '/' );
+          String transPath =  realTransname;
+          realTransname = realTransname.substring( index + 1 );
+          realDirectory = transPath.substring( 0, index );
+        }
 
         if ( rep != null ) {
           if ( !Utils.isEmpty( realTransname ) && !Utils.isEmpty( realDirectory ) ) {
@@ -191,10 +213,11 @@ public abstract class StepWithMappingMeta extends BaseSerializingMeta implements
       return null;
     }
 
-    //  When the child parameter does exist in the parent parameters, overwrite the child parameter by the
-    // parent parameter.
-    replaceVariableValues( mappingTransMeta, space );
+
     if ( share ) {
+      //  When the child parameter does exist in the parent parameters, overwrite the child parameter by the
+      // parent parameter.
+      replaceVariableValues( mappingTransMeta, space );
       // All other parent parameters need to get copied into the child parameters  (when the 'Inherit all
       // variables from the transformation?' option is checked)
       addMissingVariables( mappingTransMeta, space );
@@ -208,12 +231,21 @@ public abstract class StepWithMappingMeta extends BaseSerializingMeta implements
 
   public static void activateParams( VariableSpace childVariableSpace, NamedParams childNamedParams, VariableSpace parent, String[] listParameters,
                                      String[] mappingVariables, String[] inputFields ) {
+    activateParams(  childVariableSpace,  childNamedParams,  parent, listParameters, mappingVariables,  inputFields, true );
+  }
+
+  public static void activateParams( VariableSpace childVariableSpace, NamedParams childNamedParams, VariableSpace parent, String[] listParameters,
+                                     String[] mappingVariables, String[] inputFields, boolean isPassingAllParameters ) {
     Map<String, String> parameters = new HashMap<>();
     Set<String> subTransParameters = new HashSet<>( Arrays.asList( listParameters ) );
 
     if ( mappingVariables != null ) {
       for ( int i = 0; i < mappingVariables.length; i++ ) {
         parameters.put( mappingVariables[ i ], parent.environmentSubstitute( inputFields[ i ] ) );
+        //If inputField value is not empty then create it in variableSpace of step(Parent)
+        if ( !Utils.isEmpty( Const.trim( parent.environmentSubstitute( inputFields[ i ] ) ) ) ) {
+          parent.setVariable( mappingVariables[ i ], parent.environmentSubstitute( inputFields[ i ] ) );
+        }
       }
     }
 
@@ -222,7 +254,9 @@ public abstract class StepWithMappingMeta extends BaseSerializingMeta implements
       // parent parameter.
       if ( parameters.containsKey( variableName ) ) {
         parameters.put( variableName, parent.getVariable( variableName ) );
-      } else if ( ArrayUtils.contains( listParameters, variableName ) ) {
+        // added  isPassingAllParameters check since we don't need to overwrite the child value if the
+        // isPassingAllParameters is not checked
+      } else if ( ArrayUtils.contains( listParameters, variableName ) && isPassingAllParameters ) {
         // there is a definition only in Transformation properties - params tab
         parameters.put( variableName, parent.getVariable( variableName ) );
       }
@@ -238,12 +272,22 @@ public abstract class StepWithMappingMeta extends BaseSerializingMeta implements
           // this is explicitly checked for up front
         }
       } else {
+        try {
+          childNamedParams.addParameterDefinition( key, "", "" );
+          childNamedParams.setParameterValue( key, value );
+        } catch ( DuplicateParamException e ) {
+          // this was explicitly checked before
+        } catch ( UnknownParamException e ) {
+          // this is explicitly checked for up front
+        }
+
         childVariableSpace.setVariable( key, value );
       }
     }
 
     childNamedParams.activateParameters();
   }
+
 
   /**
    * @return the specificationMethod
@@ -396,15 +440,47 @@ public abstract class StepWithMappingMeta extends BaseSerializingMeta implements
     }
   }
 
-  public static void replaceVariableValues( VariableSpace childTransMeta, VariableSpace replaceBy ) {
+  public static void replaceVariableValues( VariableSpace childTransMeta, VariableSpace replaceBy, String type ) {
     if ( replaceBy == null ) {
       return;
     }
     String[] variableNames = replaceBy.listVariables();
     for ( String variableName : variableNames ) {
-      if ( childTransMeta.getVariable( variableName ) != null ) {
+      if ( childTransMeta.getVariable( variableName ) != null && !isInternalVariable( variableName, type ) ) {
         childTransMeta.setVariable( variableName, replaceBy.getVariable( variableName ) );
       }
     }
+  }
+
+  public static void replaceVariableValues( VariableSpace childTransMeta, VariableSpace replaceBy ) {
+    replaceVariableValues(  childTransMeta,  replaceBy, "" );
+  }
+
+  private static boolean isInternalVariable( String variableName, String type ) {
+    return type.equals( "Trans" ) ? isTransInternalVariable( variableName )
+      : type.equals( "Job" ) ? isJobInternalVariable( variableName )
+      : isJobInternalVariable( variableName ) || isTransInternalVariable( variableName );
+  }
+
+  private static boolean isTransInternalVariable( String variableName ) {
+    return ( Arrays.asList( Const.INTERNAL_TRANS_VARIABLES ).contains( variableName ) );
+  }
+
+  private static boolean isJobInternalVariable( String variableName ) {
+    return ( Arrays.asList( Const.INTERNAL_JOB_VARIABLES ).contains( variableName ) );
+  }
+
+  /**
+   * @return the inputMappings
+   */
+  public List<MappingIODefinition> getInputMappings() {
+    return Collections.emptyList();
+  }
+
+  /**
+   * @return the outputMappings
+   */
+  public List<MappingIODefinition> getOutputMappings() {
+    return Collections.emptyList();
   }
 }

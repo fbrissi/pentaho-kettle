@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2019 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -32,6 +32,7 @@ import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.text.DecimalFormat;
 import java.text.SimpleDateFormat;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.Locale;
 import java.util.TimeZone;
@@ -226,6 +227,10 @@ public interface ValueMetaInterface extends Cloneable {
     } catch ( Exception e ) {
       return "unknown/illegal";
     }
+  }
+
+  static int getTypeCode( String desc ) {
+    return Arrays.asList( typeCodes ).indexOf( desc );
   }
 
   /**
@@ -722,6 +727,20 @@ public interface ValueMetaInterface extends Cloneable {
    * @return the original scale
    */
   int getOriginalScale();
+
+  /**
+   * Gets the original nullable.
+   *
+   * @return the original nullable
+   */
+  int getOriginalNullable();
+
+  /**
+   * Gets the original signed.
+   *
+   * @return the original signed
+   */
+  boolean getOriginalSigned();
 
   /**
    * Sets the original scale.
@@ -1253,6 +1272,23 @@ public interface ValueMetaInterface extends Cloneable {
    */
   ValueMetaInterface getValueFromSQLType( DatabaseMeta databaseMeta, String name, ResultSetMetaData rm,
     int index, boolean ignoreLength, boolean lazyConversion ) throws KettleDatabaseException;
+
+  /**
+   * This is a similar method to getValueFromSQLType, but it uses a
+   * ResultSet from a call to DatabaseMetaData#getColumns(String, String, String, String)
+   * The ResultSet must be positioned correctly on the row to read.
+   *
+   * <p>Note that the ValueMeta returned by this RowMeta may not contain
+   * actual values. This is a lightweight call using only JDBC metadata and does
+   * not make use of SQL statements.
+   *
+   * @param databaseMeta
+   *          the database metadata to reference capabilities and so on.
+   * @param rs
+   *          A ResultSet from getColumns, positioned correctly on a column to read.
+   */
+  ValueMetaInterface getMetadataPreview( DatabaseMeta databaseMeta, ResultSet rs )
+    throws KettleDatabaseException;
 
   /**
    * Get a value from a result set column based on the current value metadata

@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2017 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2019 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -24,10 +24,14 @@ package org.pentaho.di.ui.spoon.trans;
 
 import java.sql.ResultSet;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.ResourceBundle;
 
+import com.google.common.annotations.VisibleForTesting;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.custom.CTabFolder;
 import org.eclipse.swt.custom.CTabItem;
@@ -240,18 +244,17 @@ public class TransHistoryDelegate extends SpoonDelegate implements XulEventHandl
     LogTableInterface logTable = model.logTable;
 
     if ( logTable.isDefined() ) {
-      String schemaTable = logTable.getQuotedSchemaTableCombination();
       DatabaseMeta databaseMeta = logTable.getDatabaseMeta();
 
       MessageBox mb = new MessageBox( transGraph.getShell(), SWT.YES | SWT.NO | SWT.ICON_QUESTION );
       mb.setMessage( BaseMessages.getString( PKG, "TransGraph.Dialog.AreYouSureYouWantToRemoveAllLogEntries.Message",
-        schemaTable ) ); // Nothing found that matches your criteria, sorry!
+        logTable.getQuotedSchemaTableCombination() ) );
       mb.setText( BaseMessages.getString( PKG, "TransGraph.Dialog.AreYouSureYouWantToRemoveAllLogEntries.Title" ) );
       if ( mb.open() == SWT.YES ) {
         Database database = new Database( loggingObject, databaseMeta );
         try {
           database.connect();
-          database.truncateTable( schemaTable );
+          database.truncateTable( logTable.getSchemaName(), logTable.getTableName() );
         } catch ( Exception e ) {
           new ErrorDialog( transGraph.getShell(),
             BaseMessages.getString( PKG, "TransGraph.Dialog.ErrorClearningLoggingTable.Title" ),
@@ -411,14 +414,14 @@ public class TransHistoryDelegate extends SpoonDelegate implements XulEventHandl
         if ( nameField != null ) {
           if ( transMeta.isUsingAClusterSchema() ) {
             sql.append( " WHERE " ).append( logConnection.quoteField( nameField.getFieldName() ) ).append( " LIKE ?" );
-            params.addValue( new ValueMetaString( "transname_literal" ), transMeta.getName() );
+            params.addValue( new ValueMetaString( "transname_literal", 255, -1 ), transMeta.getName() );
 
             sql.append( " OR    " ).append( logConnection.quoteField( nameField.getFieldName() ) ).append( " LIKE ?" );
-            params.addValue( new ValueMetaString( "transname_cluster" ), transMeta.getName()
+            params.addValue( new ValueMetaString( "transname_cluster", 255, -1 ), transMeta.getName()
               + " (%" );
           } else {
             sql.append( " WHERE " ).append( logConnection.quoteField( nameField.getFieldName() ) ).append( " = ?" );
-            params.addValue( new ValueMetaString( "transname_literal" ), transMeta.getName() );
+            params.addValue( new ValueMetaString( "transname_literal", 255, -1 ), transMeta.getName() );
           }
         }
 
@@ -458,36 +461,74 @@ public class TransHistoryDelegate extends SpoonDelegate implements XulEventHandl
     return moreRows;
   }
 
+  /**
+   * Maps UI columns to DB columns
+   * @return {@link Map} with the mapping between UI column names and index of the corresponding DB column
+   */
+  @VisibleForTesting
+  Map<String, Integer> getColumnMappings( TransHistoryLogTab model ) {
+    Map<String, Integer> map = new HashMap();
+
+    for ( ColumnInfo ci : model.logDisplayTableView.getColumns() ) {
+      for ( int i = 0; i < model.logTableFields.size(); i++ ) {
+        if ( ci.getValueMeta().getName().equals( model.logTableFields.get( i ).getFieldName() ) ) {
+          map.put( model.logTableFields.get( i ).getFieldName(), i );
+          break;
+        }
+      }
+    }
+
+    return map;
+  }
+
+  /**
+   * Returns the {@link ValueMetaInterface} for a specified log table field
+   * @param columns The list of UI columns
+   * @param field The field to look for
+   * @return The {@link ValueMetaInterface} for the specified field
+   */
+  @VisibleForTesting
+  ValueMetaInterface getValueMetaForColumn( ColumnInfo[] columns, LogTableField field ) {
+    return Arrays.stream( columns )
+      .filter( x -> x.getValueMeta().getName().equals( field.getFieldName() ) )
+      .findFirst()
+      .get()
+      .getValueMeta();
+  }
+
   private void displayHistoryData( final int index ) {
     TransHistoryLogTab model = models[index];
-    ColumnInfo[] colinf = model.logDisplayTableView.getColumns();
 
-    // Now, we're going to display the data in the table view
-    //
     if ( model.logDisplayTableView == null || model.logDisplayTableView.isDisposed() ) {
       return;
     }
 
-    int selectionIndex = model.logDisplayTableView.getSelectionIndex();
+    // display the data in the table view
+    ColumnInfo[] colinf = model.logDisplayTableView.getColumns();
 
+    int selectionIndex = model.logDisplayTableView.getSelectionIndex();
     model.logDisplayTableView.table.clearAll();
 
     List<Object[]> rows = model.rows;
 
+    LogTableField errorsField = model.logTable.getErrorsField();
+    LogTableField statusField = model.logTable.getStatusField();
+
     if ( rows != null && rows.size() > 0 ) {
-      // OK, now that we have a series of rows, we can add them to the table view...
-      //
+      // we need to map ui columns to db columns before rendering data
+      Map<String, Integer> map = getColumnMappings( model );
+
+      // add row data to the table view
       for ( Object[] rowData : rows ) {
         TableItem item = new TableItem( model.logDisplayTableView.table, SWT.NONE );
 
         for ( int c = 0; c < colinf.length; c++ ) {
-
           ColumnInfo column = colinf[c];
 
           ValueMetaInterface valueMeta = column.getValueMeta();
           String string = null;
           try {
-            string = valueMeta.getString( rowData[c] );
+            string = valueMeta.getString( rowData[ map.get( column.getValueMeta().getName() ) ] );
           } catch ( KettleValueException e ) {
             log.logError( "history data conversion issue", e );
           }
@@ -499,21 +540,19 @@ public class TransHistoryDelegate extends SpoonDelegate implements XulEventHandl
         Long errors = null;
         LogStatus status = null;
 
-        LogTableField errorsField = model.logTable.getErrorsField();
         if ( errorsField != null ) {
-          int index1 = model.logTableFields.indexOf( errorsField );
+          ValueMetaInterface  valueMeta = getValueMetaForColumn( colinf, errorsField );
           try {
-            errors = colinf[index1].getValueMeta().getInteger( rowData[index1] );
+            errors = valueMeta.getInteger( rowData[ map.get( valueMeta.getName() ) ] );
           } catch ( KettleValueException e ) {
             log.logError( "history data conversion issue", e );
           }
         }
-        LogTableField statusField = model.logTable.getStatusField();
         if ( statusField != null ) {
-          int index1 = model.logTableFields.indexOf( statusField );
+          ValueMetaInterface  valueMeta = getValueMetaForColumn( colinf, statusField );
           String statusString = null;
           try {
-            statusString = colinf[index1].getValueMeta().getString( rowData[index1] );
+            statusString = valueMeta.getString( rowData[ map.get( valueMeta.getName() ) ] );
           } catch ( KettleValueException e ) {
             log.logError( "history data conversion issue", e );
           }
@@ -534,8 +573,6 @@ public class TransHistoryDelegate extends SpoonDelegate implements XulEventHandl
       model.logDisplayTableView.optWidth( true );
     } else {
       model.logDisplayTableView.clearAll( false );
-      // new TableItem(wFields.get(tabIndex).table, SWT.NONE); // Give it an item to prevent errors on various
-      // platforms.
     }
 
     if ( selectionIndex >= 0 && selectionIndex < model.logDisplayTableView.getItemCount() ) {
@@ -671,7 +708,8 @@ public class TransHistoryDelegate extends SpoonDelegate implements XulEventHandl
     refreshHistory( tabIndex, Mode.ALL );
   }
 
-  private class TransHistoryLogTab extends CTabItem {
+  @VisibleForTesting
+  class TransHistoryLogTab extends CTabItem {
     private List<LogTableField> logTableFields = new ArrayList<LogTableField>();
     private List<Object[]> rows;
     private LogTableInterface logTable;

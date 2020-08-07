@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2019 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -25,14 +25,18 @@ package org.pentaho.di.trans.steps.s3csvinput;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.amazonaws.auth.DefaultAWSCredentialsProviderChain;
-import org.jets3t.service.S3Service;
-import org.jets3t.service.S3ServiceException;
-import org.jets3t.service.impl.rest.httpclient.RestS3Service;
-import org.jets3t.service.security.AWSCredentials;
+import com.amazonaws.SdkClientException;
+import com.amazonaws.auth.AWSStaticCredentialsProvider;
+import com.amazonaws.auth.BasicAWSCredentials;
+import com.amazonaws.regions.Regions;
+import com.amazonaws.services.s3.AmazonS3;
+import com.amazonaws.services.s3.AmazonS3ClientBuilder;
 import org.pentaho.di.core.CheckResult;
 import org.pentaho.di.core.CheckResultInterface;
 import org.pentaho.di.core.Const;
+import org.pentaho.di.core.row.value.ValueMetaBase;
+import org.pentaho.di.core.util.EnvUtil;
+import org.pentaho.di.core.util.StringUtil;
 import org.pentaho.di.core.util.Utils;
 import org.pentaho.di.core.annotations.Step;
 import org.pentaho.di.core.database.DatabaseMeta;
@@ -77,7 +81,7 @@ import org.w3c.dom.Node;
 
 @Step( id = "S3CSVINPUT", image = "S3I.svg", i18nPackageName = "org.pentaho.di.trans.steps.s3csvinput",
     name = "S3CsvInput.Step.Name", description = "S3CsvInput.Step.Description", categoryDescription = "Input",
-    documentationUrl = "http://wiki.pentaho.com/display/EAI/S3+CSV+Input" )
+    documentationUrl = "Products/S3_CSV_Input" )
 @InjectionSupported( localizationPrefix = "S3CsvInput.Injection.", groups = { "INPUT_FIELDS" } )
 public class S3CsvInputMeta extends BaseStepMeta implements StepMetaInterface, InputFileMetaInterface {
 
@@ -117,8 +121,10 @@ public class S3CsvInputMeta extends BaseStepMeta implements StepMetaInterface, I
   @Injection( name = "RUNNING_IN_PARALLEL" )
   private boolean runningInParallel;
 
+  @Injection( name = "AWS_ACCESS_KEY" )
   private String awsAccessKey;
 
+  @Injection( name = "AWS_SECRET_KEY" )
   private String awsSecretKey;
 
   public S3CsvInputMeta() {
@@ -675,6 +681,21 @@ public class S3CsvInputMeta extends BaseStepMeta implements StepMetaInterface, I
   }
 
   /**
+   * For legacy transformations containing AWS S3 access credentials, {@link Const#KETTLE_USE_AWS_DEFAULT_CREDENTIALS} can force Spoon to use
+   * the Amazon Default Credentials Provider Chain instead of using the credentials embedded in the transformation metadata.
+   *
+   * @return true if {@link Const#KETTLE_USE_AWS_DEFAULT_CREDENTIALS} is true or AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are not specified
+   */
+  public boolean getUseAwsDefaultCredentials() {
+    if ( ValueMetaBase.convertStringToBoolean( Const.NVL( EnvUtil.getSystemProperty( Const.KETTLE_USE_AWS_DEFAULT_CREDENTIALS ), "N" ) ) ) {
+      return true;
+    } else if ( StringUtil.isEmpty( awsAccessKey ) && StringUtil.isEmpty( awsSecretKey ) ) {
+      return true;
+    }
+    return false;
+  }
+
+  /**
    * @return the bucket
    */
   public String getBucket() {
@@ -719,21 +740,24 @@ public class S3CsvInputMeta extends BaseStepMeta implements StepMetaInterface, I
     this.awsSecretKey = awsSecretKey;
   }
 
-  public S3Service getS3Service( VariableSpace space ) throws S3ServiceException {
-    String accessKey = Encr.decryptPasswordOptionallyEncrypted( space.environmentSubstitute( awsAccessKey ) );
-    String secretKey = Encr.decryptPasswordOptionallyEncrypted( space.environmentSubstitute( awsSecretKey ) );
-    AWSCredentials credentials = null;
+  public AmazonS3 getS3Client( VariableSpace space ) throws SdkClientException {
+    if ( !getUseAwsDefaultCredentials() ) {
+      // Handle legacy credentials ( embedded in the step ).  We'll force a region since it not specified and
+      // then turn on GlobalBucketAccess so if the files accessed are elsewhere it won't matter.
+      BasicAWSCredentials credentials = new BasicAWSCredentials(
+        Encr.decryptPasswordOptionallyEncrypted( space.environmentSubstitute( awsAccessKey ) ),
+        Encr.decryptPasswordOptionallyEncrypted( space.environmentSubstitute( awsSecretKey ) ) );
 
-    if ( isEmpty( accessKey ) && isEmpty( secretKey ) ) {
-      com.amazonaws.auth.AWSCredentials defaultCredentials = DefaultAWSCredentialsProviderChain.getInstance().getCredentials();
-      credentials = new AWSCredentials( defaultCredentials.getAWSAccessKeyId(), defaultCredentials.getAWSSecretKey() );
+      return AmazonS3ClientBuilder.standard()
+        .withCredentials( new AWSStaticCredentialsProvider( credentials ) )
+        .withRegion( Regions.US_EAST_1 )
+        .enableForceGlobalBucketAccess()
+        .build();
     } else {
-      credentials = new AWSCredentials( accessKey, secretKey );
+      // Get Credentials the new way
+      return AmazonS3ClientBuilder.standard()
+        .enableForceGlobalBucketAccess()
+        .build();
     }
-    return new RestS3Service( credentials );
-  }
-
-  private boolean isEmpty( String value ) {
-    return value == null || value.length() <= 0;
   }
 }

@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2017-2018 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2017-2019 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -21,8 +21,12 @@
  ******************************************************************************/
 package org.pentaho.di.trans.steps.pgbulkloader;
 
+import static org.hamcrest.CoreMatchers.containsString;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertThat;
+import static org.junit.Assert.fail;
 import static org.mockito.Matchers.any;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doReturn;
@@ -36,14 +40,29 @@ import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.ClassRule;
 import org.junit.Test;
+import org.pentaho.di.core.Const;
 import org.pentaho.di.core.KettleClientEnvironment;
 import org.pentaho.di.core.database.Database;
 import org.pentaho.di.core.database.DatabaseMeta;
 import org.pentaho.di.core.exception.KettleException;
+import org.pentaho.di.core.exception.KettlePluginException;
 import org.pentaho.di.core.exception.KettleXMLException;
 import org.pentaho.di.core.logging.LoggingObjectInterface;
+import org.pentaho.di.core.row.RowMeta;
+import org.pentaho.di.core.row.value.ValueMetaFactory;
 import org.pentaho.di.junit.rules.RestorePDIEngineEnvironment;
 import org.pentaho.di.trans.steps.mock.StepMockHelper;
+import org.postgresql.copy.PGCopyOutputStream;
+
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.lang.reflect.Field;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.mockito.Matchers.any;
+import static org.mockito.Mockito.*;
+import static org.pentaho.di.core.row.ValueMetaInterface.TYPE_BOOLEAN;
 
 public class PGBulkLoaderTest {
   @ClassRule public static RestorePDIEngineEnvironment env = new RestorePDIEngineEnvironment();
@@ -92,6 +111,7 @@ public class PGBulkLoaderTest {
     doReturn( new Object[0] ).when( spy ).getRow();
     doReturn( "" ).when( spy ).getCopyCommand();
     doNothing().when( spy ).connect();
+    doNothing().when( spy ).checkClientEncoding();
     doNothing().when( spy ).processTruncate();
     spy.processRow( meta, data );
     verify( spy ).processTruncate();
@@ -143,6 +163,83 @@ public class PGBulkLoaderTest {
     assertEquals( CONNECTION_DB_PORT, database.getDatabaseMeta().getDatabasePortNumberString() );
     assertEquals( CONNECTION_DB_USERNAME, database.getDatabaseMeta().getUsername() );
     assertEquals( CONNECTION_DB_PASSWORD, database.getDatabaseMeta().getPassword() );
+  }
+
+  @Test
+  public void testProcessRow_StreamIsNull() throws Exception {
+    PGBulkLoader pgBulkLoaderStreamIsNull = mock( PGBulkLoader.class );
+    doReturn( null ).when( pgBulkLoaderStreamIsNull ).getRow();
+    PGBulkLoaderMeta meta = mock( PGBulkLoaderMeta.class );
+    PGBulkLoaderData data = mock( PGBulkLoaderData.class );
+    assertEquals( false, pgBulkLoaderStreamIsNull.processRow( meta, data ) );
+  }
+
+  /**
+   * [PDI-17481] Testing the ability that if no connection is specified, we will mark it as a fail and log the
+   * appropriate reason to the user by throwing a KettleException.
+   */
+  @Test
+  public void testNoDatabaseConnection() {
+    try {
+      doReturn( null ).when( stepMockHelper.initStepMetaInterface ).getDatabaseMeta();
+      assertFalse( pgBulkLoader.init( stepMockHelper.initStepMetaInterface, stepMockHelper.initStepDataInterface ) );
+      // Verify that the database connection being set to null throws a KettleException with the following message.
+      pgBulkLoader.verifyDatabaseConnection();
+      // If the method does not throw a Kettle Exception, then the DB was set and not null for this test. Fail it.
+      fail( "Database Connection is not null, this fails the test." );
+    } catch ( KettleException aKettleException ) {
+      assertThat( aKettleException.getMessage(), containsString( "There is no connection defined in this step." ) );
+    }
+  }
+
+  @Test
+  public void writeBooleanToPgOutput() throws Exception {
+    final ByteArrayOutputStream out = initPGCopyOutputStream();
+
+    pgBulkLoader.init( initMeta( "tested value" ), initData() );
+    final RowMeta rowMeta = initRowMeta( "tested value", TYPE_BOOLEAN );
+
+    pgBulkLoader.writeRowToPostgres( rowMeta, new Object[] {true} );
+    assertEquals( "true", "1" + Const.CR, out.toString() );
+
+    out.reset();
+    pgBulkLoader.writeRowToPostgres( rowMeta, new Object[] {false} );
+    assertEquals( "false", "0" + Const.CR, out.toString() );
+  }
+
+  private ByteArrayOutputStream initPGCopyOutputStream() throws IOException, NoSuchFieldException, IllegalAccessException {
+    final ByteArrayOutputStream out = new ByteArrayOutputStream();
+    final PGCopyOutputStream pgCopy = mock( PGCopyOutputStream.class );
+    doAnswer( invocation -> {
+      out.write( (byte[]) invocation.getArguments()[0] );
+      return null;
+    } ).when( pgCopy ).write( any() );
+    final Field pgCopyOut = pgBulkLoader.getClass().getDeclaredField( "pgCopyOut" );
+    pgCopyOut.setAccessible( true );
+    pgCopyOut.set( pgBulkLoader, pgCopy );
+    return out;
+  }
+
+  private RowMeta initRowMeta( String valueName, int type ) throws KettlePluginException {
+    final RowMeta rowMeta = new RowMeta();
+    rowMeta.addValueMeta( ValueMetaFactory.createValueMeta( valueName, type ) );
+    return rowMeta;
+  }
+
+  private PGBulkLoaderMeta initMeta( String valueName ) throws KettleXMLException {
+    final PGBulkLoaderMeta meta = getPgBulkLoaderMock( null );
+    when( meta.getFieldStream() ).thenReturn( new String[] {valueName} );
+    when( meta.getDateMask() ).thenReturn( new String[] {""} );
+    return meta;
+  }
+
+  private PGBulkLoaderData initData() {
+    final PGBulkLoaderData data = new PGBulkLoaderData();
+    data.quote = "\"".getBytes();
+    data.separator = ";".getBytes();
+    data.newline = "\n".getBytes();
+    data.keynrs = new int[] {0};
+    return data;
   }
 
   private static PGBulkLoaderMeta getPgBulkLoaderMock( String DbNameOverride ) throws KettleXMLException {

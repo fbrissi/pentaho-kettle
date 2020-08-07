@@ -11,64 +11,51 @@
   <parent>
     <artifactId>pdi-assemblies</artifactId>
     <groupId>org.pentaho.di</groupId>
-    <version>8.2.0.0-SNAPSHOT</version>
+    <version>9.1.0.0-SNAPSHOT</version>
   </parent>
 
   <properties>
     <pdi-engine-spark.version>${project.version}</pdi-engine-spark.version>
-    <rxjava.version>2.0.4</rxjava.version>
+    <rxjava.version>2.2.3</rxjava.version>
 
-    <pentaho-json.version>8.2.0.0-SNAPSHOT</pentaho-json.version>
+    <pentaho-json.version>9.1.0.0-SNAPSHOT</pentaho-json.version>
+    <pentaho-hadoop-shims.version>9.1.0.0-SNAPSHOT</pentaho-hadoop-shims.version>
     <pdi-spark-driver.version>${project.version}</pdi-spark-driver.version>
-    <pdi-osgi-bridge.version>8.2.0.0-SNAPSHOT</pdi-osgi-bridge.version>
-    <commons-database.version>8.2.0.0-SNAPSHOT</commons-database.version>
-    <pentaho-registry.version>8.2.0.0-SNAPSHOT</pentaho-registry.version>
-    <pentaho-metaverse.version>8.2.0.0-SNAPSHOT</pentaho-metaverse.version>
-    <platform.version>8.2.0.0-SNAPSHOT</platform.version>
-    <pentaho-reporting.version>8.2.0.0-SNAPSHOT</pentaho-reporting.version>
-    <pentaho-hadoop-shims-api.version>8.2.0.0-SNAPSHOT</pentaho-hadoop-shims-api.version>
+    <pdi-osgi-bridge.version>9.1.0.0-SNAPSHOT</pdi-osgi-bridge.version>
+    <commons-database.version>9.1.0.0-SNAPSHOT</commons-database.version>
+    <pentaho-registry.version>9.1.0.0-SNAPSHOT</pentaho-registry.version>
+    <pentaho-metaverse.version>9.1.0.0-SNAPSHOT</pentaho-metaverse.version>
+    <platform.version>9.1.0.0-SNAPSHOT</platform.version>
+    <pentaho-reporting.version>9.1.0.0-SNAPSHOT</pentaho-reporting.version>
+    <big-data-plugin.version>9.1.0.0-SNAPSHOT</big-data-plugin.version>
+    <pentaho-hadoop-shims.version>9.1.0.0-SNAPSHOT</pentaho-hadoop-shims.version>
 
     <!-- third party -->
-    <org.apache.karaf.main.version>3.0.3</org.apache.karaf.main.version>
-    <org.apache.karaf.util.version>3.0.3</org.apache.karaf.util.version>
-    <org.apache.karaf.jaas.boot.version>2.4.2</org.apache.karaf.jaas.boot.version>
-    <org.apache.felix.main.version>4.2.1</org.apache.felix.main.version>
-    <derby.version>10.2.1.6</derby.version>
     <derbyclient.version>10.2.1.6</derbyclient.version>
     <hsqldb.version>2.3.2</hsqldb.version>
     <jaybird.version>2.1.6</jaybird.version>
     <jt400.version>6.1</jt400.version>
     <LucidDbClient-minimal.version>0.9.4</LucidDbClient-minimal.version>
     <sapdbc.version>7.4.4</sapdbc.version>
-    <sqlite-jdbc.version>3.7.2</sqlite-jdbc.version>
-    <geronimo-servlet_3.0_spec.version>1.0</geronimo-servlet_3.0_spec.version>
-    <slf4j-api.version>1.7.7</slf4j-api.version>
-    <slf4j-log4j12.version>1.7.7</slf4j-log4j12.version>
-    <apache-log4j-extras>1.2.17</apache-log4j-extras>
+    <sqlite-jdbc.version>3.27.2.1</sqlite-jdbc.version>
     <webservices-api.version>2.3.1</webservices-api.version>
     <webservices-rt.version>2.3.1</webservices-rt.version>
     <asm.version>3.2</asm.version>
     <blueprints-core.version>2.6.0</blueprints-core.version>
     <commons-configuration.version>1.9</commons-configuration.version>
     <flexjson.version>2.1</flexjson.version>
-    <!-- jackson-databind depends on jackson-core and jackson-annotations
-    so that this artifacts have the same version to prevent compile errors -->
-    <fasterxml.jackson.core.version>2.9.2</fasterxml.jackson.core.version>
     <jersey-multipart.version>1.19.1</jersey-multipart.version>
     <mimepull.version>1.9.3</mimepull.version>
     <jsr311-api.version>1.1.1</jsr311-api.version>
     <enunciate-jersey-rt.version>1.27</enunciate-jersey-rt.version>
     <enunciate-core-annotations.version>1.27</enunciate-core-annotations.version>
-    <kafka-clients.version>0.10.2.1</kafka-clients.version>
     <tyrus-standalone-client.version>1.13.1</tyrus-standalone-client.version>
     <spark.version>2.1.0</spark.version>
+    <kafka.spark.version>2.3.2</kafka.spark.version>
     <databricks.version>4.0.0</databricks.version>
-    <paho.version>1.2.0</paho.version>
-    <bahir.version>2.1.1</bahir.version>
-
-    <!-- Spring -->
-    <springframework4.version>4.3.2.RELEASE</springframework4.version>
-    <springframework4-security.version>4.1.3.RELEASE</springframework4-security.version>
+    <bahir.version>2.3.2</bahir.version>
+    <snowflake-jdbc.version>3.6.28</snowflake-jdbc.version>
+    <javax.servlet-api.version>3.1.0</javax.servlet-api.version>
   </properties>
 
   <dependencies>
@@ -77,11 +64,6 @@
       <groupId>pentaho-kettle</groupId>
       <artifactId>kettle-core</artifactId>
       <version>${project.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>org.pentaho</groupId>
-      <artifactId>pentaho-hadoop-shims-api</artifactId>
-      <version>${pentaho-hadoop-shims-api.version}</version>
     </dependency>
     <dependency>
       <groupId>pentaho-kettle</groupId>
@@ -116,30 +98,18 @@
         </exclusion>
       </exclusions>
     </dependency>
+    <dependency>
+      <groupId>pentaho</groupId>
+      <artifactId>pentaho-big-data-legacy-core</artifactId>
+      <version>${big-data-plugin.version}</version>
+      <exclusions>
+        <exclusion>
+          <groupId>*</groupId>
+          <artifactId>*</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
 
-    <!-- AEL -->
-    <dependency>
-      <groupId>org.pentaho.adaptive</groupId>
-      <artifactId>pdi-spark-driver</artifactId>
-      <version>${pdi-spark-driver.version}</version>
-      <exclusions>
-        <exclusion>
-          <groupId>*</groupId>
-          <artifactId>*</artifactId>
-        </exclusion>
-      </exclusions>
-    </dependency>
-    <dependency>
-      <groupId>org.pentaho.adaptive</groupId>
-      <artifactId>pdi-engine-spark</artifactId>
-      <version>${pdi-engine-spark.version}</version>
-      <exclusions>
-        <exclusion>
-          <groupId>*</groupId>
-          <artifactId>*</artifactId>
-        </exclusion>
-      </exclusions>
-    </dependency>
     <dependency>
       <groupId>io.reactivex.rxjava2</groupId>
       <artifactId>rxjava</artifactId>
@@ -148,7 +118,7 @@
     <dependency>
       <groupId>org.apache.spark</groupId>
       <artifactId>spark-streaming-kafka-0-10_2.11</artifactId>
-      <version>${spark.version}</version>
+      <version>${kafka.spark.version}</version>
       <exclusions>
         <exclusion>
           <groupId>*</groupId>
@@ -159,7 +129,6 @@
     <dependency>
       <groupId>org.apache.kafka</groupId>
       <artifactId>kafka-clients</artifactId>
-      <version>${kafka-clients.version}</version>
       <exclusions>
         <exclusion>
           <groupId>*</groupId>
@@ -170,13 +139,6 @@
     <dependency>
       <groupId>org.eclipse.paho</groupId>
       <artifactId>org.eclipse.paho.client.mqttv3</artifactId>
-      <version>${paho.version}</version>
-      <exclusions>
-        <exclusion>
-          <groupId>*</groupId>
-          <artifactId>*</artifactId>
-        </exclusion>
-      </exclusions>
     </dependency>
     <dependency>
       <groupId>org.apache.bahir</groupId>
@@ -289,6 +251,28 @@
         </exclusion>
       </exclusions>
     </dependency>
+    <dependency>
+      <groupId>org.pentaho</groupId>
+      <artifactId>pentaho-hadoop-shims-common-mapreduce</artifactId>
+      <version>${pentaho-hadoop-shims.version}</version>
+      <exclusions>
+        <exclusion>
+          <groupId>*</groupId>
+          <artifactId>*</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.pentaho</groupId>
+      <artifactId>shim-api-core</artifactId>
+      <version>${pentaho-hadoop-shims.version}</version>
+      <exclusions>
+        <exclusion>
+          <groupId>*</groupId>
+          <artifactId>*</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
 
     <!--  Pentaho reporting dependencies -->
     <dependency>
@@ -362,11 +346,29 @@
       <version>${pentaho-reporting.version}</version>
     </dependency>
 
+    <!-- OSGi Dependencies -->
+    <!-- Because of: -->
+    <!-- pentaho-platform-core (PentahoSystem) and pdi-osgi-bridge-core (KarafLifecycleListener and OSGIPluginRegistryExtension) -->
+    <dependency>
+       <groupId>org.osgi</groupId>
+       <artifactId>org.osgi.core</artifactId>
+       <scope>compile</scope>
+    </dependency>
+
     <!-- Karaf Dependencies -->
     <dependency>
       <groupId>org.apache.karaf</groupId>
+      <artifactId>org.apache.karaf.main</artifactId>
+      <exclusions>
+        <exclusion>
+          <groupId>*</groupId>
+          <artifactId>*</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.karaf</groupId>
       <artifactId>org.apache.karaf.util</artifactId>
-      <version>${org.apache.karaf.util.version}</version>
       <exclusions>
         <exclusion>
           <groupId>*</groupId>
@@ -377,7 +379,6 @@
     <dependency>
       <groupId>org.apache.karaf.jaas</groupId>
       <artifactId>org.apache.karaf.jaas.boot</artifactId>
-      <version>${org.apache.karaf.jaas.boot.version}</version>
       <exclusions>
         <exclusion>
           <groupId>*</groupId>
@@ -386,9 +387,18 @@
       </exclusions>
     </dependency>
     <dependency>
-      <groupId>org.apache.felix</groupId>
-      <artifactId>org.apache.felix.main</artifactId>
-      <version>${org.apache.felix.main.version}</version>
+      <groupId>org.apache.karaf.diagnostic</groupId>
+      <artifactId>org.apache.karaf.diagnostic.boot</artifactId>
+      <exclusions>
+        <exclusion>
+          <groupId>*</groupId>
+          <artifactId>*</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.karaf.specs</groupId>
+      <artifactId>org.apache.karaf.specs.activator</artifactId>
       <exclusions>
         <exclusion>
           <groupId>*</groupId>
@@ -495,71 +505,75 @@
       </exclusions>
     </dependency>
     <dependency>
-      <groupId>org.apache.geronimo.specs</groupId>
-      <artifactId>geronimo-servlet_3.0_spec</artifactId>
-      <version>${geronimo-servlet_3.0_spec.version}</version>
-      <exclusions>
-        <exclusion>
-          <groupId>*</groupId>
-          <artifactId>*</artifactId>
-        </exclusion>
-      </exclusions>
+      <groupId>javax.servlet</groupId>
+      <artifactId>javax.servlet-api</artifactId>
+      <version>${javax.servlet-api.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>net.snowflake</groupId>
+      <artifactId>snowflake-jdbc</artifactId>
+      <version>${snowflake-jdbc.version}</version>
     </dependency>
 
     <!-- Spring -->
     <dependency>
       <groupId>org.springframework</groupId>
       <artifactId>spring-core</artifactId>
-      <version>${springframework4.version}</version>
     </dependency>
     <dependency>
       <groupId>org.springframework</groupId>
       <artifactId>spring-aop</artifactId>
-      <version>${springframework4.version}</version>
     </dependency>
     <dependency>
       <groupId>org.springframework</groupId>
       <artifactId>spring-web</artifactId>
-      <version>${springframework4.version}</version>
     </dependency>
     <dependency>
       <groupId>org.springframework</groupId>
       <artifactId>spring-beans</artifactId>
-      <version>${springframework4.version}</version>
     </dependency>
     <dependency>
       <groupId>org.springframework</groupId>
       <artifactId>spring-context</artifactId>
-      <version>${springframework4.version}</version>
     </dependency>
     <dependency>
       <groupId>org.springframework</groupId>
       <artifactId>spring-context-support</artifactId>
-      <version>${springframework4.version}</version>
     </dependency>
 
     <!-- Spring Security -->
     <dependency>
       <groupId>org.springframework.security</groupId>
       <artifactId>spring-security-core</artifactId>
-      <version>${springframework4-security.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework.security</groupId>
+      <artifactId>spring-security-web</artifactId>
     </dependency>
 
     <!-- Other third-party dependencies -->
     <dependency>
+      <groupId>com.fasterxml.jackson.jaxrs</groupId>
+      <artifactId>jackson-jaxrs-json-provider</artifactId>
+      <exclusions>
+        <exclusion>
+          <groupId>com.fasterxml.jackson.module</groupId>
+          <artifactId>jackson-module-jaxb-annotations</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
       <groupId>log4j</groupId>
       <artifactId>apache-log4j-extras</artifactId>
-      <version>${apache-log4j-extras}</version>
     </dependency>
     <dependency>
       <groupId>org.slf4j</groupId>
       <artifactId>slf4j-api</artifactId>
-      <version>${slf4j-api.version}</version>
     </dependency>
     <dependency>
       <groupId>org.slf4j</groupId>
       <artifactId>slf4j-log4j12</artifactId>
-      <version>${slf4j-log4j12.version}</version>
     </dependency>
     <dependency>
       <groupId>org.glassfish.metro</groupId>
@@ -620,39 +634,6 @@
       <groupId>net.sf.flexjson</groupId>
       <artifactId>flexjson</artifactId>
       <version>${flexjson.version}</version>
-      <exclusions>
-        <exclusion>
-          <groupId>*</groupId>
-          <artifactId>*</artifactId>
-        </exclusion>
-      </exclusions>
-    </dependency>
-    <dependency>
-      <groupId>com.fasterxml.jackson.core</groupId>
-      <artifactId>jackson-core</artifactId>
-      <version>${fasterxml.jackson.core.version}</version>
-      <exclusions>
-        <exclusion>
-          <groupId>*</groupId>
-          <artifactId>*</artifactId>
-        </exclusion>
-      </exclusions>
-    </dependency>
-    <dependency>
-      <groupId>com.fasterxml.jackson.core</groupId>
-      <artifactId>jackson-annotations</artifactId>
-      <version>${fasterxml.jackson.core.version}</version>
-      <exclusions>
-        <exclusion>
-          <groupId>*</groupId>
-          <artifactId>*</artifactId>
-        </exclusion>
-      </exclusions>
-    </dependency>
-    <dependency>
-      <groupId>com.fasterxml.jackson.core</groupId>
-      <artifactId>jackson-databind</artifactId>
-      <version>${fasterxml.jackson.core.version}</version>
       <exclusions>
         <exclusion>
           <groupId>*</groupId>

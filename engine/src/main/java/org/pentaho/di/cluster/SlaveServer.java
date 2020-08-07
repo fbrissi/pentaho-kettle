@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2020 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -223,6 +223,7 @@ public class SlaveServer extends ChangedFlag implements Cloneable, SharedObjectI
     this.nonProxyHosts = nonProxyHosts;
 
     this.master = master;
+    this.sslMode = ssl;
     initializeVariablesFrom( null );
     this.log = new LogChannel( this );
   }
@@ -750,7 +751,7 @@ public class SlaveServer extends ChangedFlag implements Cloneable, SharedObjectI
     provider.setCredentials( new AuthScope( host, port ), credentials );
     context.setCredentialsProvider( provider );
     // Generate BASIC scheme object and add it to the local auth cache
-    HttpHost target = new HttpHost( host, port, "http" );
+    HttpHost target = new HttpHost( host, port, isSslMode() ? HTTPS : HTTP );
     AuthCache authCache = new BasicAuthCache();
     BasicScheme basicAuth = new BasicScheme();
     authCache.put( target, basicAuth );

@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2017 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2019 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -58,10 +58,12 @@ public class TransDialogPluginType extends BasePluginType implements PluginTypeI
   /**
    * Scan & register internal transformation dialog plugins
    */
+  @Override
   protected void registerNatives() throws KettlePluginException {
     // No native plugins
   }
 
+  @Override
   protected void registerXmlPlugins() throws KettlePluginException {
     // No longer performed.
   }
@@ -121,8 +123,12 @@ public class TransDialogPluginType extends BasePluginType implements PluginTypeI
   }
 
   @Override
+  protected String extractSuggestion( Annotation annotation ) {
+    return null;
+  }
+
+  @Override
   protected String extractClassLoaderGroup( Annotation annotation ) {
     return ( (TransDialogPlugin) annotation ).classLoaderGroup();
   }
-
 }

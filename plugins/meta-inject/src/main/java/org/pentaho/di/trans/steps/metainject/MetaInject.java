@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2017 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2019 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -52,6 +52,7 @@ import org.pentaho.di.trans.step.StepMeta;
 import org.pentaho.di.trans.step.StepMetaInjectionInterface;
 import org.pentaho.di.trans.step.StepMetaInterface;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.ArrayList;
@@ -65,6 +66,9 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
 
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+
 /**
  * Read a simple CSV file Just output Strings found in the file...
  *
@@ -73,6 +77,9 @@ import java.util.Set;
  */
 public class MetaInject extends BaseStep implements StepInterface {
   private static Class<?> PKG = MetaInject.class; // for i18n purposes, needed by Translator2!!
+
+  //Added for PDI-17530
+  private static final Lock repoSaveLock = new ReentrantLock();
 
   private MetaInjectMeta meta;
   private MetaInjectData data;
@@ -140,6 +147,7 @@ public class MetaInject extends BaseStep implements StepInterface {
       // Now we can execute this modified transformation metadata.
       //
       final Trans injectTrans = createInjectTrans();
+      injectTrans.setParentTrans( getTrans() );
       injectTrans.setMetaStore( getMetaStore() );
       if ( getTrans().getParentJob() != null ) {
         injectTrans.setParentJob( getTrans().getParentJob() ); // See PDI-13224
@@ -253,9 +261,19 @@ public class MetaInject extends BaseStep implements StepInterface {
 
     OutputStream os = null;
     try {
+      TransMeta generatedTransMeta = (TransMeta) data.transMeta.clone();
+      File injectedKtrFile = new File( targetFilePath );
+
+      if ( injectedKtrFile == null ) {
+        throw new IOException();
+      } else {
+        String transName = injectedKtrFile.getName().replace( ".ktr", "" );
+        generatedTransMeta.setName( transName ); // set transname on injectedtrans to be same as filename w/o extension
+      }
+
       os = KettleVFS.getOutputStream( targetFilePath, false );
       os.write( XMLHandler.getXMLHeader().getBytes( Const.XML_ENCODING ) );
-      os.write( data.transMeta.getXML().getBytes( Const.XML_ENCODING ) );
+      os.write( generatedTransMeta.getXML().getBytes( Const.XML_ENCODING ) );
     } catch ( IOException e ) {
       throw new KettleException( "Unable to write target file (ktr after injection) to file '"
         + targetFilePath + "'", e );
@@ -278,39 +296,46 @@ public class MetaInject extends BaseStep implements StepInterface {
    */
   private void writeInjectedKtrToRepo( final String targetFilePath ) throws KettleException {
 
-    // clone the transMeta associated with the data, this is the generated meta injection transformation
-    final TransMeta generatedTrans = (TransMeta) data.transMeta.clone();
-    // the targetFilePath holds the absolute repo path that is the requested destination of this generated
-    // transformation, extract the file name (no extension) and the containing directory and adjust the generated
-    // transformation properties accordingly
-    List<String> targetPath = new ArrayList( Arrays.asList( Const.splitPath( targetFilePath,
-      RepositoryDirectory.DIRECTORY_SEPARATOR  ) ) );
-    final String fileName = targetPath.get( targetPath.size() - 1 ).replace( ".ktr", "" );
-    generatedTrans.setName( fileName );
-    // remove the last targetPath element, so we're left with the target directory path
-    targetPath.remove( targetPath.size() - 1 );
-    if ( targetPath.size() > 0 ) {
-      final String dirPath = String.join( RepositoryDirectory.DIRECTORY_SEPARATOR, targetPath );
-      RepositoryDirectoryInterface directory = getRepository().findDirectory( dirPath );
-      // if the directory does not exist, try to create it
-      if ( directory == null ) {
-        directory = getRepository().createRepositoryDirectory( new RepositoryDirectory( null, "/" ), dirPath );
+    try {
+      repoSaveLock.lock();
+
+      // clone the transMeta associated with the data, this is the generated meta injection transformation
+      final TransMeta generatedTrans = (TransMeta) data.transMeta.clone();
+      // the targetFilePath holds the absolute repo path that is the requested destination of this generated
+      // transformation, extract the file name (no extension) and the containing directory and adjust the generated
+      // transformation properties accordingly
+      List<String> targetPath = new ArrayList( Arrays.asList( Const.splitPath( targetFilePath,
+        RepositoryDirectory.DIRECTORY_SEPARATOR  ) ) );
+      final String fileName = targetPath.get( targetPath.size() - 1 ).replace( ".ktr", "" );
+      generatedTrans.setName( fileName );
+      // remove the last targetPath element, so we're left with the target directory path
+      targetPath.remove( targetPath.size() - 1 );
+      if ( targetPath.size() > 0 ) {
+        final String dirPath = String.join( RepositoryDirectory.DIRECTORY_SEPARATOR, targetPath );
+        RepositoryDirectoryInterface directory = getRepository().findDirectory( dirPath );
+        // if the directory does not exist, try to create it
+        if ( directory == null ) {
+          directory = getRepository().createRepositoryDirectory( new RepositoryDirectory( null, "/" ), dirPath );
+        }
+        generatedTrans.setRepositoryDirectory( directory );
+      } else {
+        // if the directory is null, set it to the directory of the cloned template ktr
+        if ( log.isDebug() ) {
+          log.logDebug( "The target injection ktr file path provided by the user is not a valid fully qualified "
+            + "repository path - will store the generated ktr in the same directory as the template ktr: ",
+            data.transMeta.getRepositoryDirectory() );
+        }
+        generatedTrans.setRepositoryDirectory( data.transMeta.getRepositoryDirectory() );
       }
-      generatedTrans.setRepositoryDirectory( directory );
-    } else {
-      // if the directory is null, set it to the directory of the cloned template ktr
-      if ( log.isDebug() ) {
-        log.logDebug( "The target injection ktr file path provided by the user is not a valid fully qualified "
-          + "repository path - will store the generated ktr in the same directory as the template ktr: ",
-          data.transMeta.getRepositoryDirectory() );
-      }
-      generatedTrans.setRepositoryDirectory( data.transMeta.getRepositoryDirectory() );
+      // set the objectId, in case the injected transformation already exists in the repo, so that is is updated in
+      // the repository - the objectId will remain null, if the transformation is begin generated for the first time,
+      // in which a new ktr will be created in the repo
+      generatedTrans.setObjectId( getRepository().getTransformationID( fileName, generatedTrans.getRepositoryDirectory() ) );
+      getRepository().save( generatedTrans, null, null, true );
+
+    } finally {
+      repoSaveLock.unlock();
     }
-    // set the objectId, in case the injected transformation already exists in the repo, so that is is updated in
-    // the repository - the objectId will remain null, if the transformation is begin generated for the first time,
-    // in which a new ktr will be created in the repo
-    generatedTrans.setObjectId( getRepository().getTransformationID( fileName, generatedTrans.getRepositoryDirectory() ) );
-    getRepository().save( generatedTrans, null, null, true );
   }
 
   /**
@@ -381,11 +406,10 @@ public class MetaInject extends BaseStep implements StepInterface {
     BeanInjector injector = new BeanInjector( injectionInfo );
 
     // Collect all the metadata for this target step...
-    //
-    Map<TargetStepAttribute, SourceStepField> targetMap = meta.getTargetSourceMapping();
-    for ( TargetStepAttribute target : targetMap.keySet() ) {
-      SourceStepField source = targetMap.get( target );
-
+    boolean wasInjection = false;
+    for ( Map.Entry<TargetStepAttribute, SourceStepField> entry  : meta.getTargetSourceMapping().entrySet() ) {
+      TargetStepAttribute target = entry.getKey();
+      SourceStepField source = entry.getValue();
       if ( target.getStepname().equalsIgnoreCase( targetStep ) ) {
         // This is the step to collect data for...
         // We also know which step to read the data from. (source)
@@ -395,6 +419,7 @@ public class MetaInject extends BaseStep implements StepInterface {
           if ( injector.hasProperty( targetStepMeta, target.getAttributeKey() ) ) {
             // target step has specified key
             injector.setProperty( targetStepMeta, target.getAttributeKey(), null, source.getField() );
+            wasInjection = true;
           } else {
             // target step doesn't have specified key - just report but don't fail like in 6.0 (BACKLOG-6753)
             logError( BaseMessages.getString( PKG, "MetaInject.TargetKeyIsNotDefined.Message", target.getAttributeKey(),
@@ -402,6 +427,10 @@ public class MetaInject extends BaseStep implements StepInterface {
           }
         }
       }
+    }
+    // NOTE: case when only 1 field out of group is supplied constant, need to populate other fields
+    if ( wasInjection ) {
+      injector.runPostInjectionProcessing( targetStepMeta );
     }
   }
 

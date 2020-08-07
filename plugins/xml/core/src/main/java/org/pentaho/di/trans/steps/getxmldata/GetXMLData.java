@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2020 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -66,6 +66,8 @@ import org.pentaho.di.trans.step.StepInterface;
 import org.pentaho.di.trans.step.StepMeta;
 import org.pentaho.di.trans.step.StepMetaInterface;
 
+import static org.pentaho.di.core.row.value.ValueMetaBase.convertStringToBoolean;
+
 /**
  * Read XML files, parse them and convert them to rows and writes these to one or more output streams.
  * 
@@ -113,7 +115,7 @@ public class GetXMLData extends BaseStep implements StepInterface {
         }
         if ( data.PathValue.equals( data.prunePath ) ) {
           // Edge case, but if true, there will only ever be one item in the list
-          data.an = new ArrayList<AbstractNode>( 1 ); // pre-allocate array and sizes
+          data.an = new ArrayList<>( 1 ); // pre-allocate array and sizes
           data.an.add( null );
         }
         reader.addHandler( data.prunePath, new ElementHandler() {
@@ -122,7 +124,8 @@ public class GetXMLData extends BaseStep implements StepInterface {
           }
 
           public void onEnd( ElementPath path ) {
-            if ( isStopped() ) {
+            long rowLimit = meta.getRowLimit();
+            if ( isStopped() || ( rowLimit > 0 && data.rownr > rowLimit ) ) {
               // when a large file is processed and it should be stopped it is still reading the hole thing
               // the only solution I see is to prune / detach the document and this will lead into a
               // NPE or other errors depending on the parsing location - this will be treated in the catch part below
@@ -161,6 +164,8 @@ public class GetXMLData extends BaseStep implements StepInterface {
       if ( IsInXMLField ) {
         // read string to parse
         data.document = reader.read( new StringReader( StringXML ) );
+      } else if ( readurl && KettleVFS.startsWithScheme( StringXML ) ) {
+        data.document = reader.read( KettleVFS.getInputStream( StringXML ) );
       } else if ( readurl ) {
         // read url as source
         HttpClient client = HttpClientManager.getInstance().createDefaultClient();
@@ -394,7 +399,7 @@ public class GetXMLData extends BaseStep implements StepInterface {
           FileObject file = null;
           try {
             // XML source is a file.
-            file = KettleVFS.getFileObject( Fieldvalue, getTransMeta() );
+            file = KettleVFS.getFileObject( environmentSubstitute( Fieldvalue ), getTransMeta() );
 
             if ( meta.isIgnoreEmptyFile() && file.getContent().getSize() == 0 ) {
               logBasic( BaseMessages.getString( PKG, "GetXMLData.Error.FileSizeZero", "" + file.getName() ) );
@@ -718,7 +723,7 @@ public class GetXMLData extends BaseStep implements StepInterface {
     return r;
   }
 
-  private Object[] processPutRow( AbstractNode node ) throws KettleException {
+  private Object[] processPutRow( Node node ) throws KettleException {
     // Create new row...
     Object[] outputRowData = buildEmptyRow();
 
@@ -734,25 +739,8 @@ public class GetXMLData extends BaseStep implements StepInterface {
         // Get field
         GetXMLDataField xmlDataField = meta.getInputFields()[i];
         // Get the Path to look for
-        String XPathValue = xmlDataField.getXPath();
-        XPathValue = environmentSubstitute( XPathValue );
-        if ( xmlDataField.getElementType() == GetXMLDataField.ELEMENT_TYPE_ATTRIBUT ) {
-          // We have an attribute
-          // do we need to add leading @?
-          // Only put @ to the last element in path, not in front at all
-          int last = XPathValue.lastIndexOf( GetXMLDataMeta.N0DE_SEPARATOR );
-          if ( last > -1 ) {
-            last++;
-            String attribut = XPathValue.substring( last, XPathValue.length() );
-            if ( !attribut.startsWith( GetXMLDataMeta.AT ) ) {
-              XPathValue = XPathValue.substring( 0, last ) + GetXMLDataMeta.AT + attribut;
-            }
-          } else {
-            if ( !XPathValue.startsWith( GetXMLDataMeta.AT ) ) {
-              XPathValue = GetXMLDataMeta.AT + XPathValue;
-            }
-          }
-        }
+        String XPathValue = xmlDataField.getResolvedXPath();
+
         if ( meta.isuseToken() ) {
           // See if user use Token inside path field
           // The syntax is : @_Fieldname-
@@ -767,31 +755,40 @@ public class GetXMLData extends BaseStep implements StepInterface {
         // Get node value
         String nodevalue;
 
+        Boolean xmlMissingTagYieldsNullValue = convertStringToBoolean(
+          Const.NVL( System.getProperty( Const.KETTLE_XML_MISSING_TAG_YIELDS_NULL_VALUE, "N" ), "N" ) );
+
         // Handle namespaces
         if ( meta.isNamespaceAware() ) {
           XPath xpathField = node.createXPath( addNSPrefix( XPathValue, data.PathValue ) );
           xpathField.setNamespaceURIs( data.NAMESPACE );
           if ( xmlDataField.getResultType() == GetXMLDataField.RESULT_TYPE_VALUE_OF ) {
-            nodevalue = xpathField.valueOf( node );
+            if ( xmlMissingTagYieldsNullValue ) {
+              nodevalue = xpathField.selectSingleNode( node ) != null ? xpathField.valueOf( node ) : null;
+            } else {
+              nodevalue = xpathField.valueOf( node );
+            }
           } else {
-            // nodevalue=xpathField.selectSingleNode(node).asXML();
             Node n = xpathField.selectSingleNode( node );
             if ( n != null ) {
               nodevalue = n.asXML();
             } else {
-              nodevalue = "";
+              nodevalue = xmlMissingTagYieldsNullValue ? null : "";
             }
           }
         } else {
           if ( xmlDataField.getResultType() == GetXMLDataField.RESULT_TYPE_VALUE_OF ) {
-            nodevalue = node.valueOf( XPathValue );
+            if ( xmlMissingTagYieldsNullValue ) {
+              nodevalue = node.selectSingleNode( XPathValue ) != null ? node.valueOf( XPathValue ) : null;
+            } else {
+              nodevalue = node.valueOf( XPathValue );
+            }
           } else {
-            // nodevalue=node.selectSingleNode(XPathValue).asXML();
             Node n = node.selectSingleNode( XPathValue );
             if ( n != null ) {
               nodevalue = n.asXML();
             } else {
-              nodevalue = "";
+              nodevalue = xmlMissingTagYieldsNullValue ? null : "";
             }
           }
         }
@@ -939,6 +936,33 @@ public class GetXMLData extends BaseStep implements StepInterface {
     if ( super.init( smi, sdi ) ) {
       data.rownr = 1L;
       data.nrInputFields = meta.getInputFields().length;
+
+      // correct attribute path if needed
+      // do it once
+      for ( int i = 0; i < data.nrInputFields; i++ ) {
+        GetXMLDataField xmlDataField = meta.getInputFields()[i];
+        // Resolve variable substitution
+        String XPathValue = environmentSubstitute( xmlDataField.getXPath() );
+        if ( xmlDataField.getElementType() == GetXMLDataField.ELEMENT_TYPE_ATTRIBUT ) {
+          // We have an attribute
+          // do we need to add leading @?
+          // Only put @ to the last element in path, not in front at all
+          int last = XPathValue.lastIndexOf( GetXMLDataMeta.N0DE_SEPARATOR );
+          if ( last > -1 ) {
+            last++;
+            String attribut = XPathValue.substring( last, XPathValue.length() );
+            if ( !attribut.startsWith( GetXMLDataMeta.AT ) ) {
+              XPathValue = XPathValue.substring( 0, last ) + GetXMLDataMeta.AT + attribut;
+            }
+          } else {
+            if ( !XPathValue.startsWith( GetXMLDataMeta.AT ) ) {
+              XPathValue = GetXMLDataMeta.AT + XPathValue;
+            }
+          }
+        }
+        xmlDataField.setResolvedXPath( XPathValue );
+      }
+
       data.PathValue = environmentSubstitute( meta.getLoopXPath() );
       if ( Utils.isEmpty( data.PathValue ) ) {
         logError( BaseMessages.getString( PKG, "GetXMLData.Error.EmptyPath" ) );

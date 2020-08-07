@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2019 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -30,6 +30,7 @@ import org.pentaho.di.core.exception.KettleException;
 import org.pentaho.di.core.exception.KettlePluginException;
 import org.pentaho.di.core.lifecycle.KettleLifecycleSupport;
 import org.pentaho.di.core.logging.LogTablePluginType;
+import org.pentaho.di.core.logging.LoggingRegistry;
 import org.pentaho.di.core.plugins.CartePluginType;
 import org.pentaho.di.core.plugins.EnginePluginType;
 import org.pentaho.di.core.plugins.ImportRulePluginType;
@@ -118,8 +119,13 @@ public class KettleEnvironment {
   }
 
   public static void init( List<PluginTypeInterface> pluginClasses, boolean simpleJndi ) throws KettleException {
+
     SettableFuture<Boolean> ready;
     if ( initialized.compareAndSet( null, ready = SettableFuture.create() ) ) {
+
+      // Swaps out System Properties for a thread safe version.  This is needed so Karaf can spawn multiple instances.
+      // See https://jira.pentaho.com/browse/PDI-17496
+      System.setProperties( ConcurrentMapProperties.convertProperties( System.getProperties() ) );
 
       try {
         // This creates .kettle and kettle.properties...
@@ -142,6 +148,10 @@ public class KettleEnvironment {
         // Also read the list of variables.
         //
         KettleVariablesList.init();
+
+        // Update Variables for LoggingRegistry
+        LoggingRegistry.getInstance().updateFromProperties();
+        LoggingRegistry.getInstance().reset();
 
         // Initialize the Lifecycle Listeners
         //
@@ -238,6 +248,7 @@ public class KettleEnvironment {
     }
   }
 
+  // Note - this is only called from test cases
   public static void reset() {
     KettleClientEnvironment.reset();
     initialized.set( null );

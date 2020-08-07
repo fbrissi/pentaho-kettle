@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2020 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -23,14 +23,16 @@
 package org.pentaho.di.trans.steps.file;
 
 import org.apache.commons.lang.StringUtils;
+import org.apache.commons.vfs2.AllFileSelector;
 import org.apache.commons.vfs2.FileObject;
+import org.apache.commons.vfs2.FileSelectInfo;
 import org.apache.commons.vfs2.FileSystemException;
+import org.apache.commons.vfs2.FileType;
 import org.pentaho.di.core.Const;
 import org.pentaho.di.core.Result;
 import org.pentaho.di.core.ResultFile;
 import org.pentaho.di.core.RowSet;
 import org.pentaho.di.core.exception.KettleException;
-import org.pentaho.di.core.exception.KettleFileException;
 import org.pentaho.di.core.row.RowDataUtil;
 import org.pentaho.di.core.row.RowMeta;
 import org.pentaho.di.core.row.RowMetaInterface;
@@ -62,9 +64,7 @@ import java.util.Map;
  */
 public abstract class BaseFileInputStep<M extends BaseFileInputMeta<?, ?, ?>, D extends BaseFileInputStepData> extends
     BaseStep implements IBaseFileInputStepControl {
-  private static Class<?> PKG = BaseFileInputStep.class; // for i18n purposes, needed by Translator2!! TODO: is
-  // it right for
-  // base class ???
+  private static Class<?> PKG = BaseFileInputStep.class; // for i18n purposes, needed by Translator2!!
 
   protected M meta;
 
@@ -117,7 +117,7 @@ public abstract class BaseFileInputStep<M extends BaseFileInputMeta<?, ?, ?>, D 
 
     if ( ( previousResult == null || resultFiles == null || resultFiles.size() == 0 ) && data.files
         .nrOfMissingFiles() > 0 && !meta.inputFiles.acceptingFilenames && !meta.errorHandling.errorIgnored ) {
-      logError( BaseMessages.getString( PKG, "TextFileInput.Log.Error.NoFilesSpecified" ) );
+      logError( BaseMessages.getString( PKG, "BaseFileInputStep.Log.Error.NoFilesSpecified" ) );
       return false;
     }
 
@@ -186,14 +186,13 @@ public abstract class BaseFileInputStep<M extends BaseFileInputMeta<?, ?, ?>, D 
 
   protected boolean handleOpenFileException( Exception e ) {
     String errorMsg =
-      "Couldn't open file #" + data.currentFileIndex + " : " + data.file.getName().getFriendlyURI() + " --> " + e
-        .toString();
-    if ( !failAfterBadFile( errorMsg ) ) { // !meta.isSkipBadFiles()) stopAll();
+      "Couldn't open file #" + data.currentFileIndex + " : " + data.file.getName().getFriendlyURI();
+    if ( !failAfterBadFile( errorMsg ) ) {
       return true;
     }
     stopAll();
     setErrors( getErrors() + 1 );
-    logError( errorMsg );
+    logError( errorMsg, e );
     return false;
   }
 
@@ -277,7 +276,7 @@ public abstract class BaseFileInputStep<M extends BaseFileInputMeta<?, ?, ?>, D 
    * TODO: should we set charset for error files from content meta ? What about case for automatic charset ?
    */
   private void initErrorHandling() {
-    List<FileErrorHandler> dataErrorLineHandlers = new ArrayList<FileErrorHandler>( 2 );
+    List<FileErrorHandler> dataErrorLineHandlers = new ArrayList<>( 2 );
     if ( meta.errorHandling.lineNumberFilesDestinationDirectory != null ) {
       dataErrorLineHandlers.add( new FileErrorHandlerContentLineNumber( getTrans().getCurrentDate(),
           environmentSubstitute( meta.errorHandling.lineNumberFilesDestinationDirectory ),
@@ -296,7 +295,6 @@ public abstract class BaseFileInputStep<M extends BaseFileInputMeta<?, ?, ?>, D 
    */
   private RowMetaInterface[] filesFromPreviousStep() throws KettleException {
     RowMetaInterface[] infoStep = null;
-
     data.files.getFiles().clear();
 
     int idx = -1;
@@ -313,8 +311,8 @@ public abstract class BaseFileInputStep<M extends BaseFileInputMeta<?, ?, ?>, D 
         }
         idx = prevInfoFields.indexOfValue( meta.inputFiles.acceptingField );
         if ( idx < 0 ) {
-          logError( BaseMessages.getString( PKG, "TextFileInput.Log.Error.UnableToFindFilenameField",
-              meta.inputFiles.acceptingField ) );
+          logError( BaseMessages.getString( PKG, "BaseFileInputStep.Log.Error.UnableToFindFilenameField",
+            meta.inputFiles.acceptingField ) );
           setErrors( getErrors() + 1 );
           stopAll();
           return null;
@@ -322,15 +320,24 @@ public abstract class BaseFileInputStep<M extends BaseFileInputMeta<?, ?, ?>, D 
       }
       String fileValue = prevInfoFields.getString( fileRow, idx );
       try {
-        FileObject fileObject = KettleVFS.getFileObject( fileValue, getTransMeta() );
-        data.files.addFile( fileObject );
-        if ( meta.inputFiles.passingThruFields ) {
-          StringBuilder sb = new StringBuilder();
-          sb.append( data.files.nrOfFiles() > 0 ? data.files.nrOfFiles() - 1 : 0 ).append( "_" ).append( fileObject.toString() );
-          data.passThruFields.put( sb.toString(), fileRow );
+        FileObject parentFileObject = KettleVFS.getFileObject( environmentSubstitute( fileValue ), getTransMeta() );
+        if ( parentFileObject != null && parentFileObject.getType() == FileType.FOLDER ) { // it's a directory
+          addFilesFromFolder( parentFileObject );
+        } else {  // it's a file
+          data.files.addFile( parentFileObject );
         }
-      } catch ( KettleFileException e ) {
-        logError( BaseMessages.getString( PKG, "TextFileInput.Log.Error.UnableToCreateFileObject", fileValue ), e );
+
+        if ( meta.inputFiles.passingThruFields ) {
+          for ( int fileIndex = 0; fileIndex < data.files.nrOfFiles(); fileIndex++ ) {
+            StringBuilder sb = new StringBuilder();
+            FileObject file = data.files.getFile( fileIndex );
+            sb.append( fileIndex ).append( "_" ).append( file != null ? file.toString() : "" );
+            data.passThruFields.put( sb.toString(), fileRow );
+          }
+        }
+      } catch ( FileSystemException e ) {
+        logError( BaseMessages.getString( PKG, "BaseFileInputStep.Log.Error.UnableToCreateFileObject", fileValue ), e );
+        throw new KettleException( e );
       }
 
       // Grab another row
@@ -339,13 +346,54 @@ public abstract class BaseFileInputStep<M extends BaseFileInputMeta<?, ?, ?>, D 
 
     if ( data.files.nrOfFiles() == 0 ) {
       if ( log.isDetailed() ) {
-        logDetailed( BaseMessages.getString( PKG, "TextFileInput.Log.Error.NoFilesSpecified" ) );
+        logDetailed( BaseMessages.getString( PKG, "BaseFileInputStep.Log.Error.NoFilesSpecified" ) );
       }
       return null;
     }
     return infoStep;
   }
 
+  /**
+   * Read the list of files recursively from a given folder
+   * @param parentFileObject
+   * @throws FileSystemException
+   */
+  private void addFilesFromFolder( FileObject parentFileObject ) throws FileSystemException {
+    final boolean subdirs = true;
+    FileObject[] fileObjects = parentFileObject.findFiles( new AllFileSelector() {
+      @Override
+      public boolean traverseDescendents( FileSelectInfo info ) {
+        return info.getDepth() == 0 || subdirs;
+      }
+
+      @Override
+      public boolean includeFile( FileSelectInfo info ) {
+        // Never return the parent directory of a file list.
+        if ( info.getDepth() == 0 ) {
+          return false;
+        }
+
+        FileObject fileObject = info.getFile();
+        try {
+          return fileObject != null && FileType.FILE.equals( fileObject.getType() );
+        } catch ( Exception ex ) {
+          // Upon error don't process the file.
+          return false;
+        }
+      }
+    } );
+    if ( fileObjects != null ) {
+      for ( int j = 0; j < fileObjects.length; j++ ) {
+        FileObject fileObject = fileObjects[ j ];
+        if ( fileObject.exists() ) {
+          data.files.addFile( fileObject );
+        }
+      }
+    }
+    if ( Utils.isEmpty( fileObjects ) ) {
+      data.files.addNonAccessibleFile( parentFileObject );
+    }
+  }
   /**
    * Close last opened file/
    */

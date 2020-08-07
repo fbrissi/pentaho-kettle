@@ -2303,6 +2303,7 @@ public class TableView extends Composite {
     if ( colinfo.getType() == ColumnInfo.COLUMN_TYPE_FORMAT ) {
       int type = ValueMetaFactory.getIdForValueMeta( row.getText( colinfo.getFieldTypeColumn() ) );
       switch ( type ) {
+        case ValueMetaInterface.TYPE_TIMESTAMP:
         case ValueMetaInterface.TYPE_DATE:
           return Const.getDateFormats();
         case ValueMetaInterface.TYPE_INTEGER:
@@ -2362,7 +2363,7 @@ public class TableView extends Composite {
         }
       };
 
-      combo = new ComboVar( variables, table, SWT.SINGLE | SWT.LEFT | SWT.BORDER, getCaretPositionInterface, insertTextInterface );
+      combo = new ComboVar( variables, table, SWT.SINGLE | SWT.LEFT, getCaretPositionInterface, insertTextInterface );
       ComboVar widget = (ComboVar) combo;
       if ( lsFocusInTabItem != null ) {
         widget.getCComboWidget().addListener( SWT.FocusIn, lsFocusInTabItem );
@@ -2383,6 +2384,10 @@ public class TableView extends Composite {
       widget.setToolTipText( colinfo.getToolTip() == null ? "" : colinfo.getToolTip() );
       widget.setVisible( true );
       widget.addKeyListener( lsKeyCombo );
+
+      //Set the bottom so the combovar fits inside the table cell
+      ((FormData) widget.getCComboWidget().getLayoutData()).bottom = new FormAttachment( 100, 0 );
+
       editor.horizontalAlignment = SWT.LEFT;
       editor.layout();
 
@@ -3309,4 +3314,7 @@ public class TableView extends Composite {
     this.tableViewModifyListener = tableViewModifyListener;
   }
 
+  public boolean hasIndexColumn() {
+    return this.addIndexColumn;
+  }
 }

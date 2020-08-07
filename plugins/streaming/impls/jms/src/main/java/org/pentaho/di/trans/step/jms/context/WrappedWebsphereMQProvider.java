@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2018-2019 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -24,7 +24,6 @@ package org.pentaho.di.trans.step.jms.context;
 
 import com.google.common.base.Supplier;
 import com.google.common.base.Suppliers;
-import org.pentaho.di.core.variables.VariableSpace;
 import org.pentaho.di.trans.step.jms.JmsDelegate;
 
 import javax.jms.Destination;
@@ -45,14 +44,15 @@ import static org.pentaho.di.trans.step.jms.context.JmsProvider.ConnectionType.W
  */
 public class WrappedWebsphereMQProvider implements JmsProvider {
 
-  Supplier<JmsProvider> prov = Suppliers.memoize( this::getProvider );
+  @SuppressWarnings( { "squid:S4738", "Guava" } )  //using guava memoize, so no gain switching to java Supplier
+  private Supplier<JmsProvider> prov = Suppliers.memoize( this::getProvider );
 
-  private JmsProvider getProvider() throws RuntimeException {
+  private JmsProvider getProvider() {
     try {
       Class.forName( "com.ibm.mq.jms.MQQueue", false, this.getClass().getClassLoader() );
       return new WebsphereMQProvider();
     } catch ( Exception e ) {
-      throw new RuntimeException( getString( PKG, "WrappedWebsphereMQProvider.ErrorLoadingClass" ) );
+      throw new IllegalStateException( getString( PKG, "WrappedWebsphereMQProvider.ErrorLoadingClass" ) );
     }
   }
 
@@ -60,12 +60,15 @@ public class WrappedWebsphereMQProvider implements JmsProvider {
     return type == WEBSPHERE;
   }
 
-  @Override public JMSContext getContext( JmsDelegate meta, VariableSpace variableSpace ) {
-    return prov.get().getContext( meta, variableSpace );
+  @Override public String getConnectionDetails( JmsDelegate meta ) {
+    return prov.get().getConnectionDetails( meta );
   }
 
-  @Override public Destination getDestination( JmsDelegate meta,
-                                               VariableSpace variableSpace ) {
-    return prov.get().getDestination( meta, variableSpace );
+  @Override public JMSContext getContext( JmsDelegate meta ) {
+    return prov.get().getContext( meta );
+  }
+
+  @Override public Destination getDestination( JmsDelegate meta ) {
+    return prov.get().getDestination( meta );
   }
 }

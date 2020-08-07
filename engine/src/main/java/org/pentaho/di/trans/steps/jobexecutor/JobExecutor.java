@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2020 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -36,7 +36,6 @@ import org.pentaho.di.core.extension.ExtensionPointHandler;
 import org.pentaho.di.core.extension.KettleExtensionPoint;
 import org.pentaho.di.core.logging.KettleLogStore;
 import org.pentaho.di.core.logging.LoggingObjectInterface;
-import org.pentaho.di.core.logging.LoggingRegistry;
 import org.pentaho.di.core.row.RowDataUtil;
 import org.pentaho.di.core.row.ValueMetaInterface;
 import org.pentaho.di.core.row.value.ValueMetaFactory;
@@ -247,6 +246,8 @@ public class JobExecutor extends BaseStep implements StepInterface {
     } finally {
       try {
         ExtensionPointHandler.callExtensionPoint( log, KettleExtensionPoint.JobFinish.id, data.executorJob );
+        getExecutorJob().getJobMeta().disposeEmbeddedMetastoreProvider();
+        log.logDebug( BaseMessages.getString( PKG, "JobExecutor.Log.DisposeEmbeddedMetastore" ) );
         data.executorJob.fireJobFinishListeners();
       } catch ( KettleException e ) {
         result.setNrErrors( 1 );
@@ -356,7 +357,6 @@ public class JobExecutor extends BaseStep implements StepInterface {
     // TODO: make this optional/user-defined later
     if ( data.executorJob != null ) {
       KettleLogStore.discardLines( data.executorJob.getLogChannelId(), false );
-      LoggingRegistry.getInstance().removeIncludingChildren( data.executorJob.getLogChannelId() );
     }
   }
 
@@ -364,8 +364,24 @@ public class JobExecutor extends BaseStep implements StepInterface {
     // Set parameters, when fields are used take the first row in the set.
     //
     JobExecutorParameters parameters = meta.getParameters();
+
+    String value;
+
+    for ( int i = 0; i < parameters.getVariable().length; i++ ) {
+      String fieldName = parameters.getField()[i];
+      if ( !Utils.isEmpty( fieldName ) ) {
+        int idx = getInputRowMeta().indexOfValue( fieldName );
+        if ( idx < 0 ) {
+          throw new KettleException( BaseMessages.getString(
+            PKG, "JobExecutor.Exception.UnableToFindField", fieldName ) );
+        }
+        value = data.groupBuffer.get( 0 ).getString( idx, "" );
+        this.setVariable( parameters.getVariable()[ i ], value );
+      }
+    }
+
     StepWithMappingMeta.activateParams( data.executorJob, data.executorJob, this, data.executorJob.listParameters(),
-      parameters.getVariable(), parameters.getInput() );
+      parameters.getVariable(), parameters.getInput(), meta.getParameters().isInheritingAllVariables() );
   }
 
   public boolean init( StepMetaInterface smi, StepDataInterface sdi ) {

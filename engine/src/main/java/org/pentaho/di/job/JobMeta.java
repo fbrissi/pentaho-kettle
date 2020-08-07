@@ -3,7 +3,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2020 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -262,7 +262,7 @@ public class JobMeta extends AbstractMeta
    * @return the job entry copy
    */
   public static final JobEntryCopy createStartEntry() {
-    JobEntrySpecial jobEntrySpecial = new JobEntrySpecial( STRING_SPECIAL_START, true, false );
+    JobEntrySpecial jobEntrySpecial = new JobEntrySpecial( BaseMessages.getString( PKG, "JobMeta.StartJobEntry.Name" ), true, false );
     JobEntryCopy jobEntry = new JobEntryCopy();
     jobEntry.setObjectId( null );
     jobEntry.setEntry( jobEntrySpecial );
@@ -279,7 +279,7 @@ public class JobMeta extends AbstractMeta
    * @return the job entry copy
    */
   public static final JobEntryCopy createDummyEntry() {
-    JobEntrySpecial jobEntrySpecial = new JobEntrySpecial( STRING_SPECIAL_DUMMY, false, true );
+    JobEntrySpecial jobEntrySpecial = new JobEntrySpecial( BaseMessages.getString( PKG, "JobMeta.DummyJobEntry.Name" ), false, true );
     JobEntryCopy jobEntry = new JobEntryCopy();
     jobEntry.setObjectId( null );
     jobEntry.setEntry( jobEntrySpecial );
@@ -1247,6 +1247,7 @@ public class JobMeta extends AbstractMeta
    */
   public void addJobEntry( int p, JobEntryCopy si ) {
     jobcopies.add( p, si );
+    si.setParentJobMeta( this );
     changedEntries = true;
   }
 
@@ -2334,6 +2335,14 @@ public class JobMeta extends AbstractMeta
     return null;
   }
 
+  @Override
+  public void initializeVariablesFrom( VariableSpace parent ) {
+    super.initializeVariablesFrom( parent );
+    variables.setVariable( Const.INTERNAL_VARIABLE_JOB_REPOSITORY_DIRECTORY, null );
+    variables.setVariable( Const.INTERNAL_VARIABLE_JOB_FILENAME_DIRECTORY, null );
+    variables.setVariable( Const.INTERNAL_VARIABLE_ENTRY_CURRENT_DIRECTORY, null );
+  }
+
   /**
    * This method sets various internal kettle variables that can be used by the transformation.
    */
@@ -2358,13 +2367,15 @@ public class JobMeta extends AbstractMeta
     }
     updateCurrentDir();
   }
-
-  private void updateCurrentDir() {
+  // changed to protected for testing purposes
+  protected void updateCurrentDir() {
     String prevCurrentDir = variables.getVariable( Const.INTERNAL_VARIABLE_ENTRY_CURRENT_DIRECTORY );
     String currentDir = variables.getVariable(
       repository != null
           ? Const.INTERNAL_VARIABLE_JOB_REPOSITORY_DIRECTORY
-          : Const.INTERNAL_VARIABLE_JOB_FILENAME_DIRECTORY );
+          : filename != null
+            ? Const.INTERNAL_VARIABLE_JOB_FILENAME_DIRECTORY
+            : Const.INTERNAL_VARIABLE_ENTRY_CURRENT_DIRECTORY );
     variables.setVariable( Const.INTERNAL_VARIABLE_ENTRY_CURRENT_DIRECTORY, currentDir );
     fireCurrentDirectoryChanged( prevCurrentDir, currentDir );
   }
@@ -2408,9 +2419,15 @@ public class JobMeta extends AbstractMeta
       variables.setVariable( Const.INTERNAL_VARIABLE_JOB_FILENAME_NAME, "" );
     }
 
+    setInternalEntryCurrentDirectory();
+
+  }
+
+  protected void setInternalEntryCurrentDirectory() {
     variables.setVariable( Const.INTERNAL_VARIABLE_ENTRY_CURRENT_DIRECTORY, variables.getVariable(
-        repository != null ? Const.INTERNAL_VARIABLE_JOB_REPOSITORY_DIRECTORY
-            : Const.INTERNAL_VARIABLE_JOB_FILENAME_DIRECTORY ) );
+      repository != null ? Const.INTERNAL_VARIABLE_JOB_REPOSITORY_DIRECTORY
+        : filename != null ? Const.INTERNAL_VARIABLE_JOB_FILENAME_DIRECTORY
+        : Const.INTERNAL_VARIABLE_ENTRY_CURRENT_DIRECTORY ) );
   }
 
   @Deprecated
@@ -2542,9 +2559,8 @@ public class JobMeta extends AbstractMeta
         //
         Map<String, String> directoryMap = namingInterface.getDirectoryMap();
         if ( directoryMap != null ) {
-          for ( String directory : directoryMap.keySet() ) {
-            String parameterName = directoryMap.get( directory );
-            jobMeta.addParameterDefinition( parameterName, directory, "Data file path discovered during export" );
+          for ( Map.Entry<String, String> entry : directoryMap.entrySet() ) {
+            jobMeta.addParameterDefinition( entry.getValue(), entry.getKey(), "Data file path discovered during export" );
           }
         }
 

@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2017 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2019 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -213,6 +213,7 @@ public class PrepareExecutionTransServlet extends BaseHttpServlet implements Car
         trans.setGatheringMetrics( executionConfiguration.isGatheringMetrics() );
         trans.injectVariables( executionConfiguration.getVariables() );
         trans.setPreviousResult( executionConfiguration.getPreviousResult() );
+        trans.setExecutingClustered( executionConfiguration.isExecutingClustered() );
 
         try {
           trans.prepareExecution( null );
@@ -251,6 +252,7 @@ public class PrepareExecutionTransServlet extends BaseHttpServlet implements Car
               + convertContextPath( GetTransStatusServlet.CONTEXT_PATH ) + "?name="
               + URLEncoder.encode( transName, "UTF-8" ) + "&id=" + id + "\">"
               + BaseMessages.getString( PKG, "TransStatusServlet.BackToTransStatusPage" ) + "</a><p>" );
+            response.setStatus( HttpServletResponse.SC_BAD_REQUEST );
           }
         }
       } else {
@@ -264,6 +266,7 @@ public class PrepareExecutionTransServlet extends BaseHttpServlet implements Car
           out.println( "<a href=\""
             + convertContextPath( GetStatusServlet.CONTEXT_PATH ) + "\">"
             + BaseMessages.getString( PKG, "TransStatusServlet.BackToStatusPage" ) + "</a><p>" );
+          response.setStatus( HttpServletResponse.SC_BAD_REQUEST );
         }
       }
     } catch ( Exception ex ) {
@@ -276,6 +279,7 @@ public class PrepareExecutionTransServlet extends BaseHttpServlet implements Car
         out.println( "<pre>" );
         out.println( Encode.forHtml( Const.getStackTracker( ex ) ) );
         out.println( "</pre>" );
+        response.setStatus( HttpServletResponse.SC_BAD_REQUEST );
       }
     }
 

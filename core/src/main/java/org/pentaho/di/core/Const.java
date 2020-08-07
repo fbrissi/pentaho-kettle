@@ -3,7 +3,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2020 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -26,6 +26,7 @@ package org.pentaho.di.core;
 import org.apache.commons.lang.StringEscapeUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.text.StrBuilder;
+import org.apache.http.conn.util.InetAddressUtils;
 import org.pentaho.di.core.exception.KettleException;
 import org.pentaho.di.core.row.ValueMetaInterface;
 import org.pentaho.di.core.util.EnvUtil;
@@ -33,10 +34,12 @@ import org.pentaho.di.core.util.Utils;
 import org.pentaho.di.i18n.BaseMessages;
 import org.pentaho.di.laf.BasePropertyHandler;
 import org.pentaho.di.version.BuildVersion;
+import org.pentaho.support.encryption.Encr;
 
 import java.awt.Font;
 import java.awt.GraphicsEnvironment;
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
@@ -47,6 +50,7 @@ import java.net.NetworkInterface;
 import java.net.SocketException;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.nio.file.Paths;
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
 import java.text.NumberFormat;
@@ -63,6 +67,7 @@ import java.util.Locale;
 import java.util.TimeZone;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 
 /**
@@ -280,7 +285,7 @@ public class Const {
   /**
    * The default locale for the kettle environment (system defined)
    */
-  public static final Locale DEFAULT_LOCALE = Locale.getDefault(); // new Locale("nl", "BE");
+  public static final Locale DEFAULT_LOCALE = Locale.getDefault();
 
   /**
    * The default decimal separator . or ,
@@ -374,6 +379,11 @@ public class Const {
    * An array of date conversion formats
    */
   private static String[] dateFormats;
+
+  /**
+   * An array of date (timeless) conversion formats
+   */
+  private static String[] dateTimelessFormats;
 
   /**
    * An array of number conversion formats
@@ -492,8 +502,11 @@ public class Const {
    * */
   public static final String[] DEPRECATED_VARIABLES = new String[] {
     Const.INTERNAL_VARIABLE_TRANSFORMATION_FILENAME_DIRECTORY,
-    Const.INTERNAL_VARIABLE_TRANSFORMATION_FILENAME_NAME, Const.INTERNAL_VARIABLE_TRANSFORMATION_NAME,
-    Const.INTERNAL_VARIABLE_TRANSFORMATION_REPOSITORY_DIRECTORY
+    Const.INTERNAL_VARIABLE_TRANSFORMATION_FILENAME_NAME,
+    Const.INTERNAL_VARIABLE_TRANSFORMATION_REPOSITORY_DIRECTORY,
+    Const.INTERNAL_VARIABLE_JOB_FILENAME_DIRECTORY,
+    Const.INTERNAL_VARIABLE_JOB_FILENAME_NAME,
+    Const.INTERNAL_VARIABLE_JOB_REPOSITORY_DIRECTORY
   };
 
   /** The transformation filename directory */
@@ -570,6 +583,12 @@ public class Const {
 
   /** UI-agnostic flag for warnings */
   public static final int INFO = 3;
+
+  public static final int SHOW_MESSAGE_DIALOG_DB_TEST_DEFAULT = 0;
+
+  public static final int SHOW_MESSAGE_DIALOG_DB_TEST_SUCCESS = 1;
+
+  public static final int SHOW_FATAL_ERROR = 2;
 
   /**
    * The margin between the text of a note and its border.
@@ -730,6 +749,24 @@ public class Const {
   public static final String KETTLE_EMPTY_STRING_DIFFERS_FROM_NULL = "KETTLE_EMPTY_STRING_DIFFERS_FROM_NULL";
 
   /**
+   * This flag will prevent Kettle from converting {@code null} strings to empty strings in {@link org.pentaho.di.core.row.value.ValueMetaBase}
+   * The default value is {@code false}.
+   */
+  public static final String KETTLE_DO_NOT_NORMALIZE_NULL_STRING_TO_EMPTY = "KETTLE_DO_NOT_NORMALIZE_NULL_STRING_TO_EMPTY";
+
+  /**
+   * This flag will prevent Kettle from yielding {@code null} as the value of an empty XML tag in {@link org.pentaho.di.core.xml.XMLHandler}
+   * The default value is {@code false} and an empty XML tag will produce a {@code null} value.
+   */
+  public static final String KETTLE_XML_EMPTY_TAG_YIELDS_EMPTY_VALUE = "KETTLE_XML_EMPTY_TAG_YIELDS_EMPTY_VALUE";
+
+  /**
+   * This flag will cause the "Get XML data" step to yield null values on missing elements and empty values on empty elements when set to "Y".
+   * By default, both empty elements and missing elements will yield empty values.
+   */
+  public static final String KETTLE_XML_MISSING_TAG_YIELDS_NULL_VALUE = "KETTLE_XML_MISSING_TAG_YIELDS_NULL_VALUE";
+
+  /**
    * System wide flag to allow non-strict string to number conversion for backward compatibility. If this setting is set
    * to "Y", an string starting with digits will be converted successfully into a number. (example: 192.168.1.1 will be
    * converted into 192 or 192.168 depending on the decimal symbol). The default (N) will be to throw an error if
@@ -834,6 +871,11 @@ public class Const {
   public static final String KETTLE_MAX_LOGGING_REGISTRY_SIZE = "KETTLE_MAX_LOGGING_REGISTRY_SIZE";
 
   /**
+   * A variable to configure the logging registry's purge timer which will trigger the registry to cleanup entries.
+   */
+  public static final String KETTLE_LOGGING_REGISTRY_PURGE_TIMEOUT = "KETTLE_LOGGING_REGISTRY_PURGE_TIMEOUT";
+
+  /**
    * A variable to configure the kettle log tab refresh delay.
    */
   public static final String KETTLE_LOG_TAB_REFRESH_DELAY = "KETTLE_LOG_TAB_REFRESH_DELAY";
@@ -914,7 +956,8 @@ public class Const {
   /**
    * The XML file that contains the list of native Kettle two-way password encoder plugins
    */
-  public static final String XML_FILE_KETTLE_PASSWORD_ENCODER_PLUGINS = "kettle-password-encoder-plugins.xml";
+  @SuppressWarnings( "squid:S2068" )
+  public static final String XML_FILE_KETTLE_PASSWORD_ENCODER_PLUGINS = Encr.XML_FILE_KETTLE_PASSWORD_ENCODER_PLUGINS;
 
   /**
    * The name of the environment variable that will contain the alternative location of the kettle-valuemeta-plugins.xml
@@ -925,18 +968,21 @@ public class Const {
   /**
    * Specifies the password encoding plugin to use by ID (Kettle is the default).
    */
-  public static final String KETTLE_PASSWORD_ENCODER_PLUGIN = "KETTLE_PASSWORD_ENCODER_PLUGIN";
+  @SuppressWarnings( "squid:S2068" )
+  public static final String KETTLE_PASSWORD_ENCODER_PLUGIN = Encr.KETTLE_PASSWORD_ENCODER_PLUGIN;
 
   /**
    * The name of the environment variable that will contain the alternative location of the kettle-password-encoder-plugins.xml
    * file
    */
-  public static final String KETTLE_PASSWORD_ENCODER_PLUGINS_FILE = "KETTLE_PASSWORD_ENCODER_PLUGINS_FILE";
+  @SuppressWarnings( "squid:S2068" )
+  public static final String KETTLE_PASSWORD_ENCODER_PLUGINS_FILE = Encr.KETTLE_PASSWORD_ENCODER_PLUGINS_FILE;
 
   /**
    * The name of the Kettle encryption seed environment variable for the KettleTwoWayPasswordEncoder class
    */
-  public static final String KETTLE_TWO_WAY_PASSWORD_ENCODER_SEED = "KETTLE_TWO_WAY_PASSWORD_ENCODER_SEED";
+  @SuppressWarnings( "squid:S2068" )
+  public static final String KETTLE_TWO_WAY_PASSWORD_ENCODER_SEED = Encr.KETTLE_TWO_WAY_PASSWORD_ENCODER_SEED;
 
   /**
    * The XML file that contains the list of native Kettle logging plugins
@@ -999,6 +1045,7 @@ public class Const {
   /**
    * Set this variable to with the intended password to pass as repository credentials
    */
+  @SuppressWarnings( "squid:S2068" )
   public static final String KETTLE_PASSWORD = "KETTLE_PASSWORD";
 
   /**
@@ -1117,6 +1164,18 @@ public class Const {
   // See PDI-16388 for details
   public static final String KETTLE_COMPATIBILITY_SELECT_VALUES_TYPE_CHANGE_USES_TYPE_DEFAULTS = "KETTLE_COMPATIBILITY_SELECT_VALUES_TYPE_CHANGE_USES_TYPE_DEFAULTS";
 
+  // See PDI-17203 for details
+  public static final String KETTLE_COMPATIBILITY_XML_OUTPUT_NULL_VALUES = "KETTLE_COMPATIBILITY_XML_OUTPUT_NULL_VALUES";
+
+  // See PDI-17980 for details
+  public static final String KETTLE_COMPATIBILITY_USE_JDBC_METADATA = "KETTLE_COMPATIBILITY_USE_JDBC_METADATA";
+
+  // See PDI-18470 for details
+  public static final String KETTLE_COMPATIBILITY_DB_LOOKUP_USE_FIELDS_RETURN_TYPE_CHOSEN_IN_UI = "KETTLE_COMPATIBILITY_DB_LOOKUP_USE_FIELDS_RETURN_TYPE_CHOSEN_IN_UI";
+
+  // See PDI-PDI-18739 for details
+  public static final String KETTLE_COMPATIBILITY_TEXT_FILE_INPUT_USE_LENIENT_ENCLOSURE_HANDLING = "KETTLE_COMPATIBILITY_TEXT_FILE_INPUT_USE_LENIENT_ENCLOSURE_HANDLING";
+
   /**
    * The XML file that contains the list of native import rules
    */
@@ -1172,10 +1231,248 @@ public class Const {
   public static final String S3VFS_USE_TEMPORARY_FILE_ON_UPLOAD_DATA = "s3.vfs.useTempFileOnUploadData";
 
   /**
+   * A variable to configure Tab size"
+   */
+  public static final String KETTLE_MAX_TAB_LENGTH = "KETTLE_MAX_TAB_LENGTH";
+
+  /**
    * A variable to configure VFS USER_DIR_IS_ROOT option: should be "true" or "false"
    * {@linkplain org.apache.commons.vfs2.provider.sftp.SftpFileSystemConfigBuilder#USER_DIR_IS_ROOT}
    */
   public static final String VFS_USER_DIR_IS_ROOT = "vfs.sftp.userDirIsRoot";
+
+  /**
+   * <p>A variable to configure the minimum allowed ratio between de- and inflated bytes to detect a zipbomb.</p>
+   * <p>If not set or if the configured value is invalid, it defaults to {@value
+   * #KETTLE_ZIP_MIN_INFLATE_RATIO_DEFAULT}</p>
+   * <p>Check PDI-17586 for more details.</p>
+   *
+   * @see #KETTLE_ZIP_MIN_INFLATE_RATIO_DEFAULT
+   * @see #KETTLE_ZIP_MIN_INFLATE_RATIO_DEFAULT_STRING
+   */
+  public static final String KETTLE_ZIP_MIN_INFLATE_RATIO = "KETTLE_ZIP_MIN_INFLATE_RATIO";
+
+  /**
+   * <p>The default value for the {@link #KETTLE_ZIP_MIN_INFLATE_RATIO} as a Double.</p>
+   * <p>Check PDI-17586 for more details.</p>
+   *
+   * @see #KETTLE_ZIP_MIN_INFLATE_RATIO
+   * @see #KETTLE_ZIP_MIN_INFLATE_RATIO_DEFAULT_STRING
+   */
+  public static final Double KETTLE_ZIP_MIN_INFLATE_RATIO_DEFAULT = 0.01d;
+
+  /**
+   * <p>The default value for the {@link #KETTLE_ZIP_MIN_INFLATE_RATIO} as a String.</p>
+   * <p>Check PDI-17586 for more details.</p>
+   *
+   * @see #KETTLE_ZIP_MIN_INFLATE_RATIO
+   * @see #KETTLE_ZIP_MIN_INFLATE_RATIO_DEFAULT
+   */
+  public static final String KETTLE_ZIP_MIN_INFLATE_RATIO_DEFAULT_STRING =
+    String.valueOf( KETTLE_ZIP_MIN_INFLATE_RATIO_DEFAULT );
+
+  /**
+   * <p>A variable to configure the maximum file size of a single zip entry.</p>
+   * <p>If not set or if the configured value is invalid, it defaults to {@value #KETTLE_ZIP_MAX_ENTRY_SIZE_DEFAULT}</p>
+   * <p>Check PDI-17586 for more details.</p>
+   *
+   * @see #KETTLE_ZIP_MAX_ENTRY_SIZE_DEFAULT
+   * @see #KETTLE_ZIP_MAX_ENTRY_SIZE_DEFAULT_STRING
+   */
+  public static final String KETTLE_ZIP_MAX_ENTRY_SIZE = "KETTLE_ZIP_MAX_ENTRY_SIZE";
+
+  /**
+   * <p>The default value for the {@link #KETTLE_ZIP_MAX_ENTRY_SIZE} as a Long.</p>
+   * <p>Check PDI-17586 for more details.</p>
+   *
+   * @see #KETTLE_ZIP_MAX_ENTRY_SIZE
+   * @see #KETTLE_ZIP_MAX_ENTRY_SIZE_DEFAULT_STRING
+   */
+  public static final Long KETTLE_ZIP_MAX_ENTRY_SIZE_DEFAULT = 0xFFFFFFFFL;
+
+  /**
+   * <p>The default value for the {@link #KETTLE_ZIP_MAX_ENTRY_SIZE} as a String.</p>
+   * <p>Check PDI-17586 for more details.</p>
+   *
+   * @see #KETTLE_ZIP_MAX_ENTRY_SIZE
+   * @see #KETTLE_ZIP_MAX_ENTRY_SIZE_DEFAULT
+   */
+  public static final String KETTLE_ZIP_MAX_ENTRY_SIZE_DEFAULT_STRING =
+    String.valueOf( KETTLE_ZIP_MAX_ENTRY_SIZE_DEFAULT );
+
+  /**
+   * <p>A variable to configure the maximum number of characters of text that are extracted before an exception is
+   * thrown during extracting text from documents.</p>
+   * <p>If not set or if the configured value is invalid, it defaults to {@value #KETTLE_ZIP_MAX_TEXT_SIZE_DEFAULT}</p>
+   * <p>Check PDI-17586 for more details.</p>
+   *
+   * @see #KETTLE_ZIP_MAX_TEXT_SIZE_DEFAULT
+   * @see #KETTLE_ZIP_MAX_TEXT_SIZE_DEFAULT_STRING
+   */
+  public static final String KETTLE_ZIP_MAX_TEXT_SIZE = "KETTLE_ZIP_MAX_TEXT_SIZE";
+
+  /**
+   * <p>The default value for the {@link #KETTLE_ZIP_MAX_TEXT_SIZE} as a Long.</p>
+   * <p>Check PDI-17586 for more details.</p>
+   *
+   * @see #KETTLE_ZIP_MAX_TEXT_SIZE
+   * @see #KETTLE_ZIP_MAX_TEXT_SIZE_DEFAULT_STRING
+   */
+  public static final Long KETTLE_ZIP_MAX_TEXT_SIZE_DEFAULT = 10 * 1024 * 1024L;
+
+  /**
+   * <p>The default value for the {@link #KETTLE_ZIP_MAX_TEXT_SIZE} as a Long.</p>
+   * <p>Check PDI-17586 for more details.</p>
+   *
+   * @see #KETTLE_ZIP_MAX_TEXT_SIZE
+   * @see #KETTLE_ZIP_MAX_TEXT_SIZE_DEFAULT
+   */
+  public static final String KETTLE_ZIP_MAX_TEXT_SIZE_DEFAULT_STRING =
+    String.valueOf( KETTLE_ZIP_MAX_TEXT_SIZE_DEFAULT );
+
+  /**
+   * <p>The default value for the {@link #KETTLE_ZIP_NEGATIVE_MIN_INFLATE} as a Double.</p>
+   * <p>Check PDI-18489 for more details.</p>
+   */
+  public static final Double KETTLE_ZIP_NEGATIVE_MIN_INFLATE = -1.0d;
+
+  /**
+   * <p>This environment variable is used to define whether the check of xlsx zip bomb is performed. This is set to false by default.</p>
+   */
+  public static final String KETTLE_XLSX_ZIP_BOMB_CHECK = "KETTLE_XLSX_ZIP_BOMB_CHECK";
+  private static final String KETTLE_XLSX_ZIP_BOMB_CHECK_DEFAULT = "false";
+  public static boolean checkXlsxZipBomb() {
+    String checkZipBomb = System.getProperty( KETTLE_XLSX_ZIP_BOMB_CHECK, KETTLE_XLSX_ZIP_BOMB_CHECK_DEFAULT );
+    return Boolean.valueOf( checkZipBomb );
+  }
+
+  /**
+   * <p>A variable to configure if the S3 input / output steps should use the Amazon Default Credentials Provider Chain
+   * even if access credentials are specified within the transformation.</p>
+   */
+  public static final String KETTLE_USE_AWS_DEFAULT_CREDENTIALS = "KETTLE_USE_AWS_DEFAULT_CREDENTIALS";
+
+  /**
+   * <p>This environment variable is used by streaming consumer steps to limit the total of concurrent batches across transformations.</p>
+   */
+  public static final String SHARED_STREAMING_BATCH_POOL_SIZE = "SHARED_STREAMING_BATCH_POOL_SIZE";
+
+  /**
+   * <p>This environment variable is used to specify a location used to deploy a shim driver into PDI.</p>
+   */
+  public static final String SHIM_DRIVER_DEPLOYMENT_LOCATION = "SHIM_DRIVER_DEPLOYMENT_LOCATION";
+  private static final String DEFAULT_DRIVERS_DIR = "DEFAULT";
+  public static String getShimDriverDeploymentLocation() {
+
+    String driversLocation = System.getProperty( Const.SHIM_DRIVER_DEPLOYMENT_LOCATION, DEFAULT_DRIVERS_DIR );
+    if ( driversLocation.equals( DEFAULT_DRIVERS_DIR ) ) {
+      String karafDir = System.getProperty( "karaf.home" );
+      return Paths.get( karafDir ).getParent().getParent().toString() + File.separator + "drivers";
+    }
+    return driversLocation;
+  }
+
+  /**
+   * <p>This environment variable is used to define the minimum PUC user password length. The default password length is 0.</p>
+   */
+  private static final String PUC_USER_PASSWORD_LENGTH = "PUC_USER_PASSWORD_LENGTH";
+  private static final String DEFAULT_PASSWORD_LENGTH = "0";
+  public static int getPucUserPasswordLength() {
+    String passwordLengthStr = System.getProperty( PUC_USER_PASSWORD_LENGTH, DEFAULT_PASSWORD_LENGTH );
+    return Integer.parseInt( passwordLengthStr );
+  }
+
+  /**
+   * <p>This environment variable is used to require the use of at least one special character in the PUC user password. This is set to false by default.</p>
+   */
+  private static final String PUC_USER_PASSWORD_REQUIRE_SPECIAL_CHARACTER = "PUC_USER_PASSWORD_REQUIRE_SPECIAL_CHARACTER";
+  private static final String DEFAULT_SPEC_CHARACTER_USE = "false";
+  public static boolean isPassSpecialCharRequired() {
+    String specialCharReqStr = System.getProperty( PUC_USER_PASSWORD_REQUIRE_SPECIAL_CHARACTER, DEFAULT_SPEC_CHARACTER_USE );
+    return Boolean.valueOf( specialCharReqStr );
+  }
+
+  /**
+   * <p>This environment is used to specify how many attempts before failing to read an XML from within a Zip file
+   * while multy-thread execution and using XMLHandler.</p>
+   */
+  public static final String KETTLE_RETRY_OPEN_XML_STREAM = "KETTLE_RETRY_OPEN_XML_STREAM";
+
+  /**
+   * <p>This environment variable is used by XSD validation steps to enable or disable external entities.</p>
+   * <p>By default external entities are allowed.</p>
+   */
+  public static final String ALLOW_EXTERNAL_ENTITIES_FOR_XSD_VALIDATION = "ALLOW_EXTERNAL_ENTITIES_FOR_XSD_VALIDATION";
+  public static final String ALLOW_EXTERNAL_ENTITIES_FOR_XSD_VALIDATION_DEFAULT = "true";
+
+  /**
+   * <p>This environment variable is used to define the default division result precision between BigDecimals.</p>
+   * <p>By default, and when precision is -1, precision is unlimited.</p>
+   */
+  public static final String KETTLE_BIGDECIMAL_DIVISION_PRECISION = "KETTLE_BIGDECIMAL_DIVISION_PRECISION";
+  public static final String KETTLE_BIGDECIMAL_DIVISION_PRECISION_DEFAULT = "-1";
+
+  /**
+   * <p>This environment variable is used to define the default division result rounding mode between BigDecimals.</p>
+   * <p>By default, rouding mode is half even.</p>
+   */
+  public static final String KETTLE_BIGDECIMAL_DIVISION_ROUNDING_MODE = "KETTLE_BIGDECIMAL_DIVISION_ROUNDING_MODE";
+  public static final String KETTLE_BIGDECIMAL_DIVISION_ROUNDING_MODE_DEFAULT = "HALF_EVEN";
+
+  /**
+   * <p>This environment variable is used to define how Timestamp should be converted to a number and vice-versa.</p>
+   * <p>Three options exist:</p>
+   * <ul>
+   *   <li>{@link #KETTLE_TIMESTAMP_NUMBER_CONVERSION_MODE_LEGACY}: converting a Timestamp to a number uses
+   *   milliseconds but converting a number to Timestamp assumes the value is in nanoseconds</li>
+   *   <li>{@link #KETTLE_TIMESTAMP_NUMBER_CONVERSION_MODE_MILLISECONDS}: both Timestamp to number and number to
+   *   Timestamp use milliseconds</li>
+   *   <li>{@link #KETTLE_TIMESTAMP_NUMBER_CONVERSION_MODE_NANOSECONDS}: both Timestamp to number and number to
+   *   Timestamp use nanoseconds</li>
+   * </ul>
+   * <p>The default is {@value #KETTLE_TIMESTAMP_NUMBER_CONVERSION_MODE_DEFAULT}.</p>
+   *
+   * @see #KETTLE_TIMESTAMP_NUMBER_CONVERSION_MODE_DEFAULT
+   * @see #KETTLE_TIMESTAMP_NUMBER_CONVERSION_MODE_LEGACY
+   * @see #KETTLE_TIMESTAMP_NUMBER_CONVERSION_MODE_MILLISECONDS
+   * @see #KETTLE_TIMESTAMP_NUMBER_CONVERSION_MODE_NANOSECONDS
+   */
+  public static final String KETTLE_TIMESTAMP_NUMBER_CONVERSION_MODE = "KETTLE_TIMESTAMP_NUMBER_CONVERSION_MODE";
+
+  /**
+   * <p>The value to use for setting the {@link #KETTLE_TIMESTAMP_NUMBER_CONVERSION_MODE} as it behaved on former
+   * versions.</p>
+   *
+   * @see #KETTLE_TIMESTAMP_NUMBER_CONVERSION_MODE_MILLISECONDS
+   * @see #KETTLE_TIMESTAMP_NUMBER_CONVERSION_MODE_NANOSECONDS
+   */
+  public static final String KETTLE_TIMESTAMP_NUMBER_CONVERSION_MODE_LEGACY = "LEGACY";
+
+  /**
+   * <p>The value to use for setting the {@link #KETTLE_TIMESTAMP_NUMBER_CONVERSION_MODE} to use milliseconds.</p>
+   *
+   * @see #KETTLE_TIMESTAMP_NUMBER_CONVERSION_MODE_LEGACY
+   * @see #KETTLE_TIMESTAMP_NUMBER_CONVERSION_MODE_NANOSECONDS
+   */
+  public static final String KETTLE_TIMESTAMP_NUMBER_CONVERSION_MODE_MILLISECONDS = "MILLISECONDS";
+
+  /**
+   * <p>The value to use for setting the {@link #KETTLE_TIMESTAMP_NUMBER_CONVERSION_MODE} to use nanoseconds.</p>
+   *
+   * @see #KETTLE_TIMESTAMP_NUMBER_CONVERSION_MODE_LEGACY
+   * @see #KETTLE_TIMESTAMP_NUMBER_CONVERSION_MODE_MILLISECONDS
+   */
+  public static final String KETTLE_TIMESTAMP_NUMBER_CONVERSION_MODE_NANOSECONDS = "NANOSECONDS";
+
+  /**
+   * <p>The default value for the {@link #KETTLE_TIMESTAMP_NUMBER_CONVERSION_MODE}.</p>
+   *
+   * @see #KETTLE_TIMESTAMP_NUMBER_CONVERSION_MODE_LEGACY
+   * @see #KETTLE_TIMESTAMP_NUMBER_CONVERSION_MODE_MILLISECONDS
+   * @see #KETTLE_TIMESTAMP_NUMBER_CONVERSION_MODE_NANOSECONDS
+   */
+  public static final String KETTLE_TIMESTAMP_NUMBER_CONVERSION_MODE_DEFAULT =
+    KETTLE_TIMESTAMP_NUMBER_CONVERSION_MODE_LEGACY;
 
   /**
    * rounds double f to any number of places after decimal point Does arithmetic using BigDecimal class to avoid integer
@@ -1710,12 +2007,11 @@ public class Const {
 
         while ( ip.hasMoreElements() ) {
           InetAddress in = ip.nextElement();
-          lastHostname = in.getHostName();
-          // System.out.println("  ip address bound : "+in.getHostAddress());
-          // System.out.println("  hostname         : "+in.getHostName());
-          // System.out.println("  Cann.hostname    : "+in.getCanonicalHostName());
-          // System.out.println("  ip string        : "+in.toString());
-          if ( !lastHostname.equalsIgnoreCase( "localhost" ) && !( lastHostname.indexOf( ':' ) >= 0 ) ) {
+          boolean hasNewHostName = !lastHostname.equalsIgnoreCase( "localhost" );
+          if ( InetAddressUtils.isIPv4Address( in.getHostAddress() ) || !hasNewHostName  ) {
+            lastHostname = in.getHostName();
+          }
+          if ( hasNewHostName && lastHostname.indexOf( ':' ) < 0 )  {
             break;
           }
         }
@@ -1995,6 +2291,15 @@ public class Const {
   }
 
   /**
+   * Returns the full path to the Kettle properties XML file.
+   *
+   * @return The Kettle properties file.
+   */
+  public static String getKettlePropertiesFilename() {
+    return Const.getKettleDirectory() + FILE_SEPARATOR + Const.KETTLE_PROPERTIES;
+  }
+
+  /**
    * Returns the path to the Kettle local (current directory) Carte password file:
    * <p>
    * ./pwd/kettle.pwd<br>
@@ -2098,7 +2403,6 @@ public class Const {
           if ( newval != null ) {
             // Replace the whole bunch
             str.replace( idx, to + 2, newval );
-            // System.out.println("Replaced ["+marker+"] with ["+newval+"]");
 
             // The last position has changed...
             to += newval.length() - marker.length();
@@ -2304,7 +2608,7 @@ public class Const {
       if ( string.substring( i, i + sepLen ).equalsIgnoreCase( separator ) ) {
         // OK, we found a separator, the string to add to the list
         // is [from, i[
-        list.add( NVL( string.substring( from, i ), "" ) );
+        list.add( nullToEmpty( string.substring( from, i ) ) );
         from = i + sepLen;
       }
     }
@@ -2312,7 +2616,7 @@ public class Const {
     // Wait, if the string didn't end with a separator, we still have information at the end of the string...
     // In our example that would be "d"...
     if ( from + sepLen <= string.length() ) {
-      list.add( NVL( string.substring( from, string.length() ), "" ) );
+      list.add( nullToEmpty( string.substring( from, string.length() ) ) );
     }
 
     return list.toArray( new String[list.size()] );
@@ -2372,7 +2676,7 @@ public class Const {
       if ( found ) {
         // OK, we found a separator, the string to add to the list
         // is [from, i[
-        list.add( NVL( string.substring( from, i ), "" ) );
+        list.add( nullToEmpty( string.substring( from, i ) ) );
         from = i + 1;
       }
     }
@@ -2380,7 +2684,7 @@ public class Const {
     // Wait, if the string didn't end with a separator, we still have information at the end of the string...
     // In our example that would be "d"...
     if ( from + 1 <= string.length() ) {
-      list.add( NVL( string.substring( from, string.length() ), "" ) );
+      list.add( nullToEmpty( string.substring( from, string.length() ) ) );
     }
 
     return list.toArray( new String[list.size()] );
@@ -2561,7 +2865,8 @@ public class Const {
             // and reset the "concatSplit" buffer. Otherwise continue
             addSplit = oddNumberOfEnclosures;
           }
-          if ( addSplit ) {
+          // Check if enclosure is also using inside data
+          if ( addSplit || numEnclosures > 2 ) {
             String splitResult = concatSplit.toString();
             //remove enclosure from resulting split
             if ( removeEnclosure ) {
@@ -2666,7 +2971,7 @@ public class Const {
    *          The value to check
    * @return true if the string supplied is empty
    * @deprecated
-   * @see org.pentaho.di.core.util.Utils.isEmpty
+   * @see org.pentaho.di.core.util.Utils#isEmpty(CharSequence)
    */
   @Deprecated
   public static boolean isEmpty( String val ) {
@@ -2676,11 +2981,11 @@ public class Const {
   /**
    * Check if the stringBuffer supplied is empty. A StringBuffer is empty when it is null or when the length is 0
    *
-   * @param string
+   * @param val
    *          The stringBuffer to check
    * @return true if the stringBuffer supplied is empty
    * @deprecated
-   * @see org.pentaho.di.core.util.Utils.isEmpty
+   * @see org.pentaho.di.core.util.Utils#isEmpty(CharSequence)
    */
   @Deprecated
   public static boolean isEmpty( StringBuffer val ) {
@@ -2691,11 +2996,11 @@ public class Const {
    * Check if the string array supplied is empty. A String array is empty when it is null or when the number of elements
    * is 0
    *
-   * @param strings
+   * @param vals
    *          The string array to check
    * @return true if the string array supplied is empty
    * @deprecated
-   * @see org.pentaho.di.core.util.Utils.isEmpty
+   * @see org.pentaho.di.core.util.Utils#isEmpty(CharSequence[])
    */
   @Deprecated
   public static boolean isEmpty( String[] vals ) {
@@ -2705,11 +3010,11 @@ public class Const {
   /**
    * Check if the CharSequence supplied is empty. A CharSequence is empty when it is null or when the length is 0
    *
-   * @param string
+   * @param val
    *          The stringBuffer to check
    * @return true if the stringBuffer supplied is empty
    * @deprecated
-   * @see org.pentaho.di.core.util.Utils.isEmpty
+   * @see org.pentaho.di.core.util.Utils#isEmpty(CharSequence)
    */
   @Deprecated
   public static boolean isEmpty( CharSequence val ) {
@@ -2720,11 +3025,11 @@ public class Const {
    * Check if the CharSequence array supplied is empty. A CharSequence array is empty when it is null or when the number of elements
    * is 0
    *
-   * @param strings
+   * @param vals
    *          The string array to check
    * @return true if the string array supplied is empty
    * @deprecated
-   * @see org.pentaho.di.core.util.Utils.isEmpty
+   * @see org.pentaho.di.core.util.Utils#isEmpty(CharSequence[])
    */
   @Deprecated
   public static boolean isEmpty( CharSequence[] vals ) {
@@ -2738,7 +3043,7 @@ public class Const {
    *          The array to check
    * @return true if the array supplied is empty
    * @deprecated
-   * @see org.pentaho.di.core.util.Utils.isEmpty
+   * @see org.pentaho.di.core.util.Utils#isEmpty(Object[])
    */
   @Deprecated
   public static boolean isEmpty( Object[] array ) {
@@ -2752,7 +3057,7 @@ public class Const {
    *          the list to check
    * @return true if the supplied list is empty
    * @deprecated
-   * @see org.pentaho.di.core.util.Utils.isEmpty
+   * @see org.pentaho.di.core.util.Utils#isEmpty(List)
    */
   @Deprecated
   public static boolean isEmpty( List<?> list ) {
@@ -2904,7 +3209,6 @@ public class Const {
         return sFullPath;
       }
     }
-
   }
 
   /**
@@ -2921,6 +3225,22 @@ public class Const {
       }
     }
     return dateFormats;
+  }
+
+  /**
+   * Returning the localized date conversion formats without time. They get created once on first request.
+   *
+   * @return
+   */
+  public static String[] getTimelessDateFormats() {
+    if ( dateTimelessFormats == null ) {
+      List<String> dateFormats = Arrays.asList( Const.getDateFormats() );
+      dateFormats = dateFormats.stream()
+        .filter( date -> !date.toLowerCase().contains( "hh" ) )
+        .collect( Collectors.toList() );
+      dateTimelessFormats = dateFormats.toArray( new String[dateFormats.size()] );
+    }
+    return dateTimelessFormats;
   }
 
   /**
@@ -3024,6 +3344,21 @@ public class Const {
       default:
         return string;
     }
+  }
+
+  /**
+   * Trims a Date by resetting the time part to zero
+   * @param date a Date object to trim (reset time to zero)
+   * @return a Date object with time part reset to zero
+   */
+  public static Date trimDate( Date date ) {
+    Calendar calendar = Calendar.getInstance();
+    calendar.setTime( date );
+    calendar.set( Calendar.MILLISECOND, 0 );
+    calendar.set( Calendar.SECOND, 0 );
+    calendar.set( Calendar.MINUTE, 0 );
+    calendar.set( Calendar.HOUR_OF_DAY, 0 );
+    return calendar.getTime();
   }
 
   /**
@@ -3314,32 +3649,32 @@ public class Const {
    *          the date
    * @param time
    *          the time to add (in string)
-   * @param DateFormat
+   * @param dateFormat
    *          the time format
    * @return date = input + time
    */
-  public static Date addTimeToDate( Date input, String time, String DateFormat ) throws Exception {
+  public static Date addTimeToDate( Date input, String time, String dateFormat ) throws Exception {
     if ( Utils.isEmpty( time ) ) {
       return input;
     }
     if ( input == null ) {
       return null;
     }
-    String dateformatString = NVL( DateFormat, "HH:mm:ss" );
+    String dateformatString = NVL( dateFormat, "HH:mm:ss" );
     int t = decodeTime( time, dateformatString );
     return new Date( input.getTime() + t );
   }
 
   // Decodes a time value in specified date format and returns it as milliseconds since midnight.
-  public static int decodeTime( String s, String DateFormat ) throws Exception {
-    SimpleDateFormat f = new SimpleDateFormat( DateFormat );
+  public static int decodeTime( String s, String dateFormat ) throws Exception {
+    SimpleDateFormat f = new SimpleDateFormat( dateFormat );
     TimeZone utcTimeZone = TimeZone.getTimeZone( "UTC" );
     f.setTimeZone( utcTimeZone );
     f.setLenient( false );
     ParsePosition p = new ParsePosition( 0 );
     Date d = f.parse( s, p );
     if ( d == null ) {
-      throw new Exception( "Invalid time value " + DateFormat + ": \"" + s + "\"." );
+      throw new Exception( "Invalid time value " + dateFormat + ": \"" + s + "\"." );
     }
     return (int) d.getTime();
   }

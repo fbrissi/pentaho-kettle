@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2019 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -22,12 +22,17 @@
 
 package org.pentaho.di.trans.step.mqtt;
 
+@SuppressWarnings( "all" )
 class MQTTConstants {
+  private MQTTConstants() { }
+
   static final String MQTT_SERVER = "MQTT_SERVER";
   static final String TOPICS = "TOPICS";
   static final String TOPIC = "TOPIC";
-  static final String MSG_OUTPUT_NAME = "MSG_OUTPUT_NAME";
-  static final String TOPIC_OUTPUT_NAME = "TOPIC_OUTPUT_NAME";
+  static final String FIELD_TOPIC = "FIELD_TOPIC";
+  static final String TOPIC_IN_FIELD = "TOPIC_IN_FIELD";
+  static final String MSG_OUTPUT_NAME = "Message";
+  static final String TOPIC_OUTPUT_NAME = "Topic name";
   static final String QOS = "QOS";
   static final String SSL_GROUP = "SSL";
   static final String USE_SSL = "USE_SSL";

@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2019 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -34,6 +34,7 @@ import org.pentaho.di.trans.TransMeta;
 import org.pentaho.di.trans.step.jms.JmsConsumerMeta;
 import org.pentaho.di.trans.step.jms.JmsDelegate;
 import org.pentaho.di.trans.streaming.common.BaseStreamStepMeta;
+import org.pentaho.di.ui.core.widget.TableView;
 import org.pentaho.di.ui.core.widget.TextVar;
 import org.pentaho.di.ui.trans.step.BaseStreamingDialog;
 
@@ -47,6 +48,11 @@ public class JmsConsumerDialog extends BaseStreamingDialog {
   private ConnectionForm connectionForm;
   private TextVar wReceiverTimeout;
   private FieldsTab fieldsTab;
+
+  private static final int SHELL_MIN_WIDTH = 528;
+  private static final int SHELL_MIN_HEIGHT = 700;
+
+  private JmsDialogSecurityLayout jmsDialogSecurityLayout;
 
   public JmsConsumerDialog( Shell parent, Object in, TransMeta tr, String sname ) {
     super( parent, in, tr, sname );
@@ -64,8 +70,16 @@ public class JmsConsumerDialog extends BaseStreamingDialog {
     setupLayout.marginHeight = 15;
     setupLayout.marginWidth = 15;
     wSetupComp.setLayout( setupLayout );
-    connectionForm = new ConnectionForm( wSetupComp, props, transMeta, lsMod, jmsMeta.jmsDelegate );
+
+    jmsDialogSecurityLayout = new JmsDialogSecurityLayout(
+      props, wTabFolder, lsMod, transMeta, jmsDelegate.sslEnabled, jmsDelegate );
+    jmsDialogSecurityLayout.buildSecurityTab();
+
+    connectionForm = new ConnectionForm( wSetupComp, props, transMeta, lsMod, jmsMeta.jmsDelegate,
+      jmsDialogSecurityLayout );
     Group group = connectionForm.layoutForm();
+
+    jmsDialogSecurityLayout.setConnectionForm( connectionForm );
 
     destinationForm =
       new DestinationForm( wSetupComp, group, props, transMeta, lsMod, jmsDelegate.destinationType,
@@ -88,14 +102,12 @@ public class JmsConsumerDialog extends BaseStreamingDialog {
     fdReceiveTimeout.width = 140;
     wReceiverTimeout.setLayoutData( fdReceiveTimeout );
     wReceiverTimeout.addModifyListener( lsMod );
-    wReceiverTimeout.setText( jmsDelegate.receiveTimeout );
+    wReceiverTimeout.setText( jmsMeta.receiveTimeout );
 
   }
 
   @Override protected void createAdditionalTabs() {
-    fieldsTab = new FieldsTab(
-      wTabFolder, props, transMeta, lsMod, jmsDelegate.messageField, jmsDelegate.destinationField );
-
+    fieldsTab = new FieldsTab( wTabFolder, props, transMeta, lsMod, jmsMeta );
     fieldsTab.buildFieldsTab();
   }
 
@@ -104,28 +116,31 @@ public class JmsConsumerDialog extends BaseStreamingDialog {
     jmsDelegate.connectionType = connectionForm.getConnectionType();
 
     jmsDelegate.ibmUrl = connectionForm.getIbmUrl();
-    jmsDelegate.ibmUsername = connectionForm.getIbmUser();
-    jmsDelegate.ibmPassword = connectionForm.getIbmPassword();
-
     jmsDelegate.amqUrl = connectionForm.getActiveUrl();
-    jmsDelegate.amqUsername = connectionForm.getActiveUser();
-    jmsDelegate.amqPassword = connectionForm.getActivePassword();
 
     jmsDelegate.connectionType = connectionForm.getConnectionType();
 
     jmsDelegate.destinationType = destinationForm.getDestinationType();
     jmsDelegate.destinationName = destinationForm.getDestinationName();
-    jmsDelegate.messageField = fieldsTab.getFieldNames()[ 0 ];
-    jmsDelegate.destinationField = fieldsTab.getFieldNames()[ 1 ];
-    jmsDelegate.receiveTimeout = wReceiverTimeout.getText();
+    jmsMeta.messageField = getFieldNames()[ 0 ];
+    jmsMeta.destinationField = getFieldNames()[ 1 ];
+    jmsMeta.messageId = getFieldNames()[ 2 ];
+    jmsMeta.jmsTimestamp = getFieldNames()[ 3 ];
+    jmsMeta.jmsRedelivered = getFieldNames()[ 4 ];
+    jmsMeta.receiveTimeout = wReceiverTimeout.getText();
+
+    jmsDialogSecurityLayout.saveAuthentication();
+    jmsDialogSecurityLayout.saveTableValues();
   }
 
-
-  @Override protected int[] getFieldTypes() {
-    return fieldsTab.getFieldTypes();
+  @Override
+  public void setSize() {
+    setSize( shell );  // sets shell location and preferred size
+    shell.setMinimumSize( SHELL_MIN_WIDTH, SHELL_MIN_HEIGHT  );
+    shell.setSize(  SHELL_MIN_WIDTH, SHELL_MIN_HEIGHT   ); // force initial size
   }
 
-  @Override protected String[] getFieldNames() {
-    return fieldsTab.getFieldNames();
+  @Override protected TableView getFieldsTable() {
+    return fieldsTab.fieldsTable;
   }
 }

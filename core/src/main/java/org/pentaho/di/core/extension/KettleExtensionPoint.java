@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2019 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -62,6 +62,8 @@ public enum KettleExtensionPoint {
     SpoonTransExecutionConfiguration( "SpoonTransExecutionConfiguration",
       "Right before Spoon configuration of transformation to be executed takes place" ),
     SpoonTransBeforeStart( "SpoonTransBeforeStart", "Right before the transformation is started" ),
+    RunConfigurationSelection( "RunConfigurationSelection", "Check when run configuration is selected" ),
+    RunConfigurationIsRemote( "RunConfigurationIsRemote", "Check when run configuration is pointing to a remote server" ),
     SpoonRunConfiguration( "SpoonRunConfiguration", "Send the run configuration" ),
     JobStart( "JobStart", "A job starts" ),
     JobHeartbeat( "JobHeartbeat", "A signal sent at regular intervals to indicate that the job is still active" ),
@@ -114,7 +116,9 @@ public enum KettleExtensionPoint {
     SpoonPopupMenuExtension( "SpoonPopupMenuExtension", "Pop up menu extension for the view tree" ),
     SpoonTreeDelegateExtension( "SpoonTreeDelegateExtension", "During the SpoonTreeDelegate execution" ),
     SpoonOpenSaveRepository( "SpoonOpenSaveRepository", "Open the repository browser" ),
+    SpoonOpenSaveNew( "SpoonOpenSaveNew", "Open the new file browser" ),
     SpoonBrowserFunction( "SpoonBrowserFunction", "Generic browser function handler" ),
+    GetFieldsExtension( "GetFieldsExtension", "Get Fields dialog" ),
 
     RepositoryImporterPatchTransStep( "RepositoryImporterPatchTransStep", "Patch the step in a transformation during repository import" ),
     RepositoryExporterPatchTransStep( "RepositoryExporterPatchTransStep", "Patch the step in a transformation during repository export" ),
@@ -122,6 +126,7 @@ public enum KettleExtensionPoint {
 
     OpenMapping( "OpenMapping", "Trigger when opening a mapping from TransGraph" ),
 
+    BeforeSaveToRepository( "BeforeSaveToRepository", "Before meta is saved to the repository" ),
     AfterDeleteRepositoryObject( "AfterDeleteRepositoryObject",
       "After an object has been deleted from the repository" ),
 

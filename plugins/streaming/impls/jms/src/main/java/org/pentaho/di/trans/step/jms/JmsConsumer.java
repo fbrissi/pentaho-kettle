@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2020 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -43,32 +43,34 @@ public class JmsConsumer extends BaseStreamStep {
     super( stepMeta, stepDataInterface, copyNr, transMeta, trans );
   }
 
-  public boolean init( StepMetaInterface stepMetaInterface, StepDataInterface stepDataInterface ) {
+  @Override public boolean init( StepMetaInterface stepMetaInterface, StepDataInterface stepDataInterface ) {
     boolean superStatus = super.init( stepMetaInterface, stepDataInterface );
 
-    JmsConsumerMeta meta = (JmsConsumerMeta) stepMetaInterface;
+    JmsConsumerMeta jmsConsumerMeta = (JmsConsumerMeta) this.variablizedStepMeta;
 
-    if ( !validateParams( meta ) ) {
+    if ( !validateParams( jmsConsumerMeta ) ) {
       return false;
     }
 
+    log.logDebug( "Connection Details: "
+      + jmsConsumerMeta.jmsDelegate.getJmsProvider().getConnectionDetails( jmsConsumerMeta.jmsDelegate ) );
 
     window = new FixedTimeStreamWindow<>(
-      subtransExecutor, meta.jmsDelegate.getRowMeta(), getDuration(), getBatchSize() );
-    source = new JmsStreamSource( this, requireNonNull( meta.jmsDelegate ), getReceiverTimeout( meta ) );
+      getSubtransExecutor(), jmsConsumerMeta.getRowMeta(), getDuration(), getBatchSize(), getParallelism() );
+    source = new JmsStreamSource( this, requireNonNull( jmsConsumerMeta.jmsDelegate ), getReceiverTimeout( jmsConsumerMeta ) );
     return superStatus;
   }
 
-  public int getReceiverTimeout( JmsConsumerMeta meta ) {
+  private int getReceiverTimeout( JmsConsumerMeta meta ) {
     try {
-      return Integer.parseInt( this.environmentSubstitute( meta.jmsDelegate.receiveTimeout ) );
+      return Integer.parseInt( meta.receiveTimeout );
     } catch ( NumberFormatException nfe ) {
       logError( getString( PKG, "JmsConsumer.ReceiveTimeoutInvalid" ) );
     }
     return -1;
   }
 
-  public boolean validateParams( JmsConsumerMeta meta ) {
+  private boolean validateParams( JmsConsumerMeta meta ) {
     return getReceiverTimeout( meta ) > -1;
   }
 

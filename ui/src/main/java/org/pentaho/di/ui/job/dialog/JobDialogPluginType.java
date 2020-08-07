@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2017 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2019 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -59,10 +59,12 @@ public class JobDialogPluginType extends BasePluginType implements PluginTypeInt
   /**
    * Scan & register internal step plugins
    */
+  @Override
   protected void registerNatives() throws KettlePluginException {
     // No native plugins
   }
 
+  @Override
   protected void registerXmlPlugins() throws KettlePluginException {
     // No longer performed.
   }
@@ -118,6 +120,11 @@ public class JobDialogPluginType extends BasePluginType implements PluginTypeInt
 
   @Override
   protected String extractForumUrl( Annotation annotation ) {
+    return null;
+  }
+
+  @Override
+  protected String extractSuggestion( Annotation annotation ) {
     return null;
   }
 

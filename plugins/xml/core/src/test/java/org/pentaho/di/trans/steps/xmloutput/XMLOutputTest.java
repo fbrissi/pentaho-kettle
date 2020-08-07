@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2019 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -21,16 +21,11 @@
  ******************************************************************************/
 package org.pentaho.di.trans.steps.xmloutput;
 
-import static org.mockito.Matchers.any;
-import static org.mockito.Mockito.*;
-
-import javax.xml.stream.XMLStreamException;
-import javax.xml.stream.XMLStreamWriter;
-
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import org.mockito.Matchers;
+import org.pentaho.di.core.Const;
 import org.pentaho.di.core.exception.KettleException;
 import org.pentaho.di.core.logging.LogLevel;
 import org.pentaho.di.core.logging.LoggingObjectInterface;
@@ -41,6 +36,18 @@ import org.pentaho.di.trans.Trans;
 import org.pentaho.di.trans.step.StepMeta;
 import org.pentaho.di.trans.steps.mock.StepMockHelper;
 import org.pentaho.di.trans.steps.xmloutput.XMLField.ContentType;
+
+import javax.xml.stream.XMLStreamException;
+import javax.xml.stream.XMLStreamWriter;
+
+import static org.junit.Assert.assertEquals;
+import static org.mockito.Matchers.any;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * @author Tatsiana_Kasiankova
@@ -56,10 +63,13 @@ public class XMLOutputTest {
   private static final String[] ILLEGAL_CHARACTERS_IN_XML_ATTRIBUTES = { "<", ">", "&", "\'", "\"" };
 
   private static Object[] rowWithData;
+  private static Object[] rowWithNullData;
 
   @BeforeClass
   public static void setUpBeforeClass() {
+
     rowWithData = initRowWithData( ILLEGAL_CHARACTERS_IN_XML_ATTRIBUTES );
+    rowWithNullData = initRowWithNullData();
   }
 
   @Before
@@ -99,6 +109,47 @@ public class XMLOutputTest {
     verify( xmlOutput, atLeastOnce() ).closeOutputStream( any() );
   }
 
+  @Test
+  public void testNullInAttributeValuesAreEscaped() throws KettleException, XMLStreamException {
+
+    testNullValuesInAttribute( 0 );
+  }
+
+  @Test
+  public void testNullInAttributeValuesAreNotEscaped() throws KettleException, XMLStreamException {
+
+    xmlOutput.setVariable( Const.KETTLE_COMPATIBILITY_XML_OUTPUT_NULL_VALUES, "Y" );
+
+    testNullValuesInAttribute( rowWithNullData.length  );
+  }
+
+  /**
+   * [PDI-15575] Testing to verify that getIfPresent defaults the XMLField ContentType value
+   */
+  @Test
+  public void testDefaultXmlFieldContentType() {
+    XMLField[] xmlFields = initOutputFields( 4, null );
+    xmlFields[0].setContentType( ContentType.getIfPresent( "Element" ) );
+    xmlFields[1].setContentType( ContentType.getIfPresent( "Attribute" ) );
+    xmlFields[2].setContentType( ContentType.getIfPresent( "" ) );
+    xmlFields[3].setContentType( ContentType.getIfPresent( "WrongValue" ) );
+    assertEquals( xmlFields[0].getContentType(), ContentType.Element );
+    assertEquals( xmlFields[1].getContentType(), ContentType.Attribute );
+    assertEquals( xmlFields[2].getContentType(), ContentType.Element );
+    assertEquals( xmlFields[3].getContentType(), ContentType.Element );
+  }
+
+  private void testNullValuesInAttribute( int writeNullInvocationExpected ) throws KettleException, XMLStreamException {
+
+    xmlOutput.init( xmlOutputMeta, xmlOutputData );
+
+    xmlOutputData.writer = mock( XMLStreamWriter.class );
+    xmlOutput.writeRowAttributes( rowWithNullData );
+    xmlOutput.dispose( xmlOutputMeta, xmlOutputData );
+    verify( xmlOutputData.writer, times( writeNullInvocationExpected ) ).writeAttribute( any(), any() );
+    verify( xmlOutput, atLeastOnce() ).closeOutputStream( any() );
+  }
+
   private static Object[] initRowWithData( String[] dt ) {
 
     Object[] data = new Object[dt.length * 3];
@@ -107,6 +158,17 @@ public class XMLOutputTest {
       data[3 * i + 1] = "TEST" + dt[i] + "TEST";
       data[3 * i + 2] = "TEST" + dt[i];
     }
+    return data;
+  }
+
+  private static Object[] initRowWithNullData() {
+
+    Object[] data = new Object[15];
+    for ( int i = 0; i < data.length; i++ ) {
+
+      data[i] = null;
+    }
+
     return data;
   }
 

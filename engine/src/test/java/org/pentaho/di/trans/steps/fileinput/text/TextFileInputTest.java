@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2019 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -23,6 +23,7 @@
 package org.pentaho.di.trans.steps.fileinput.text;
 
 import org.apache.commons.io.IOUtils;
+import org.apache.commons.vfs2.FileContent;
 import org.apache.commons.vfs2.FileObject;
 import org.junit.BeforeClass;
 import org.junit.ClassRule;
@@ -32,6 +33,7 @@ import org.pentaho.di.core.KettleEnvironment;
 import org.pentaho.di.core.RowSet;
 import org.pentaho.di.core.exception.KettleFileException;
 import org.pentaho.di.core.fileinput.FileInputList;
+import org.pentaho.di.core.logging.LogChannelInterface;
 import org.pentaho.di.core.playlist.FilePlayListAll;
 import org.pentaho.di.core.row.RowMeta;
 import org.pentaho.di.core.row.RowMetaInterface;
@@ -50,10 +52,12 @@ import org.pentaho.di.trans.step.errorhandling.FileErrorHandler;
 import org.pentaho.di.trans.steps.StepMockUtil;
 import org.pentaho.di.trans.steps.file.BaseFileField;
 import org.pentaho.di.trans.steps.file.IBaseFileInputReader;
+import org.pentaho.di.trans.steps.file.IBaseFileInputStepControl;
 import org.pentaho.di.utils.TestUtils;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.UnsupportedEncodingException;
@@ -62,6 +66,7 @@ import java.util.List;
 
 import static org.junit.Assert.assertEquals;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 public class TextFileInputTest {
   @ClassRule public static RestorePDIEngineEnvironment env = new RestorePDIEngineEnvironment();
@@ -298,8 +303,103 @@ public class TextFileInputTest {
     deleteVfsFile( virtualFile );
   }
 
+  @Test
+  public void testClose() throws Exception {
+
+    TextFileInputMeta mockTFIM = createMetaObject( null );
+    String virtualFile = createVirtualFile( "pdi-17267.txt", null );
+    TextFileInputData mockTFID = createDataObject( virtualFile, ";", null );
+    mockTFID.lineBuffer = new ArrayList<>();
+    mockTFID.lineBuffer.add( new TextFileLine( null, 0l, null ) );
+    mockTFID.lineBuffer.add( new TextFileLine( null, 0l, null ) );
+    mockTFID.lineBuffer.add( new TextFileLine( null, 0l, null ) );
+    mockTFID.filename = "";
+
+    FileContent mockFileContent = mock( FileContent.class );
+    InputStream mockInputStream = mock( InputStream.class );
+    when( mockFileContent.getInputStream() ).thenReturn( mockInputStream );
+    FileObject mockFO = mock( FileObject.class );
+    when( mockFO.getContent() ).thenReturn( mockFileContent );
+
+    TextFileInputReader tFIR = new TextFileInputReader( mock( IBaseFileInputStepControl.class ),
+      mockTFIM, mockTFID, mockFO, mock( LogChannelInterface.class ) );
+
+    assertEquals( 3, mockTFID.lineBuffer.size() );
+    tFIR.close();
+    // After closing the file, the buffer must be empty!
+    assertEquals( 0, mockTFID.lineBuffer.size() );
+  }
+
+  @Test
+  public void fieldsWithLineBreaksTest() throws Exception {
+
+    final String content = new StringBuilder()
+      .append( "aaa,\"b" ).append( '\n' )
+      .append( "bb\",ccc" ).append( '\n' )
+      .append( "zzz,yyy,xxx" ).toString();
+    final String virtualFile = createVirtualFile( "pdi-18175.txt", content );
+
+    TextFileInputMeta meta = createMetaObject( field( "col1" ), field( "col2" ), field( "col3" ) );
+    TextFileInputData data = createDataObject( virtualFile, ",", "col1", "col2", "col3" );
+
+    TextFileInput input = StepMockUtil.getStep( TextFileInput.class, TextFileInputMeta.class, "test" );
+    List<Object[]> output = TransTestingUtil.execute( input, meta, data, 2, false );
+    TransTestingUtil.assertResult( new Object[] { "aaa", "\"bbb\"", "ccc" }, output.get( 0 ) );
+    TransTestingUtil.assertResult( new Object[] { "zzz", "yyy", "xxx" }, output.get( 1 ) );
+
+    deleteVfsFile( virtualFile );
+  }
+
+  @Test
+  public void fieldsWithLineBreaksAndNoEmptyLinesTest() throws Exception {
+
+    final String content = new StringBuilder()
+      .append( "aaa,\"b" ).append( '\n' )
+      .append( "bb\",ccc" ).append( '\n' )
+      .append( '\n' )
+      .append( "zzz,yyy,xxx" ).toString();
+    final String virtualFile = createVirtualFile( "pdi-18175.txt", content );
+
+    TextFileInputMeta meta = createMetaObject( field( "col1" ), field( "col2" ), field( "col3" ) );
+    meta.content.noEmptyLines = true;
+    TextFileInputData data = createDataObject( virtualFile, ",", "col1", "col2", "col3" );
+
+
+    TextFileInput input = StepMockUtil.getStep( TextFileInput.class, TextFileInputMeta.class, "test" );
+    List<Object[]> output = TransTestingUtil.execute( input, meta, data, 2, false );
+    TransTestingUtil.assertResult( new Object[] { "aaa", "\"bbb\"", "ccc" }, output.get( 0 ) );
+    TransTestingUtil.assertResult( new Object[] { "zzz", "yyy", "xxx" }, output.get( 1 ) );
+
+    deleteVfsFile( virtualFile );
+  }
+
+  @Test
+  public void fieldsWithLineBreaksWithEmptyLinesTest() throws Exception {
+
+    final String content = new StringBuilder()
+      .append( "aaa,\"b" ).append( '\n' )
+      .append( "bb\",ccc" ).append( '\n' )
+      .append( '\n' )
+      .append( "zzz,yyy,xxx" ).toString();
+    final String virtualFile = createVirtualFile( "pdi-18175.txt", content );
+
+    TextFileInputMeta meta = createMetaObject( field( "col1" ), field( "col2" ), field( "col3" ) );
+    meta.content.noEmptyLines = false;
+    TextFileInputData data = createDataObject( virtualFile, ",", "col1", "col2", "col3" );
+
+
+    TextFileInput input = StepMockUtil.getStep( TextFileInput.class, TextFileInputMeta.class, "test" );
+    List<Object[]> output = TransTestingUtil.execute( input, meta, data, 3, false );
+    TransTestingUtil.assertResult( new Object[] { "aaa", "\"bbb\"", "ccc" }, output.get( 0 ) );
+    TransTestingUtil.assertResult( new Object[] { null }, output.get( 1 ) );
+    TransTestingUtil.assertResult( new Object[] { "zzz", "yyy", "xxx" }, output.get( 2 ) );
+
+    deleteVfsFile( virtualFile );
+  }
+
   private TextFileInputMeta createMetaObject( BaseFileField... fields ) {
     TextFileInputMeta meta = new TextFileInputMeta();
+    meta.content.enclosure = "\"";
     meta.content.fileCompression = "None";
     meta.content.fileType = "CSV";
     meta.content.header = false;
@@ -353,7 +453,9 @@ public class TextFileInputTest {
   }
 
   private static void deleteVfsFile( String path ) throws Exception {
-    TestUtils.getFileObject( path ).delete();
+    FileObject fileObject = TestUtils.getFileObject( path );
+    fileObject.close();
+    fileObject.delete();
   }
 
   private static BaseFileField field( String name ) {

@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2019 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -49,6 +49,7 @@ import org.pentaho.di.core.extension.ExtensionPointHandler;
 import org.pentaho.di.core.extension.KettleExtensionPoint;
 import org.pentaho.di.core.gui.Point;
 import org.pentaho.di.core.logging.LogChannelInterface;
+import org.pentaho.di.core.variables.Variables;
 import org.pentaho.di.i18n.BaseMessages;
 import org.pentaho.di.job.JobMeta;
 import org.pentaho.di.junit.rules.RestorePDIEngineEnvironment;
@@ -404,18 +405,23 @@ public class SpoonTest {
   @Test
   public void testDelHop() throws Exception {
 
-    StepMetaInterface stepMetaInterface = Mockito.mock( StepMetaInterface.class );
-    StepMeta step = new StepMeta();
-    step.setStepMetaInterface( stepMetaInterface );
+    StepMetaInterface fromStepMetaInterface = Mockito.mock( StepMetaInterface.class );
+    StepMeta fromStep = new StepMeta();
+    fromStep.setStepMetaInterface( fromStepMetaInterface );
+
+    StepMetaInterface toStepMetaInterface = Mockito.mock( StepMetaInterface.class );
+    StepMeta toStep = new StepMeta();
+    toStep.setStepMetaInterface( toStepMetaInterface );
 
     TransHopMeta transHopMeta = new TransHopMeta();
-    transHopMeta.setFromStep( step );
+    transHopMeta.setFromStep( fromStep );
+    transHopMeta.setToStep( toStep );
 
     TransMeta transMeta = Mockito.mock( TransMeta.class );
 
     spoon.delHop( transMeta, transHopMeta );
-    Mockito.verify( stepMetaInterface, times( 1 ) ).cleanAfterHopFromRemove( );
-
+    Mockito.verify( fromStepMetaInterface, times( 1 ) ).cleanAfterHopFromRemove( toStep );
+    Mockito.verify( toStepMetaInterface, times( 1 ) ).cleanAfterHopToRemove( fromStep );
   }
 
   @Test
@@ -778,7 +784,7 @@ public class SpoonTest {
     String fileName = "fileName";
 
     setLoadLastUsedJobLocalWithRepository( false, repositoryName, null, fileName, true );
-    verify( spoon ).openFile( fileName, true );
+    verify( spoon ).openFile( fileName, null, true );
   }
 
   @Test
@@ -787,7 +793,7 @@ public class SpoonTest {
     String fileName = "fileName";
 
     setLoadLastUsedJobLocalWithRepository( false, repositoryName, null, fileName, true );
-    verify( spoon ).openFile( fileName, false );
+    verify( spoon ).openFile( fileName, null, false );
   }
 
   @Test
@@ -805,7 +811,7 @@ public class SpoonTest {
     String fileName = "fileName";
 
     setLoadLastUsedJobLocalWithRepository( false, repositoryName, null, fileName, false );
-    verify( spoon ).openFile( fileName, false );
+    verify( spoon ).openFile( fileName, null, false );
   }
 
   @Test
@@ -824,7 +830,7 @@ public class SpoonTest {
     String fileName = "fileName";
 
     setLoadLastUsedJobLocalWithRepository( false, repositoryName, null, fileName, true, true );
-    verify( spoon ).openFile( fileName, true );
+    verify( spoon ).openFile( fileName, null, true );
   }
 
   @Test
@@ -833,7 +839,7 @@ public class SpoonTest {
     String fileName = "fileName";
 
     setLoadLastUsedJobLocalWithRepository( false, repositoryName, null, fileName, true, true );
-    verify( spoon ).openFile( fileName, false );
+    verify( spoon ).openFile( fileName, null, false );
   }
 
   @Test
@@ -851,7 +857,7 @@ public class SpoonTest {
     String fileName = "fileName";
 
     setLoadLastUsedJobLocalWithRepository( false, repositoryName, null, fileName, false, true );
-    verify( spoon ).openFile( fileName, false );
+    verify( spoon ).openFile( fileName, null, false );
   }
 
   @Test
@@ -868,7 +874,7 @@ public class SpoonTest {
     boolean isSourceRepository, String repositoryName, String directoryName, String fileName, boolean
     isTransformation ) throws Exception {
     setLoadLastUsedJobLocalWithRepository( isSourceRepository, repositoryName, directoryName, fileName,
-      isTransformation, false);
+      isTransformation, false );
   }
 
   private void setLoadLastUsedJobLocalWithRepository( boolean isSourceRepository, String repositoryName,

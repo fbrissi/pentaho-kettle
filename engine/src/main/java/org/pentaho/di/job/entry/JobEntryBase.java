@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2019 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -22,16 +22,21 @@
 
 package org.pentaho.di.job.entry;
 
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
+import org.apache.commons.io.FilenameUtils;
+import org.apache.commons.lang.StringUtils;
 import org.pentaho.di.cluster.SlaveServer;
 import org.pentaho.di.core.AttributesInterface;
 import org.pentaho.di.core.CheckResultInterface;
 import org.pentaho.di.core.CheckResultSourceInterface;
+import org.pentaho.di.core.util.StringUtil;
 import org.pentaho.di.core.util.Utils;
 import org.pentaho.di.core.ExtensionDataInterface;
 import org.pentaho.di.core.SQLStatement;
@@ -101,6 +106,9 @@ public class JobEntryBase implements Cloneable, VariableSpace, CheckResultSource
   /** The variable bindings for the job entry */
   protected VariableSpace variables = new Variables();
 
+  /** The map for setVariablesStep bindings for the job entry */
+  protected Map<String, String> entryStepSetVariablesMap = new ConcurrentHashMap<>();
+
   /** The repository */
   protected Repository rep;
 
@@ -131,8 +139,8 @@ public class JobEntryBase implements Cloneable, VariableSpace, CheckResultSource
     name = null;
     description = null;
     log = new LogChannel( this );
-    attributesMap = new HashMap<String, Map<String, String>>();
-    extensionDataMap = new HashMap<String, Object>();
+    attributesMap = new HashMap<>();
+    extensionDataMap = new HashMap<>();
   }
 
   /**
@@ -148,8 +156,8 @@ public class JobEntryBase implements Cloneable, VariableSpace, CheckResultSource
     setDescription( description );
     setObjectId( null );
     log = new LogChannel( this );
-    attributesMap = new HashMap<String, Map<String, String>>();
-    extensionDataMap = new HashMap<String, Object>();
+    attributesMap = new HashMap<>();
+    extensionDataMap = new HashMap<>();
   }
 
   /**
@@ -599,7 +607,7 @@ public class JobEntryBase implements Cloneable, VariableSpace, CheckResultSource
    */
   @Deprecated
   public List<SQLStatement> getSQLStatements( Repository repository ) throws KettleException {
-    return new ArrayList<SQLStatement>();
+    return new ArrayList<>();
   }
 
   /**
@@ -618,7 +626,7 @@ public class JobEntryBase implements Cloneable, VariableSpace, CheckResultSource
    */
   @Deprecated
   public List<SQLStatement> getSQLStatements( Repository repository, VariableSpace space ) throws KettleException {
-    return new ArrayList<SQLStatement>();
+    return new ArrayList<>();
   }
 
   /**
@@ -634,7 +642,7 @@ public class JobEntryBase implements Cloneable, VariableSpace, CheckResultSource
    *           if any errors occur during the generation of SQL statements
    */
   public List<SQLStatement> getSQLStatements( Repository repository, IMetaStore metaStore, VariableSpace space ) throws KettleException {
-    return new ArrayList<SQLStatement>();
+    return new ArrayList<>();
   }
 
   /**
@@ -1474,7 +1482,7 @@ public class JobEntryBase implements Cloneable, VariableSpace, CheckResultSource
   public void setAttribute( String groupName, String key, String value ) {
     Map<String, String> attributes = getAttributes( groupName );
     if ( attributes == null ) {
-      attributes = new HashMap<String, String>();
+      attributes = new HashMap<>();
       attributesMap.put( groupName, attributes );
     }
     attributes.put( key, value );
@@ -1519,5 +1527,89 @@ public class JobEntryBase implements Cloneable, VariableSpace, CheckResultSource
    */
   public void setParentJobMeta( JobMeta parentJobMeta ) {
     this.parentJobMeta = parentJobMeta;
+  }
+
+  /**
+   * Gets a Map of variables set in EntryStepSetVariables
+   *
+   * @return a map of variable names and values
+   */
+  protected Map<String, String> getEntryStepSetVariablesMap() {
+    return entryStepSetVariablesMap;
+  }
+  /**
+   * Sets the value of the specified EntryStepSetVariable
+   *
+   */
+  public void setEntryStepSetVariable( String variableName, String variableValue ) {
+    // ConcurrentHashMap does not allow null keys and null values.
+    if ( variableName != null ) {
+      if ( variableValue != null ) {
+        entryStepSetVariablesMap.put( variableName, variableValue );
+      } else {
+        entryStepSetVariablesMap.put( variableName, StringUtils.EMPTY );
+      }
+    }
+  }
+
+  /**
+   * Gets the value of the specified EntryStepSetVariable
+   *
+   */
+  public String getEntryStepSetVariable( String variableName ) {
+    return entryStepSetVariablesMap.get( variableName );
+  }
+
+  /**
+   * <p>Appends the date, time and/or datetime to the given filename (before the extension if it exists), using the
+   * provided patterns.</p>
+   *
+   * @param filename       the original filename (can have path and variables)
+   * @param addDate        if the date is to be added
+   * @param datePattern    the pattern to be used for the date
+   * @param addTime        if the time is to be added
+   * @param timePattern    the pattern to be used for the time
+   * @param specifyFormat  if the datetime is to be added
+   * @param datetimeFormat the pattern to be used for the datetime
+   * @return the resulting filename after adding the specified suffixes to the given filename
+   */
+  protected String addDatetimeToFilename( String filename, boolean addDate, String datePattern, boolean addTime,
+                                          String timePattern, boolean specifyFormat, String datetimeFormat ) {
+
+    if ( Utils.isEmpty( filename ) ) {
+      return null;
+    }
+
+    // Replace possible environment variables...
+    String realfilename = environmentSubstitute( filename );
+    String filenameNoExtension = FilenameUtils.removeExtension( realfilename );
+    String extension = FilenameUtils.getExtension( realfilename );
+
+    // If an extension exists, add the corresponding dot before
+    if ( !StringUtil.isEmpty( extension ) ) {
+      extension = '.' + extension;
+    }
+
+    final SimpleDateFormat sdf = new SimpleDateFormat();
+    Date now = new Date();
+
+    if ( specifyFormat && !Utils.isEmpty( datetimeFormat ) ) {
+      sdf.applyPattern( datetimeFormat );
+      String dt = sdf.format( now );
+      filenameNoExtension += dt;
+    } else {
+      if ( addDate && null != datePattern ) {
+        sdf.applyPattern( datePattern );
+        String d = sdf.format( now );
+        filenameNoExtension += '_' + d;
+      }
+      if ( addTime && null != timePattern ) {
+        sdf.applyPattern( timePattern );
+        String t = sdf.format( now );
+        filenameNoExtension += '_' + t;
+      }
+    }
+
+    return filenameNoExtension + extension;
   }
 }

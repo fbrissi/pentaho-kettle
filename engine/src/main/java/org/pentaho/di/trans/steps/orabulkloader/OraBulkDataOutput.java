@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2017 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2020 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -22,14 +22,19 @@
 
 package org.pentaho.di.trans.steps.orabulkloader;
 
+import com.google.common.annotations.VisibleForTesting;
+import org.apache.commons.vfs2.FileObject;
 import org.pentaho.di.core.Const;
+import org.pentaho.di.core.exception.KettleFileException;
 import org.pentaho.di.core.util.Utils;
 import org.pentaho.di.core.exception.KettleException;
 import org.pentaho.di.core.row.RowMetaInterface;
 import org.pentaho.di.core.row.ValueMetaInterface;
 import org.pentaho.di.core.variables.VariableSpace;
+import org.pentaho.di.core.vfs.KettleVFS;
 
 import java.io.BufferedWriter;
+import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -72,9 +77,10 @@ public class OraBulkDataOutput {
         os = sqlldrProcess.getOutputStream();
       } else {
         // Else open the data file filled in.
-        String dataFile = meta.getDataFile();
-        dataFile = space.environmentSubstitute( dataFile );
-
+        String dataFilePath = getFilename( getFileObject( space.environmentSubstitute( meta.getDataFile() ), space ) );
+        File dataFile = new File( dataFilePath );
+        // Make sure the parent directory exists
+        dataFile.getParentFile().mkdirs();
         os = new FileOutputStream( dataFile, false );
       }
 
@@ -108,6 +114,7 @@ public class OraBulkDataOutput {
     return buf.toString();
   }
 
+  @SuppressWarnings( "ArrayToString" )
   public void writeLine( RowMetaInterface mi, Object[] row ) throws KettleException {
     if ( first ) {
       first = false;
@@ -136,10 +143,10 @@ public class OraBulkDataOutput {
     int number;
     for ( int i = 0; i < fieldNumbers.length; i++ ) {
       if ( i != 0 ) {
-        outbuf.append( "," );
+        outbuf.append( ',' );
       }
-      v = mi.getValueMeta( i );
       number = fieldNumbers[i];
+      v = mi.getValueMeta( number );
       if ( row[number] == null ) {
         // TODO (SB): special check for null in case of Strings.
         outbuf.append( enclosure );
@@ -148,63 +155,78 @@ public class OraBulkDataOutput {
         switch ( v.getType() ) {
           case ValueMetaInterface.TYPE_STRING:
             String s = mi.getString( row, number );
-            if ( s.contains( enclosure ) ) {
-              s = createEscapedString( s, enclosure );
-            }
             outbuf.append( enclosure );
-            outbuf.append( s );
+            if ( null != s ) {
+              if ( s.contains( enclosure ) ) {
+                s = createEscapedString( s, enclosure );
+              }
+              outbuf.append( s );
+            }
             outbuf.append( enclosure );
             break;
           case ValueMetaInterface.TYPE_INTEGER:
             Long l = mi.getInteger( row, number );
             outbuf.append( enclosure );
-            outbuf.append( l );
+            if ( null != l ) {
+              outbuf.append( l );
+            }
             outbuf.append( enclosure );
             break;
           case ValueMetaInterface.TYPE_NUMBER:
             Double d = mi.getNumber( row, number );
             outbuf.append( enclosure );
-            outbuf.append( d );
+            if ( null != d ) {
+              outbuf.append( d );
+            }
             outbuf.append( enclosure );
             break;
           case ValueMetaInterface.TYPE_BIGNUMBER:
             BigDecimal bd = mi.getBigNumber( row, number );
             outbuf.append( enclosure );
-            outbuf.append( bd );
+            if ( null != bd ) {
+              outbuf.append( bd );
+            }
             outbuf.append( enclosure );
             break;
           case ValueMetaInterface.TYPE_DATE:
             Date dt = mi.getDate( row, number );
             outbuf.append( enclosure );
-            String mask = meta.getDateMask()[i];
-            if ( OraBulkLoaderMeta.DATE_MASK_DATETIME.equals( mask ) ) {
-              outbuf.append( sdfDateTime.format( dt ) );
-            } else {
-              // Default is date format
-              outbuf.append( sdfDate.format( dt ) );
+            if ( null != dt ) {
+              String mask = meta.getDateMask()[i];
+              if ( OraBulkLoaderMeta.DATE_MASK_DATETIME.equals( mask ) ) {
+                outbuf.append( sdfDateTime.format( dt ) );
+              } else {
+                // Default is date format
+                outbuf.append( sdfDate.format( dt ) );
+              }
             }
             outbuf.append( enclosure );
             break;
           case ValueMetaInterface.TYPE_BOOLEAN:
             Boolean b = mi.getBoolean( row, number );
             outbuf.append( enclosure );
-            if ( b ) {
-              outbuf.append( "Y" );
-            } else {
-              outbuf.append( "N" );
+            if ( null != b ) {
+              if ( b ) {
+                outbuf.append( 'Y' );
+              } else {
+                outbuf.append( 'N' );
+              }
             }
             outbuf.append( enclosure );
             break;
           case ValueMetaInterface.TYPE_BINARY:
             byte[] byt = mi.getBinary( row, number );
             outbuf.append( "<startlob>" );
+            // TODO REVIEW - implicit .toString
             outbuf.append( byt );
             outbuf.append( "<endlob>" );
             break;
           case ValueMetaInterface.TYPE_TIMESTAMP:
             Timestamp timestamp = (Timestamp) mi.getDate( row, number );
             outbuf.append( enclosure );
-            outbuf.append( timestamp.toString() );
+            if ( null != timestamp ) {
+              outbuf.append( timestamp.toString() );
+            }
             outbuf.append( enclosure );
             break;
           default:
@@ -218,5 +240,15 @@ public class OraBulkDataOutput {
     } catch ( IOException e ) {
       throw new KettleException( "IO exception occured: " + e.getMessage(), e );
     }
+  }
+
+  @VisibleForTesting
+  String getFilename( FileObject fileObject ) {
+    return KettleVFS.getFilename( fileObject );
+  }
+
+  @VisibleForTesting
+  FileObject getFileObject( String vfsFilename, VariableSpace space ) throws KettleFileException {
+    return KettleVFS.getFileObject( vfsFilename, space );
   }
 }

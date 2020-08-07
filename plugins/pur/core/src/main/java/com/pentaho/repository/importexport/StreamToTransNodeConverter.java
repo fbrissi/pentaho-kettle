@@ -1,5 +1,5 @@
 /*!
- * Copyright 2010 - 2017 Hitachi Vantara.  All rights reserved.
+ * Copyright 2010 - 2019 Hitachi Vantara.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package com.pentaho.repository.importexport;
 
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.Serializable;
 import java.util.ArrayList;
@@ -24,6 +25,8 @@ import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
+
+import com.google.common.annotations.VisibleForTesting;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -31,16 +34,21 @@ import org.pentaho.di.cluster.ClusterSchema;
 import org.pentaho.di.cluster.SlaveServer;
 import org.pentaho.di.core.database.DatabaseMeta;
 import org.pentaho.di.core.exception.KettleException;
+import org.pentaho.di.core.exception.KettleMissingPluginsException;
 import org.pentaho.di.core.extension.ExtensionPointHandler;
 import org.pentaho.di.core.extension.KettleExtensionPoint;
 import org.pentaho.di.core.logging.LogChannel;
+import org.pentaho.di.i18n.BaseMessages;
 import org.pentaho.di.partition.PartitionSchema;
 import org.pentaho.di.repository.Repository;
 import org.pentaho.di.repository.RepositoryElementInterface;
 import org.pentaho.di.repository.StringObjectId;
 import org.pentaho.di.repository.pur.TransDelegate;
 import org.pentaho.di.trans.TransMeta;
+import org.pentaho.di.trans.steps.missing.MissingTrans;
+import org.pentaho.di.ui.trans.steps.missing.MissingTransDialog;
 import org.pentaho.platform.api.repository2.unified.Converter;
+import org.pentaho.platform.api.repository2.unified.ConverterException;
 import org.pentaho.platform.api.repository2.unified.IRepositoryFileData;
 import org.pentaho.platform.api.repository2.unified.IUnifiedRepository;
 import org.pentaho.platform.api.repository2.unified.RepositoryFile;
@@ -57,6 +65,9 @@ public class StreamToTransNodeConverter implements Converter {
   IUnifiedRepository unifiedRepository;
 
   private static final Log logger = LogFactory.getLog( StreamToTransNodeConverter.class );
+
+  /** The package name, used for internationalization of messages. */
+  private static Class<?> PKG = MissingTransDialog.class; // for i18n purposes, needed by Translator2!!
 
   public StreamToTransNodeConverter( IUnifiedRepository unifiedRepository ) {
     this.unifiedRepository = unifiedRepository;
@@ -82,17 +93,7 @@ public class StreamToTransNodeConverter implements Converter {
           try {
             TransMeta transMeta = repository.loadTransformation( new StringObjectId( fileId.toString() ), null );
             if ( transMeta != null ) {
-              Set<String> privateDatabases = transMeta.getPrivateDatabases();
-              if ( privateDatabases != null ) {
-                // keep only private transformation databases
-                for ( Iterator<DatabaseMeta> it = transMeta.getDatabases().iterator(); it.hasNext(); ) {
-                  String databaseName = it.next().getName();
-                  if ( !privateDatabases.contains( databaseName ) ) {
-                    it.remove();
-                  }
-                }
-              }
-              return new ByteArrayInputStream( transMeta.getXML().getBytes() );
+              return new ByteArrayInputStream( filterPrivateDatabases( transMeta ).getXML().getBytes() );
             }
           } catch ( KettleException e ) {
             logger.error( e );
@@ -112,6 +113,22 @@ public class StreamToTransNodeConverter implements Converter {
     return null;
   }
 
+  @VisibleForTesting
+  TransMeta filterPrivateDatabases( TransMeta transMeta ) {
+    Set<String> privateDatabases = transMeta.getPrivateDatabases();
+    if ( privateDatabases != null ) {
+      // keep only private transformation databases
+      for ( Iterator<DatabaseMeta> it = transMeta.getDatabases().iterator(); it.hasNext(); ) {
+        DatabaseMeta databaseMeta = it.next();
+        String databaseName = databaseMeta.getName();
+        if ( !privateDatabases.contains( databaseName ) && !transMeta.isDatabaseConnectionUsed( databaseMeta ) ) {
+          it.remove();
+        }
+      }
+    }
+    return transMeta;
+  }
+
   // package-local visibility for testing purposes
   Repository connectToRepository() throws KettleException {
     return PDIImportUtil.connectToRepository( null );
@@ -124,13 +141,32 @@ public class StreamToTransNodeConverter implements Converter {
       Repository repository = connectToRepository();
       Document doc = PDIImportUtil.loadXMLFrom( inputStream );
       transMeta.loadXML( doc.getDocumentElement(), repository, false );
+
+      if ( transMeta.hasMissingPlugins() ) {
+        KettleMissingPluginsException
+          missingPluginsException =
+          new KettleMissingPluginsException( getErrorMessage( transMeta.getMissingTrans() ) );
+        throw new ConverterException( missingPluginsException );
+      }
+
       TransDelegate delegate = new TransDelegate( repository, this.unifiedRepository );
       saveSharedObjects( repository, transMeta );
       return new NodeRepositoryFileData( delegate.elementToDataNode( transMeta ), size );
-    } catch ( Exception e ) {
+    } catch ( IOException | KettleException e ) {
       logger.error( e );
       return null;
     }
+  }
+
+  private String getErrorMessage( List<MissingTrans> missingTrans ) {
+    StringBuilder entries = new StringBuilder();
+    for ( MissingTrans entry : missingTrans ) {
+      entries.append( "- " + entry.getStepName() + " - " + entry.getMissingPluginId() + "\n" );
+      if ( missingTrans.indexOf( entry ) == missingTrans.size() - 1 ) {
+        entries.append( '\n' );
+      }
+    }
+    return BaseMessages.getString( PKG, "MissingTransDialog.MissingTransSteps", entries.toString() );
   }
 
   private void saveSharedObjects( final Repository repo, final RepositoryElementInterface element )
@@ -144,49 +180,51 @@ public class StreamToTransNodeConverter implements Converter {
 
     List<Integer> transMetaDatabasesToUpdate = new ArrayList<Integer>();
 
-    for ( DatabaseMeta databaseMeta : transMeta.getDatabases() ) {
-      if ( !databaseNames.contains( databaseMeta.getName() ) ) {
-        if ( databaseMeta.getObjectId() == null || !StringUtils.isEmpty( databaseMeta.getHostname() ) ) {
-          repo.save( databaseMeta, null, null );
+    synchronized ( repo ) {
+      for ( DatabaseMeta databaseMeta : transMeta.getDatabases() ) {
+        if ( !databaseNames.contains( databaseMeta.getName() ) ) {
+          if ( databaseMeta.getObjectId() == null || !StringUtils.isEmpty( databaseMeta.getHostname() ) ) {
+            repo.save( databaseMeta, null, null );
+          }
+        } else if ( databaseMeta.getObjectId() == null ) {
+          // add this to the list to update object Ids later
+          transMetaDatabasesToUpdate.add( dbIndex );
+          updateMeta = Boolean.TRUE;
         }
-      } else if ( databaseMeta.getObjectId() == null ) {
-        // add this to the list to update object Ids later
-        transMetaDatabasesToUpdate.add( dbIndex );
-        updateMeta = Boolean.TRUE;
+
+        dbIndex++;
       }
 
-      dbIndex++;
-    }
-
-    if ( updateMeta ) {
-      // make sure to update object ids in the transmeta db collection
-      for ( Integer databaseMetaIndex : transMetaDatabasesToUpdate ) {
-        transMeta.getDatabase( databaseMetaIndex ).setObjectId(
+      if ( updateMeta ) {
+        // make sure to update object ids in the transmeta db collection
+        for ( Integer databaseMetaIndex : transMetaDatabasesToUpdate ) {
+          transMeta.getDatabase( databaseMetaIndex ).setObjectId(
             repo.getDatabaseID( transMeta.getDatabase( databaseMetaIndex ).getName() ) );
+        }
       }
-    }
 
-    // Store the slave servers...
-    //
-    for ( SlaveServer slaveServer : transMeta.getSlaveServers() ) {
-      if ( slaveServer.hasChanged() || slaveServer.getObjectId() == null ) {
-        repo.save( slaveServer, null, null );
+      // Store the slave servers...
+      //
+      for ( SlaveServer slaveServer : transMeta.getSlaveServers() ) {
+        if ( slaveServer.hasChanged() || slaveServer.getObjectId() == null ) {
+          repo.save( slaveServer, null, null );
+        }
       }
-    }
 
-    // Store the cluster schemas
-    //
-    for ( ClusterSchema clusterSchema : transMeta.getClusterSchemas() ) {
-      if ( clusterSchema.hasChanged() || clusterSchema.getObjectId() == null ) {
-        repo.save( clusterSchema, null, null );
+      // Store the cluster schemas
+      //
+      for ( ClusterSchema clusterSchema : transMeta.getClusterSchemas() ) {
+        if ( clusterSchema.hasChanged() || clusterSchema.getObjectId() == null ) {
+          repo.save( clusterSchema, null, null );
+        }
       }
-    }
 
-    // Save the partition schemas
-    //
-    for ( PartitionSchema partitionSchema : transMeta.getPartitionSchemas() ) {
-      if ( partitionSchema.hasChanged() || partitionSchema.getObjectId() == null ) {
-        repo.save( partitionSchema, null, null );
+      // Save the partition schemas
+      //
+      for ( PartitionSchema partitionSchema : transMeta.getPartitionSchemas() ) {
+        if ( partitionSchema.hasChanged() || partitionSchema.getObjectId() == null ) {
+          repo.save( partitionSchema, null, null );
+        }
       }
     }
   }

@@ -1,7 +1,7 @@
 /*
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2019 by Hitachi Vantara : http://www.pentaho.com
  *
  * **************************************************************************
  *
@@ -24,6 +24,8 @@ import org.eclipse.swt.SWT;
 import org.eclipse.swt.browser.Browser;
 import org.eclipse.swt.browser.LocationEvent;
 import org.eclipse.swt.browser.LocationListener;
+import org.eclipse.swt.browser.ProgressEvent;
+import org.eclipse.swt.browser.ProgressListener;
 import org.eclipse.swt.events.SelectionEvent;
 import org.eclipse.swt.events.SelectionListener;
 import org.eclipse.swt.events.ShellAdapter;
@@ -55,16 +57,14 @@ public class ShowHelpDialog extends Dialog {
   private static Class<?> PKG = Spoon.class;
 
   private static final String DOC_URL = Spoon.DOCUMENTATION_URL;
-  private static final String PREFIX = "https://";
-  private static final String PRINT_PREFIX = "https://f1.";
-  private static final int TOOLBAR_HEIGHT = 25;
-  private static final int TOOL_ITEM_WIDTH = 47;
+  private static final String PREFIX = "https://help";
+  private static final String PRINT_PREFIX = "https://f1.help";
+  private static final String PRINT_SCRIPT = "javascript:window.print();";
+  private static final int TOOLBAR_HEIGHT = 34;
   private static final int TOOL_ITEM_SPACING = 4;
   private static final int MARGIN = 5;
 
-  private boolean fromBackOrForward;
   private boolean fromPrint;
-  private boolean loading;
 
   private String dialogTitle;
   private String url;
@@ -72,9 +72,9 @@ public class ShowHelpDialog extends Dialog {
 
   private Browser wBrowser;
 
-  private ToolBar toolBarBack;
+  private ToolBar toolbarLeft;
+  private ToolBar toolbarRight;
   private ToolItem tltmBack;
-  private ToolBar toolBarForward;
   private ToolItem tltmForward;
   private ToolItem tltmRefresh;
   private ToolItem tltmHome;
@@ -93,7 +93,6 @@ public class ShowHelpDialog extends Dialog {
   private Text textURL;
 
   private Cursor cursorEnabled;
-  private Cursor cursorDisabled;
 
   private Shell shell;
   private Display display;
@@ -105,8 +104,7 @@ public class ShowHelpDialog extends Dialog {
     this.dialogTitle = BaseMessages.getString( PKG, "Spoon.Documentation.Pentaho.Title" );
     this.url = url;
     try {
-      URL docURL = new URL( DOC_URL );
-      this.homeURL = docURL.toString();
+      this.homeURL = new URL( DOC_URL ).toString();
     } catch ( MalformedURLException e ) {
     }
   }
@@ -139,109 +137,76 @@ public class ShowHelpDialog extends Dialog {
     wBrowser = new Browser( shell, SWT.NONE );
     props.setLook( wBrowser );
 
+    // Browser canvas
     FormData fdBrowser = new FormData();
-    fdBrowser.top = new FormAttachment( 0, TOOLBAR_HEIGHT + MARGIN );
-    fdBrowser.right = new FormAttachment( 100, 0 );
+    fdBrowser.top = new FormAttachment( 0, TOOLBAR_HEIGHT );
     fdBrowser.bottom = new FormAttachment( 100, 0 );
+    fdBrowser.right = new FormAttachment( 100, 0 );
     fdBrowser.left = new FormAttachment( 0, 0 );
     wBrowser.setLayoutData( fdBrowser );
+    wBrowser.setUrl( url );
 
-    toolBarBack = new ToolBar( shell, SWT.FLAT );
-    FormData fdtoolBarBack = new FormData();
-    fdtoolBarBack.top = new FormAttachment( 0, MARGIN );
-    fdtoolBarBack.right = new FormAttachment( 0, 27 );
-    fdtoolBarBack.bottom = new FormAttachment( 0, TOOLBAR_HEIGHT );
-    fdtoolBarBack.left = new FormAttachment( 0, MARGIN + 1 );
-    toolBarBack.setLayoutData( fdtoolBarBack );
-    toolBarBack.setCursor( cursorDisabled );
-    toolBarBack.setBackground( toolBarBack.getParent().getBackground() );
+    // Left toolbar (back, forward, refresh, home)
+    toolbarLeft = new ToolBar( shell, SWT.WRAP );
+    FormData fdToolbarLeft = new FormData();
+    fdToolbarLeft.top = new FormAttachment( 0, MARGIN );
+    toolbarLeft.setLayoutData( fdToolbarLeft );
+    toolbarLeft.setCursor( cursorEnabled );
+    toolbarLeft.setBackground( toolbarLeft.getParent().getBackground() );
 
-    tltmBack = new ToolItem( toolBarBack, SWT.NONE );
+    tltmBack = new ToolItem( toolbarLeft, SWT.PUSH );
     tltmBack.setImage( imageBackEnabled );
     tltmBack.setDisabledImage( imageBackDisabled );
     tltmBack.setToolTipText( BaseMessages.getString( PKG, "Spoon.Documentation.Tooltip.Back" ) );
     tltmBack.setEnabled( false );
 
-    toolBarForward = new ToolBar( shell, SWT.FLAT );
-    FormData fdtoolBarForward = new FormData();
-    fdtoolBarForward.top = new FormAttachment( 0, MARGIN );
-    fdtoolBarForward.right = new FormAttachment( toolBarBack, TOOL_ITEM_WIDTH );
-    fdtoolBarForward.bottom = new FormAttachment( 0, TOOLBAR_HEIGHT );
-    fdtoolBarForward.left = new FormAttachment( toolBarBack, TOOL_ITEM_SPACING );
-    toolBarForward.setLayoutData( fdtoolBarForward );
-    toolBarForward.setCursor( cursorDisabled );
-    toolBarForward.setBackground( toolBarForward.getParent().getBackground() );
-
-    tltmForward = new ToolItem( toolBarForward, SWT.NONE );
+    tltmForward = new ToolItem( toolbarLeft, SWT.PUSH );
     tltmForward.setImage( imageForwardEnabled );
     tltmForward.setDisabledImage( imageForwardDisabled );
     tltmForward.setToolTipText( BaseMessages.getString( PKG, "Spoon.Documentation.Tooltip.Forward" ) );
     tltmForward.setEnabled( false );
 
-    ToolBar toolBarRefresh = new ToolBar( shell, SWT.FLAT );
-    FormData fdtoolBarRefresh = new FormData();
-    fdtoolBarRefresh.top = new FormAttachment( 0, MARGIN );
-    fdtoolBarRefresh.right = new FormAttachment( toolBarForward, TOOL_ITEM_WIDTH );
-    fdtoolBarRefresh.bottom = new FormAttachment( 0, TOOLBAR_HEIGHT );
-    fdtoolBarRefresh.left = new FormAttachment( toolBarForward, TOOL_ITEM_SPACING - 1 );
-    toolBarRefresh.setLayoutData( fdtoolBarRefresh );
-    toolBarRefresh.setCursor( cursorEnabled );
-    toolBarRefresh.setBackground( toolBarRefresh.getParent().getBackground() );
-
-    tltmRefresh = new ToolItem( toolBarRefresh, SWT.NONE );
+    tltmRefresh = new ToolItem( toolbarLeft, SWT.PUSH );
     tltmRefresh.setImage( imageRefreshEnabled );
     tltmRefresh.setDisabledImage( imageRefreshDisabled );
     tltmRefresh.setToolTipText( BaseMessages.getString( PKG, "Spoon.Documentation.Tooltip.Refresh" ) );
     tltmRefresh.setEnabled( true );
 
-    ToolBar toolBarHome = new ToolBar( shell, SWT.FLAT );
-    FormData fdtoolBarHome = new FormData();
-    fdtoolBarHome.top = new FormAttachment( 0, MARGIN );
-    fdtoolBarHome.right = new FormAttachment( toolBarRefresh, TOOL_ITEM_WIDTH );
-    fdtoolBarHome.bottom = new FormAttachment( 0, TOOLBAR_HEIGHT );
-    fdtoolBarHome.left = new FormAttachment( toolBarRefresh, TOOL_ITEM_SPACING );
-    toolBarHome.setLayoutData( fdtoolBarHome );
-    toolBarHome.setCursor( cursorEnabled );
-    toolBarHome.setBackground( toolBarHome.getParent().getBackground() );
-
-    tltmHome = new ToolItem( toolBarHome, SWT.NONE );
+    tltmHome = new ToolItem( toolbarLeft, SWT.PUSH );
     tltmHome.setImage( imageHomeEnabled );
     tltmHome.setDisabledImage( imageHomeDisabled );
     tltmHome.setToolTipText( BaseMessages.getString( PKG, "Spoon.Documentation.Tooltip.Home" ) );
     tltmHome.setEnabled( true );
 
-    ToolBar toolBarPrint = new ToolBar( shell, SWT.FLAT );
-    FormData fdtoolBarPrint = new FormData();
-    fdtoolBarPrint.top = new FormAttachment( 0, MARGIN );
-    fdtoolBarPrint.right = new FormAttachment( 100, -7 );
-    fdtoolBarPrint.bottom = new FormAttachment( 0, TOOLBAR_HEIGHT );
-    toolBarPrint.setLayoutData( fdtoolBarPrint );
-    toolBarPrint.setCursor( cursorEnabled );
-    toolBarPrint.setBackground( toolBarPrint.getParent().getBackground() );
+    // Right toolbar (print)
+    toolbarRight = new ToolBar( shell, SWT.WRAP );
+    FormData fdToolbarRight = new FormData();
+    fdToolbarRight.top = new FormAttachment( 0, MARGIN );
+    fdToolbarRight.right = new FormAttachment( 100, -1 * TOOL_ITEM_SPACING );
+    toolbarRight.setLayoutData( fdToolbarRight );
+    toolbarRight.setCursor( cursorEnabled );
+    toolbarRight.setBackground( toolbarRight.getParent().getBackground() );
 
-    tltmPrint = new ToolItem( toolBarPrint, SWT.NONE );
+    // URL toolbar element
+    textURL = new Text( shell, SWT.BORDER );
+    FormData fdText = new FormData();
+    fdText.top = new FormAttachment( 0, MARGIN );
+    fdText.right = new FormAttachment( toolbarRight, -1 * TOOL_ITEM_SPACING );
+    fdText.left = new FormAttachment( toolbarLeft, TOOL_ITEM_SPACING );
+    textURL.setLayoutData( fdText );
+    textURL.setForeground( new Color( display, 101, 101, 101 ) );
+
+    tltmPrint = new ToolItem( toolbarRight, SWT.PUSH );
     tltmPrint.setImage( imagePrintEnabled );
     tltmPrint.setDisabledImage( imagePrintDisabled );
     tltmPrint.setToolTipText( BaseMessages.getString( PKG, "Spoon.Documentation.Tooltip.Print" ) );
     tltmPrint.setEnabled( true );
-
-    textURL = new Text( shell, SWT.BORDER );
-    FormData fdtext = new FormData();
-    fdtext.top = new FormAttachment( 0, MARGIN );
-    fdtext.right = new FormAttachment( toolBarPrint, -7 );
-    fdtext.bottom = new FormAttachment( 0, 25 );
-    fdtext.left = new FormAttachment( toolBarHome, TOOL_ITEM_SPACING );
-    textURL.setLayoutData( fdtext );
-    textURL.setForeground( new Color( display, 101, 101, 101 ) );
-
-    wBrowser.setUrl( url );
 
     setUpListeners();
 
     // Specs are 760/530, but due to rendering differences, we need to adjust the actual hgt/wdt used
     BaseStepDialog.setSize( shell, 755, 538, true );
     shell.setMinimumSize( 515, 408 );
-
 
     shell.open();
     while ( !shell.isDisposed() ) {
@@ -263,12 +228,11 @@ public class ShowHelpDialog extends Dialog {
     imagePrintEnabled = GUIResource.getInstance().getImagePrintEnabled();
     imagePrintDisabled = GUIResource.getInstance().getImagePrintDisabled();
     cursorEnabled = new Cursor( display, SWT.CURSOR_HAND );
-    cursorDisabled = new Cursor( display, SWT.CURSOR_ARROW );
   }
 
   private void setUpListeners() {
     setUpSelectionListeners();
-    addLocationListener();
+    addProgressAndLocationListener();
     addShellListener();
   }
 
@@ -334,7 +298,22 @@ public class ShowHelpDialog extends Dialog {
     tltmPrint.addSelectionListener( selectionListenerPrint );
   }
 
-  private void addLocationListener() {
+  private void addProgressAndLocationListener() {
+    ProgressListener progressListener = new ProgressListener() {
+      @Override
+      public void changed( ProgressEvent event ) {
+      }
+
+      @Override
+      public void completed( ProgressEvent event ) {
+        if ( fromPrint ) {
+          wBrowser.execute( PRINT_SCRIPT );
+          fromPrint = false;
+        }
+        setForwardBackEnable();
+      }
+    };
+
     LocationListener listener = new LocationListener() {
       @Override
       public void changing( LocationEvent event ) {
@@ -346,16 +325,10 @@ public class ShowHelpDialog extends Dialog {
 
       @Override
       public void changed( LocationEvent event ) {
-        if ( !fromBackOrForward && !fromPrint ) {
-          setForwardBackEnable();
-        } else if ( fromPrint ) {
-          wBrowser.execute( "javascript:window.print();" );
-        }
-        fromPrint = fromBackOrForward = false;
         textURL.setText( event.location );
-        loading = false;
       }
     };
+    wBrowser.addProgressListener( progressListener );
     wBrowser.addLocationListener( listener );
   }
 
@@ -369,60 +342,43 @@ public class ShowHelpDialog extends Dialog {
   }
 
   private void back() {
-    fromBackOrForward = true;
     wBrowser.back();
-    setForwardBackEnable( wBrowser.isBackEnabled(), true );
   }
 
   private void forward() {
-    fromBackOrForward = true;
     wBrowser.forward();
-    setForwardBackEnable( true, wBrowser.isForwardEnabled() );
   }
 
   private void refresh() {
     wBrowser.refresh();
   }
 
-  private void print() {
-    String currentURL = wBrowser.getUrl();
-    boolean currentBackEnabled = tltmBack.isEnabled();
-    boolean currentForwardEnabled = tltmForward.isEnabled();
-    String f1URL = currentURL.replace( PREFIX, PRINT_PREFIX );
-    fromPrint = true;
-    wBrowser.setUrl( f1URL );
-    loading = true;
-    while ( loading ) {
-      if ( !display.readAndDispatch() ) {
-        display.sleep();
-      }
-    }
-    wBrowser.setUrl( currentURL );
-    setForwardBackEnable( currentBackEnabled, currentForwardEnabled );
-  }
-
   private void home() {
     wBrowser.setUrl( homeURL != null ? homeURL : url );
-    setForwardBackEnable( tltmBack.isEnabled(), false );
+  }
+
+  private void print() {
+    String printURL = wBrowser.getUrl();
+    if ( printURL.startsWith( PREFIX ) ) {
+      printURL = printURL.replace( PREFIX, PRINT_PREFIX );
+      fromPrint = true;
+      wBrowser.setUrl( printURL );
+    } else {
+      wBrowser.execute( PRINT_SCRIPT );
+    }
   }
 
   private void setForwardBackEnable() {
-    setForwardBackEnable( wBrowser.isBackEnabled(), wBrowser.isForwardEnabled() );
-  }
-
-  private void setForwardBackEnable( boolean enableBack, boolean enableForward ) {
-    setBackEnable( enableBack );
-    setForwardEnable( enableForward );
+    setBackEnable( wBrowser.isBackEnabled() );
+    setForwardEnable( wBrowser.isForwardEnabled() );
   }
 
   private void setBackEnable( boolean enable ) {
     tltmBack.setEnabled( enable );
-    toolBarBack.setCursor( enable ? cursorEnabled : cursorDisabled );
   }
 
   private void setForwardEnable( boolean enable ) {
     tltmForward.setEnabled( enable );
-    toolBarForward.setCursor( enable ? cursorEnabled : cursorDisabled );
   }
 
   public void dispose() {

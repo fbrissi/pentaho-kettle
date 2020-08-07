@@ -6,7 +6,7 @@
 
   <groupId>pentaho-kettle</groupId>
   <artifactId>kettle-core</artifactId>
-  <version>8.2.0.0-SNAPSHOT</version>
+  <version>9.1.0.0-SNAPSHOT</version>
   <packaging>jar</packaging>
 
   <name>PDI Core</name>
@@ -14,7 +14,7 @@
   <parent>
     <groupId>org.pentaho.di</groupId>
     <artifactId>pdi</artifactId>
-    <version>8.2.0.0-SNAPSHOT</version>
+    <version>9.1.0.0-SNAPSHOT</version>
   </parent>
 
   <properties>
@@ -22,20 +22,13 @@
     <maven-surefire-plugin.reuseForks>true</maven-surefire-plugin.reuseForks>
 
     <!-- Third-party dependencies -->
-    <slf4j-api.version>1.7.7</slf4j-api.version>
-    <slf4j-log4j12.version>1.7.7</slf4j-log4j12.version>
     <batik.version>1.9.1</batik.version>
     <xml-apis-ext.version>1.3.04</xml-apis-ext.version>
-    <spring.framework.version>4.3.2.RELEASE</spring.framework.version>
     <commons-collections.version>3.2.2</commons-collections.version>
     <commons-lang.version>2.6</commons-lang.version>
-    <commons-vfs2.version>2.2</commons-vfs2.version>
     <commons-io.version>2.2</commons-io.version>
     <commons-dbcp.version>1.4</commons-dbcp.version>
     <commons-pool.version>1.5.7</commons-pool.version>
-    <commons-compress.version>1.4.1</commons-compress.version>
-    <dom4j.version>1.6.1</dom4j.version>
-    <jetty-util.version>8.1.15.v20140411</jetty-util.version>
     <jug-lgpl.version>2.0.0</jug-lgpl.version>
     <jsch.version>0.1.54</jsch.version>
     <jzlib.version>1.0.7</jzlib.version>
@@ -44,12 +37,11 @@
     <com.wcohen.secondstring.version>0.1</com.wcohen.secondstring.version>
     <javassist.version>3.20.0-GA</javassist.version>
     <jcifs.version>1.3.3</jcifs.version>
-    <org.apache.karaf.main.version>3.0.3</org.apache.karaf.main.version>
-    <simple-jndi.version>1.0.0</simple-jndi.version>
+    <simple-jndi.version>1.0.3</simple-jndi.version>
     <woodstox-core-asl.version>4.4.1</woodstox-core-asl.version>
-    <httpclient.version>4.5.3</httpclient.version>
-    <httpccore.version>4.4.6</httpccore.version>
     <xmlunit.version>1.5</xmlunit.version>
+    <joda.version>2.10.2</joda.version>
+    <encryption-support.version>9.1.0.0-SNAPSHOT</encryption-support.version>
   </properties>
 
   <dependencies>
@@ -63,14 +55,6 @@
     <dependency>
       <groupId>org.slf4j</groupId>
       <artifactId>slf4j-api</artifactId>
-      <version>${slf4j-api.version}</version>
-      <scope>compile</scope>
-    </dependency>
-    <dependency>
-      <groupId>org.slf4j</groupId>
-      <artifactId>slf4j-log4j12</artifactId>
-      <version>${slf4j-log4j12.version}</version>
-      <scope>compile</scope>
     </dependency>
     <dependency>
       <groupId>commons-beanutils</groupId>
@@ -304,29 +288,14 @@
     <dependency>
       <groupId>org.apache.httpcomponents</groupId>
       <artifactId>httpclient</artifactId>
-      <version>${httpclient.version}</version>
-      <exclusions>
-        <exclusion>
-          <groupId>*</groupId>
-          <artifactId>*</artifactId>
-        </exclusion>
-      </exclusions>
     </dependency>
     <dependency>
       <groupId>org.apache.httpcomponents</groupId>
       <artifactId>httpcore</artifactId>
-      <version>${httpccore.version}</version>
     </dependency>
     <dependency>
       <groupId>org.apache.commons</groupId>
       <artifactId>commons-vfs2</artifactId>
-      <version>${commons-vfs2.version}</version>
-      <exclusions>
-        <exclusion>
-          <groupId>*</groupId>
-          <artifactId>*</artifactId>
-        </exclusion>
-      </exclusions>
     </dependency>
     <dependency>
       <groupId>commons-io</groupId>
@@ -361,32 +330,17 @@
         </exclusion>
       </exclusions>
     </dependency>
-    <dependency>
+    <dependency> <!-- this is an optional dependency of org.apache.commons:commons-vfs2 -->
       <groupId>org.apache.commons</groupId>
       <artifactId>commons-compress</artifactId>
-      <version>${commons-compress.version}</version>
-      <exclusions>
-        <exclusion>
-          <groupId>*</groupId>
-          <artifactId>*</artifactId>
-        </exclusion>
-      </exclusions>
     </dependency>
     <dependency>
-      <groupId>dom4j</groupId>
+      <groupId>org.dom4j</groupId>
       <artifactId>dom4j</artifactId>
-      <version>${dom4j.version}</version>
-      <exclusions>
-        <exclusion>
-          <groupId>*</groupId>
-          <artifactId>*</artifactId>
-        </exclusion>
-      </exclusions>
     </dependency>
     <dependency>
       <groupId>org.eclipse.jetty</groupId>
       <artifactId>jetty-util</artifactId>
-      <version>${jetty-util.version}</version>
       <exclusions>
         <exclusion>
           <groupId>*</groupId>
@@ -484,17 +438,6 @@
       </exclusions>
     </dependency>
     <dependency>
-      <groupId>org.apache.karaf</groupId>
-      <artifactId>org.apache.karaf.main</artifactId>
-      <version>${org.apache.karaf.main.version}</version>
-      <exclusions>
-        <exclusion>
-          <groupId>*</groupId>
-          <artifactId>*</artifactId>
-        </exclusion>
-      </exclusions>
-    </dependency>
-    <dependency>
       <groupId>org.codehaus.woodstox</groupId>
       <artifactId>wstx-asl</artifactId>
     </dependency>
@@ -503,6 +446,19 @@
       <artifactId>simple-jndi</artifactId>
       <version>${simple-jndi.version}</version>
     </dependency>
+
+    <!-- region - Needed for runtime execution -->
+    <dependency>
+      <groupId>org.springframework</groupId>
+      <artifactId>spring-expression</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>joda-time</groupId>
+      <artifactId>joda-time</artifactId>
+      <version>${joda.version}</version>
+      <scope>runtime</scope>
+    </dependency>
+    <!-- endregion -->
 
     <!-- Test dependencies -->
     <dependency>
@@ -523,7 +479,11 @@
     <dependency>
       <groupId>org.springframework</groupId>
       <artifactId>spring-test</artifactId>
-      <version>${spring.framework.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework</groupId>
+      <artifactId>spring-core</artifactId>
       <scope>test</scope>
     </dependency>
     <dependency>
@@ -532,6 +492,17 @@
       <version>${xmlunit.version}</version>
       <scope>test</scope>
     </dependency>
+    <dependency>
+      <groupId>org.apache.tomcat</groupId>
+      <artifactId>tomcat-jdbc</artifactId>
+      <version>8.5.27</version>
+    </dependency>
+    <dependency>
+      <groupId>org.pentaho</groupId>
+      <artifactId>pentaho-encryption-support</artifactId>
+      <version>${encryption-support.version}</version>
+    </dependency>
+
   </dependencies>
 
   <build>
@@ -547,6 +518,7 @@
               <includes>
                 <include>org/pentaho/di/junit/**</include>
                 <include>org/pentaho/di/concurrency/**</include>
+                <include>*.xml</include>
               </includes>
             </configuration>
           </execution>

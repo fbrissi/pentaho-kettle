@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2017 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2019 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -22,14 +22,14 @@
 
 package org.pentaho.di.ui.trans.steps.csvinput;
 
-import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.Charset;
-import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Collectors;
 
 import org.apache.commons.vfs2.FileObject;
 import org.apache.commons.vfs2.provider.local.LocalFile;
@@ -51,13 +51,13 @@ import org.eclipse.swt.widgets.Button;
 import org.eclipse.swt.widgets.Control;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Event;
-import org.eclipse.swt.widgets.FileDialog;
 import org.eclipse.swt.widgets.Label;
 import org.eclipse.swt.widgets.Listener;
 import org.eclipse.swt.widgets.Shell;
 import org.eclipse.swt.widgets.TableItem;
 import org.eclipse.swt.widgets.Text;
 import org.pentaho.di.core.Const;
+import org.pentaho.di.core.logging.LogChannel;
 import org.pentaho.di.core.util.Utils;
 import org.pentaho.di.core.exception.KettleException;
 import org.pentaho.di.core.exception.KettleStepException;
@@ -77,17 +77,20 @@ import org.pentaho.di.trans.step.BaseStepMeta;
 import org.pentaho.di.trans.step.RowAdapter;
 import org.pentaho.di.trans.step.StepDialogInterface;
 import org.pentaho.di.trans.step.StepInterface;
+import org.pentaho.di.trans.steps.common.CsvInputAwareMeta;
 import org.pentaho.di.trans.steps.csvinput.CsvInput;
 import org.pentaho.di.trans.steps.csvinput.CsvInputMeta;
-import org.pentaho.di.trans.steps.textfileinput.EncodingType;
-import org.pentaho.di.trans.steps.textfileinput.TextFileInput;
 import org.pentaho.di.trans.steps.textfileinput.TextFileInputField;
-import org.pentaho.di.trans.steps.textfileinput.TextFileInputMeta;
 import org.pentaho.di.ui.core.PropsUI;
 import org.pentaho.di.ui.core.dialog.EnterNumberDialog;
 import org.pentaho.di.ui.core.dialog.EnterTextDialog;
 import org.pentaho.di.ui.core.dialog.ErrorDialog;
 import org.pentaho.di.ui.core.dialog.PreviewRowsDialog;
+import org.pentaho.di.ui.core.events.dialog.SelectionOperation;
+import org.pentaho.di.ui.core.events.dialog.SelectionAdapterFileDialogTextVar;
+import org.pentaho.di.ui.core.events.dialog.SelectionAdapterOptions;
+import org.pentaho.di.ui.core.events.dialog.ProviderFilterType;
+import org.pentaho.di.ui.core.events.dialog.FilterType;
 import org.pentaho.di.ui.core.widget.ColumnInfo;
 import org.pentaho.di.ui.core.widget.ComboValuesSelectionListener;
 import org.pentaho.di.ui.core.widget.ComboVar;
@@ -97,9 +100,13 @@ import org.pentaho.di.ui.spoon.Spoon;
 import org.pentaho.di.ui.spoon.trans.TransGraph;
 import org.pentaho.di.ui.trans.dialog.TransPreviewProgressDialog;
 import org.pentaho.di.ui.trans.step.BaseStepDialog;
+import org.pentaho.di.ui.trans.step.common.CsvInputAwareImportProgressDialog;
+import org.pentaho.di.ui.trans.step.common.CsvInputAwareStepDialog;
+import org.pentaho.di.ui.trans.step.common.GetFieldsCapableStepDialog;
 import org.pentaho.di.ui.trans.steps.textfileinput.TextFileCSVImportProgressDialog;
 
-public class CsvInputDialog extends BaseStepDialog implements StepDialogInterface {
+public class CsvInputDialog extends BaseStepDialog implements StepDialogInterface,
+  GetFieldsCapableStepDialog<CsvInputMeta>, CsvInputAwareStepDialog {
   private static Class<?> PKG = CsvInput.class; // for i18n purposes, needed by Translator2!!
 
   private CsvInputMeta inputMeta;
@@ -124,6 +131,7 @@ public class CsvInputDialog extends BaseStepDialog implements StepDialogInterfac
   private Button wRunningInParallel;
   private Button wNewlinePossible;
   private ComboVar wEncoding;
+  private CCombo wFormat;
 
   private boolean gotEncodings = false;
 
@@ -483,6 +491,30 @@ public class CsvInputDialog extends BaseStepDialog implements StepDialogInterfac
     } );
     lastControl = wNewlinePossible;
 
+    // Format
+    Label wlFormat = new Label( shell, SWT.RIGHT );
+    wlFormat.setText( BaseMessages.getString( PKG, inputMeta.getDescription( "FORMAT" ) ) );
+    props.setLook( wlFormat );
+    FormData fdlFormat = new FormData();
+    fdlFormat.top = new FormAttachment( lastControl, margin );
+    fdlFormat.left = new FormAttachment( 0, 0 );
+    fdlFormat.right = new FormAttachment( middle, -margin );
+    wlFormat.setLayoutData( fdlFormat );
+    wFormat = new CCombo( shell, SWT.BORDER | SWT.READ_ONLY );
+    wFormat.setText( BaseMessages.getString( PKG, inputMeta.getDescription( "FORMAT" ) ) );
+    props.setLook( wFormat );
+    wFormat.add( "DOS" );
+    wFormat.add( "Unix" );
+    wFormat.add( "mixed" );
+    wFormat.select( 2 );
+    wFormat.addModifyListener( lsMod );
+    FormData fdFormat = new FormData();
+    fdFormat.top = new FormAttachment( lastControl, margin );
+    fdFormat.left = new FormAttachment( middle, 0 );
+    fdFormat.right = new FormAttachment( 100, 0 );
+    wFormat.setLayoutData( fdFormat );
+    lastControl = wFormat;
+
     // Encoding
     Label wlEncoding = new Label( shell, SWT.RIGHT );
     wlEncoding.setText( BaseMessages.getString( PKG, inputMeta.getDescription( "ENCODING" ) ) );
@@ -612,7 +644,7 @@ public class CsvInputDialog extends BaseStepDialog implements StepDialogInterfac
     };
     lsGet = new Listener() {
       public void handleEvent( Event e ) {
-        getCSV();
+        getFields();
       }
     };
 
@@ -651,28 +683,11 @@ public class CsvInputDialog extends BaseStepDialog implements StepDialogInterfac
 
     if ( wbbFilename != null ) {
       // Listen to the browse button next to the file name
-      wbbFilename.addSelectionListener( new SelectionAdapter() {
-        public void widgetSelected( SelectionEvent e ) {
-          FileDialog dialog = new FileDialog( shell, SWT.OPEN );
-          dialog.setFilterExtensions( new String[] { "*.txt;*.csv", "*.csv", "*.txt", "*" } );
-          if ( wFilename.getText() != null ) {
-            String fname = transMeta.environmentSubstitute( wFilename.getText() );
-            dialog.setFileName( fname );
-          }
-
-          dialog.setFilterNames( new String[] {
-            BaseMessages.getString( PKG, "System.FileType.CSVFiles" ) + ", "
-              + BaseMessages.getString( PKG, "System.FileType.TextFiles" ),
-            BaseMessages.getString( PKG, "System.FileType.CSVFiles" ),
-            BaseMessages.getString( PKG, "System.FileType.TextFiles" ),
-            BaseMessages.getString( PKG, "System.FileType.AllFiles" ) } );
-
-          if ( dialog.open() != null ) {
-            String str = dialog.getFilterPath() + System.getProperty( "file.separator" ) + dialog.getFileName();
-            wFilename.setText( str );
-          }
-        }
-      } );
+      wbbFilename.addSelectionListener( new SelectionAdapterFileDialogTextVar( log, wFilename, transMeta,
+        new SelectionAdapterOptions( SelectionOperation.FILE,
+          new String[] { FilterType.CSV_TXT.toString(), FilterType.CSV.toString(), FilterType.TXT.toString(),
+            FilterType.ALL.toString() }, FilterType.CSV_TXT.toString(),
+          new String[] { ProviderFilterType.LOCAL.toString() }, false ) ) );
     }
 
     // Detect X or ALT-F4 or something that kills this window...
@@ -735,6 +750,16 @@ public class CsvInputDialog extends BaseStepDialog implements StepDialogInterfac
     }
   }
 
+  @Override
+  public CsvInputMeta getNewMetaInstance() {
+    return new CsvInputMeta();
+  }
+
+  @Override
+  public void populateMeta( CsvInputMeta inputMeta ) {
+    getInfo( inputMeta );
+  }
+
   public void getData() {
     getData( inputMeta, true );
   }
@@ -743,6 +768,12 @@ public class CsvInputDialog extends BaseStepDialog implements StepDialogInterfac
    * Copy information from the meta-data input to the dialog fields.
    */
   public void getData( CsvInputMeta inputMeta, boolean copyStepname ) {
+    getData( inputMeta, copyStepname, true, null );
+  }
+
+  @Override
+  public void getData( final CsvInputMeta inputMeta, final boolean copyStepname, final boolean reloadAllFields,
+                       final Set<String> newFieldNames ) {
     if ( copyStepname ) {
       wStepname.setText( stepname );
     }
@@ -761,12 +792,18 @@ public class CsvInputDialog extends BaseStepDialog implements StepDialogInterfac
     wNewlinePossible.setSelection( inputMeta.isNewlinePossibleInFields() );
     wRowNumField.setText( Const.NVL( inputMeta.getRowNumField(), "" ) );
     wAddResult.setSelection( inputMeta.isAddResultFile() );
+    wFormat.setText( Const.NVL( inputMeta.getFileFormat(), "" ) );
     wEncoding.setText( Const.NVL( inputMeta.getEncoding(), "" ) );
 
+    final List<String> fieldName = newFieldNames == null ? new ArrayList()
+      : newFieldNames.stream().map( String::toString ).collect( Collectors.toList() );
     for ( int i = 0; i < inputMeta.getInputFields().length; i++ ) {
       TextFileInputField field = inputMeta.getInputFields()[i];
-
-      TableItem item = new TableItem( wFields.table, SWT.NONE );
+      final TableItem item = getTableItem( field.getName(), reloadAllFields );
+      // update the item only if we are reloading all fields, or the field is new
+      if ( !reloadAllFields && !fieldName.contains( field.getName() ) ) {
+        continue;
+      }
       int colnr = 1;
       item.setText( colnr++, Const.NVL( field.getName(), "" ) );
       item.setText( colnr++, ValueMetaFactory.getValueMetaName( field.getType() ) );
@@ -812,6 +849,7 @@ public class CsvInputDialog extends BaseStepDialog implements StepDialogInterfac
     inputMeta.setAddResultFile( wAddResult.getSelection() );
     inputMeta.setRunningInParallel( wRunningInParallel.getSelection() );
     inputMeta.setNewlinePossibleInFields( wNewlinePossible.getSelection() );
+    inputMeta.setFileFormat( wFormat.getText() );
     inputMeta.setEncoding( wEncoding.getText() );
 
     int nrNonEmptyFields = wFields.nrNonEmpty();
@@ -850,16 +888,14 @@ public class CsvInputDialog extends BaseStepDialog implements StepDialogInterfac
     dispose();
   }
 
-  // Get the data layout
-  private void getCSV() {
-    InputStream inputStream = null;
+  /**'
+   * Returns the {@link InputStreamReader} corresponding to the csv file, or null if the file cannot be read.
+   * @return the {@link InputStreamReader} corresponding to the csv file, or null if the file cannot be read
+   */
+  private InputStreamReader getReader( final CsvInputMeta meta, final InputStream inputStream ) {
+    InputStreamReader reader = null;
     try {
-      CsvInputMeta meta = new CsvInputMeta();
-      getInfo( meta );
-
       String filename = transMeta.environmentSubstitute( meta.getFilename() );
-      String delimiter = transMeta.environmentSubstitute( meta.getDelimiter() );
-      String enclosure = transMeta.environmentSubstitute( meta.getEnclosure() );
 
       FileObject fileObject = KettleVFS.getFileObject( filename );
       if ( !( fileObject instanceof LocalFile ) ) {
@@ -869,112 +905,55 @@ public class CsvInputDialog extends BaseStepDialog implements StepDialogInterfac
         throw new KettleException( BaseMessages.getString( PKG, "CsvInput.Log.OnlyLocalFilesAreSupported" ) );
       }
 
-      wFields.table.removeAll();
-
-      inputStream = KettleVFS.getInputStream( fileObject );
-
       String realEncoding = transMeta.environmentSubstitute( meta.getEncoding() );
-      InputStreamReader reader;
       if ( Utils.isEmpty( realEncoding ) ) {
         reader = new InputStreamReader( inputStream );
       } else {
         reader = new InputStreamReader( inputStream, realEncoding );
       }
-
-      EncodingType encodingType = EncodingType.guessEncodingType( reader.getEncoding() );
-
-      // Read a line of data to determine the number of rows...
-      //
-      String line =
-        TextFileInput.getLine(
-          log, reader, encodingType, TextFileInputMeta.FILE_FORMAT_UNIX, new StringBuilder( 1000 ) );
-
-      // Split the string, header or data into parts...
-      //
-      String[] fieldNames =
-        CsvInput.guessStringsFromLine( log, line, delimiter, enclosure, meta.getEscapeCharacter() );
-
-      if ( !meta.isHeaderPresent() ) {
-        // Don't use field names from the header...
-        // Generate field names F1 ... F10
-        //
-        DecimalFormat df = new DecimalFormat( "000" );
-        for ( int i = 0; i < fieldNames.length; i++ ) {
-          fieldNames[i] = "Field_" + df.format( i );
-        }
-      } else {
-        if ( !Utils.isEmpty( meta.getEnclosure() ) ) {
-          for ( int i = 0; i < fieldNames.length; i++ ) {
-            if ( fieldNames[i].startsWith( meta.getEnclosure() )
-              && fieldNames[i].endsWith( meta.getEnclosure() ) && fieldNames[i].length() > 1 ) {
-              fieldNames[i] = fieldNames[i].substring( 1, fieldNames[i].length() - 1 );
-            }
-          }
-        }
-      }
-
-      // Trim the names to make sure...
-      //
-      for ( int i = 0; i < fieldNames.length; i++ ) {
-        fieldNames[i] = Const.trim( fieldNames[i] );
-      }
-
-      // Update the GUI
-      //
-      for ( int i = 0; i < fieldNames.length; i++ ) {
-        TableItem item = new TableItem( wFields.table, SWT.NONE );
-        item.setText( 1, fieldNames[i] );
-        item.setText( 2, ValueMetaFactory.getValueMetaName( ValueMetaInterface.TYPE_STRING ) );
-      }
-      wFields.removeEmptyRows();
-      wFields.setRowNums();
-      wFields.optWidth( true );
-
-      // Now we can continue reading the rows of data and we can guess the
-      // Sample a few lines to determine the correct type of the fields...
-      //
-      String shellText = BaseMessages.getString( PKG, "CsvInputDialog.LinesToSample.DialogTitle" );
-      String lineText = BaseMessages.getString( PKG, "CsvInputDialog.LinesToSample.DialogMessage" );
-      EnterNumberDialog end = new EnterNumberDialog( shell, 100, shellText, lineText );
-      int samples = end.open();
-      if ( samples >= 0 ) {
-        getInfo( meta );
-
-        TextFileCSVImportProgressDialog pd =
-          new TextFileCSVImportProgressDialog( shell, meta, transMeta, reader, samples, true );
-        String message = pd.open();
-        if ( message != null ) {
-          wFields.removeAll();
-
-          // OK, what's the result of our search?
-          getData( meta, false );
-          wFields.removeEmptyRows();
-          wFields.setRowNums();
-          wFields.optWidth( true );
-
-          EnterTextDialog etd =
-            new EnterTextDialog(
-              shell, BaseMessages.getString( PKG, "CsvInputDialog.ScanResults.DialogTitle" ), BaseMessages
-                .getString( PKG, "CsvInputDialog.ScanResults.DialogMessage" ), message, true );
-          etd.setReadOnly();
-          etd.open();
-
-          // asyncUpdatePreview();
-        }
-      }
-    } catch ( IOException e ) {
-      new ErrorDialog( shell, BaseMessages.getString( PKG, "CsvInputDialog.IOError.DialogTitle" ), BaseMessages
-        .getString( PKG, "CsvInputDialog.IOError.DialogMessage" ), e );
-    } catch ( KettleException e ) {
-      new ErrorDialog( shell, BaseMessages.getString( PKG, "System.Dialog.Error.Title" ), BaseMessages.getString(
-        PKG, "CsvInputDialog.ErrorGettingFileDesc.DialogMessage" ), e );
-    } finally {
-      try {
-        inputStream.close();
-      } catch ( Exception e ) {
-        // Ignore close errors
-      }
+    } catch ( final Exception e ) {
+      logError( BaseMessages.getString( PKG, "CsvInputDialog.ErrorGettingFileDesc.DialogMessage" ), e );
     }
+    return reader;
+  }
+
+  /**'
+   * Returns the {@link InputStream} corresponding to the csv file, or null if the file cannot be read.
+   * @return the {@link InputStream} corresponding to the csv file, or null if the file cannot be read
+   */
+  private InputStream getInputStream( final CsvInputMeta meta ) {
+    InputStream inputStream = null;
+    try {
+      final String filename = transMeta.environmentSubstitute( meta.getFilename() );
+
+      final FileObject fileObject = KettleVFS.getFileObject( filename );
+      if ( !( fileObject instanceof LocalFile ) ) {
+        // We can only use NIO on local files at the moment, so that's what we
+        // limit ourselves to.
+        //
+        throw new KettleException( BaseMessages.getString( PKG, "CsvInput.Log.OnlyLocalFilesAreSupported" ) );
+      }
+
+      inputStream = KettleVFS.getInputStream( fileObject );
+    } catch ( final Exception e ) {
+      logError( BaseMessages.getString( PKG, "CsvInputDialog.ErrorGettingFileDesc.DialogMessage" ), e );
+    }
+    return inputStream;
+  }
+
+  @Override
+  public String[] getFieldNames( final CsvInputMeta meta ) {
+    return getFieldNames( (CsvInputAwareMeta) meta );
+  }
+
+  @Override
+  public TableView getFieldsTable() {
+    return this.wFields;
+  }
+
+  @Override
+  public String loadFieldsImpl( final CsvInputMeta meta, final int samples ) {
+    return loadFieldsImpl( (CsvInputAwareMeta) meta, samples );
   }
 
   // Preview the data
@@ -1118,6 +1097,44 @@ public class CsvInputDialog extends BaseStepDialog implements StepDialogInterfac
     };
 
     shell.getDisplay().asyncExec( update );
+  }
+
+  @Override
+  public Shell getShell() {
+    return this.shell;
+  }
+
+  @Override
+  public CsvInputAwareImportProgressDialog getCsvImportProgressDialog(
+    final CsvInputAwareMeta meta, final int samples, final InputStreamReader reader ) {
+    return new TextFileCSVImportProgressDialog( getShell(), (CsvInputMeta) meta, transMeta, reader, samples, true );
+  }
+
+  @Override
+  public LogChannel getLogChannel() {
+    return log;
+  }
+
+  @Override
+  public TransMeta getTransMeta() {
+    return transMeta;
+  }
+
+  @Override
+  public InputStream getInputStream( final CsvInputAwareMeta meta ) {
+    InputStream inputStream = null;
+    try {
+      FileObject fileObject = meta.getHeaderFileObject( getTransMeta() );
+      if ( !( fileObject instanceof LocalFile ) ) {
+        // We can only use NIO on local files at the moment, so that's what we limit ourselves to.
+        throw new KettleException( BaseMessages.getString( "FileInputDialog.Log.OnlyLocalFilesAreSupported" ) );
+      }
+
+      inputStream = KettleVFS.getInputStream( fileObject );
+    } catch ( final Exception e ) {
+      logError( BaseMessages.getString( "FileInputDialog.ErrorGettingFileDesc.DialogMessage" ), e );
+    }
+    return inputStream;
   }
 
 }

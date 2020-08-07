@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2020 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -60,6 +60,7 @@ import org.eclipse.swt.widgets.TreeItem;
 import org.pentaho.di.core.Const;
 import org.pentaho.di.core.ObjectLocationSpecificationMethod;
 import org.pentaho.di.core.Props;
+import org.pentaho.di.core.annotations.PluginDialog;
 import org.pentaho.di.core.exception.KettleException;
 import org.pentaho.di.core.injection.bean.BeanInjectionInfo;
 import org.pentaho.di.core.row.RowMetaInterface;
@@ -108,6 +109,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+@PluginDialog(
+    id = "MetaInject",
+    image = "org/pentaho/di/ui/trans/steps/metainject/img/GenericTransform.svg",
+    pluginType = PluginDialog.PluginType.STEP
+)
 public class MetaInjectDialog extends BaseStepDialog implements StepDialogInterface {
 
   public static final String CONST_VALUE = "<const>";
@@ -543,7 +549,7 @@ public class MetaInjectDialog extends BaseStepDialog implements StepDialogInterf
     wNoExecution.setText( BaseMessages.getString( PKG, "MetaInjectDialog.NoExecution.Label" ) );
     props.setLook( wNoExecution );
     FormData fdNoExecution = new FormData();
-    fdNoExecution.width = 250;
+    fdNoExecution.width = 350;
     fdNoExecution.left = new FormAttachment( 0, 0 );
     fdNoExecution.top = new FormAttachment( wStreamingTargetStep, 10 );
     wNoExecution.setLayoutData( fdNoExecution );
@@ -649,12 +655,16 @@ public class MetaInjectDialog extends BaseStepDialog implements StepDialogInterf
               EnterSelectionDialog selectSourceField = new EnterSelectionDialog( shell, sourceFields,
                 BaseMessages.getString( PKG, "MetaInjectDialog.SourceFieldDialog.Title" ),
                 BaseMessages.getString( PKG, "MetaInjectDialog.SourceFieldDialog.Label" ), constant, transMeta );
-              if ( source != null && source.getStepname() != null && !Utils.isEmpty( source.getStepname() ) ) {
-                String key = buildStepFieldKey( source.getStepname(), source.getField() );
-                selectSourceField.setCurrentValue( key );
-                int index = Const.indexOfString( key, sourceFields );
-                if ( index >= 0 ) {
-                  selectSourceField.setSelectedNrs( new int[] { index, } );
+              if ( source != null ) {
+                if ( source.getStepname() != null && !Utils.isEmpty( source.getStepname() ) ) {
+                  String key = buildStepFieldKey( source.getStepname(), source.getField() );
+                  selectSourceField.setCurrentValue( key );
+                  int index = Const.indexOfString( key, sourceFields );
+                  if ( index >= 0 ) {
+                    selectSourceField.setSelectedNrs( new int[] { index, } );
+                  }
+                } else {
+                  selectSourceField.setCurrentValue( source.getField() );
                 }
               }
               String selectedStepField = selectSourceField.open();
@@ -798,14 +808,17 @@ public class MetaInjectDialog extends BaseStepDialog implements StepDialogInterf
 
   private boolean loadTransformation() throws KettleException {
     String filename = wPath.getText();
+    boolean isEmptyFilename = Utils.isEmpty( filename );
     if ( repository != null ) {
-      specificationMethod = ObjectLocationSpecificationMethod.REPOSITORY_BY_NAME;
+      specificationMethod = ( isEmptyFilename && referenceObjectId != null )
+        ? ObjectLocationSpecificationMethod.REPOSITORY_BY_REFERENCE
+        : ObjectLocationSpecificationMethod.REPOSITORY_BY_NAME;
     } else {
       specificationMethod = ObjectLocationSpecificationMethod.FILENAME;
     }
     switch ( specificationMethod ) {
       case FILENAME:
-        if ( Utils.isEmpty( filename ) ) {
+        if ( isEmptyFilename ) {
           return false;
         }
         if ( !filename.endsWith( ".ktr" ) ) {
@@ -815,7 +828,7 @@ public class MetaInjectDialog extends BaseStepDialog implements StepDialogInterf
         loadFileTrans( filename );
         break;
       case REPOSITORY_BY_NAME:
-        if ( Utils.isEmpty( filename ) ) {
+        if ( isEmptyFilename ) {
           return false;
         }
         if ( filename.endsWith( ".ktr" ) ) {

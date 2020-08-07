@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2020 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -31,7 +31,6 @@ import org.junit.runner.RunWith;
 import org.pentaho.di.core.Const;
 import org.pentaho.di.core.KettleEnvironment;
 import org.pentaho.di.core.row.ValueMetaInterface;
-import org.pentaho.di.core.row.value.ValueMetaBase;
 import org.pentaho.di.core.row.value.ValueMetaFactory;
 import org.pentaho.di.junit.rules.RestorePDIEngineEnvironment;
 import org.pentaho.di.trans.TransTestingUtil;
@@ -39,7 +38,6 @@ import org.pentaho.di.trans.step.StepDataInterface;
 import org.pentaho.di.trans.steps.StepMockUtil;
 import org.pentaho.di.trans.steps.mock.StepMockHelper;
 import org.powermock.modules.junit4.PowerMockRunner;
-import org.powermock.reflect.Whitebox;
 
 import java.util.List;
 
@@ -73,11 +71,10 @@ public class DataGrid_EmptyStringVsNull_Test {
   @Test
   public void emptyAndNullsAreNotDifferent() throws Exception {
     System.setProperty( Const.KETTLE_EMPTY_STRING_DIFFERS_FROM_NULL, "N" );
-    Whitebox.setInternalState( ValueMetaBase.class, "EMPTY_STRING_AND_NULL_ARE_DIFFERENT", false );
     List<Object[]> expected = Arrays.asList(
-      new Object[] { "", "", null },
-      new Object[] { null, "", null },
-      new Object[] { null, "", null }
+      new Object[] { "", "", " ", "", null },
+      new Object[] { null, "", null, "", null },
+      new Object[] { null, "", null, "", null }
     );
     executeAndAssertResults( expected );
   }
@@ -86,11 +83,10 @@ public class DataGrid_EmptyStringVsNull_Test {
   @Test
   public void emptyAndNullsAreDifferent() throws Exception {
     System.setProperty( Const.KETTLE_EMPTY_STRING_DIFFERS_FROM_NULL, "Y" );
-    Whitebox.setInternalState( ValueMetaBase.class, "EMPTY_STRING_AND_NULL_ARE_DIFFERENT", true );
     List<Object[]> expected = Arrays.asList(
-      new Object[] { "", "", null },
-      new Object[] { "", "", null },
-      new Object[] { "", "", null }
+      new Object[] { "", "", " ", "", null },
+      new Object[] { "", "", "", "", null },
+      new Object[] { "", "", "", "", null }
     );
     executeAndAssertResults( expected );
   }
@@ -100,15 +96,16 @@ public class DataGrid_EmptyStringVsNull_Test {
     final String numberType = ValueMetaFactory.getValueMetaName( ValueMetaInterface.TYPE_NUMBER );
 
     DataGridMeta meta = new DataGridMeta();
-    meta.allocate( 3 );
-    meta.setFieldName( new String[] { "string", "string-setEmpty", "number" } );
-    meta.setFieldType( new String[] { stringType, stringType, numberType } );
-    meta.setEmptyString( new boolean[] { false, true, false } );
+    meta.allocate( 5 );
+    meta.setFieldName( new String[] { "string", "string-setEmpty", "string-NullIf", "string-setEmptyAndNullIf", "number" } );
+    meta.setFieldType( new String[] { stringType, stringType, stringType, stringType, numberType } );
+    meta.setEmptyString( new boolean[] { false, true, false, true, false } );
+    meta.setFieldNullIf( new String[] { "", "", "-", "-", "" } );
 
     List<List<String>> dataRows = Arrays.asList(
-      Arrays.asList( " ", " ", " " ),
-      Arrays.asList( "", "", "" ),
-      Arrays.asList( (String) null, null, null )
+      Arrays.asList( " ", " ", " ", " ", " " ),
+      Arrays.asList( "", "", "", "", "" ),
+      Arrays.asList( (String) null, null, null, null, null )
     );
     meta.setDataLines( dataRows );
 

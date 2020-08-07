@@ -3,7 +3,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2020 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -320,10 +320,10 @@ public class TransMeta extends AbstractMeta
         .getString( PKG, "TransMeta.TransformationType.SingleThreaded" ) );
 
     /** The code corresponding to the transformation type. */
-    private String code;
+    private final String code;
 
     /** The description of the transformation type. */
-    private String description;
+    private final String description;
 
     /**
      * Instantiates a new transformation type.
@@ -333,7 +333,7 @@ public class TransMeta extends AbstractMeta
      * @param description
      *          the description
      */
-    private TransformationType( String code, String description ) {
+    TransformationType( String code, String description ) {
       this.code = code;
       this.description = description;
     }
@@ -1381,6 +1381,10 @@ public class TransMeta extends AbstractMeta
    * @return The list of the preceding steps
    */
   public List<StepMeta> findPreviousSteps( StepMeta stepMeta, boolean info ) {
+    if ( stepMeta == null ) {
+      return new ArrayList<>();
+    }
+
     String cacheKey = getStepMetaCacheKey( stepMeta, info );
     List<StepMeta> previousSteps = previousStepCache.get( cacheKey );
     if ( previousSteps == null ) {
@@ -2044,9 +2048,10 @@ public class TransMeta extends AbstractMeta
     // Go get the fields...
     //
     RowMetaInterface before = row.clone();
-    compatibleGetStepFields( stepint, row, name, inform, nextStep, this );
+    RowMetaInterface[] clonedInfo = cloneRowMetaInterfaces( inform );
+    compatibleGetStepFields( stepint, row, name, clonedInfo, nextStep, this );
     if ( !isSomethingDifferentInRow( before, row ) ) {
-      stepint.getFields( before, name, inform, nextStep, this, repository, metaStore );
+      stepint.getFields( before, name, clonedInfo, nextStep, this, repository, metaStore );
       // pass the clone object to prevent from spoiling data by other steps
       row = before;
     }
@@ -4662,7 +4667,7 @@ public class TransMeta extends AbstractMeta
             remarks.add( cr );
 
             if ( transLogTable.getTableName() != null ) {
-              if ( logdb.checkTableExists( transLogTable.getTableName() ) ) {
+              if ( logdb.checkTableExists( transLogTable.getSchemaName(), transLogTable.getTableName() ) ) {
                 cr =
                     new CheckResult( CheckResultInterface.TYPE_RESULT_OK, BaseMessages
                         .getString( PKG, "TransMeta.CheckResult.TypeResultOK.LoggingTableExists.Description",
@@ -4716,8 +4721,9 @@ public class TransMeta extends AbstractMeta
             .getString( PKG, "TransMeta.Monitor.CheckingForDatabaseUnfriendlyCharactersInFieldNamesTask.Title" ) );
       }
       if ( values.size() > 0 ) {
-        for ( ValueMetaInterface v : values.keySet() ) {
-          String message = values.get( v );
+        for ( Map.Entry<ValueMetaInterface, String> entry : values.entrySet() ) {
+          String message = entry.getValue();
+          ValueMetaInterface v = entry.getKey();
           CheckResult
               cr =
               new CheckResult( CheckResultInterface.TYPE_RESULT_WARNING, BaseMessages
@@ -5533,6 +5539,18 @@ public class TransMeta extends AbstractMeta
   }
 
   /**
+   * Add a new partition schemas to the transformation if that didn't exist yet. Otherwise, replace it.
+   *
+   * @param partitionSchemas
+   *          List of partition schema to be added.
+   */
+  public void addOrReplacePartitionSchema( List<PartitionSchema> partitionSchemas ) {
+    for ( PartitionSchema partitionSchema : partitionSchemas ) {
+      addOrReplacePartitionSchema( partitionSchema );
+    }
+  }
+
+  /**
    * Add a new cluster schema to the transformation if that didn't exist yet. Otherwise, replace it.
    *
    * @param clusterSchema
@@ -5549,7 +5567,7 @@ public class TransMeta extends AbstractMeta
     setChanged();
   }
 
-  protected List<SharedObjectInterface> getAllSharedObjects() {
+  @Override protected List<SharedObjectInterface> getAllSharedObjects() {
     List<SharedObjectInterface> shared = super.getAllSharedObjects();
     shared.addAll( steps );
     shared.addAll( partitionSchemas );
@@ -5651,9 +5669,8 @@ public class TransMeta extends AbstractMeta
       variables.setVariable( Const.INTERNAL_VARIABLE_JOB_REPOSITORY_DIRECTORY, "Parent Job Repository Directory" );
     }
 
-    variables.setVariable( Const.INTERNAL_VARIABLE_ENTRY_CURRENT_DIRECTORY,
-      variables.getVariable( repository != null ? Const.INTERNAL_VARIABLE_TRANSFORMATION_REPOSITORY_DIRECTORY
-        : Const.INTERNAL_VARIABLE_TRANSFORMATION_FILENAME_DIRECTORY ) );
+    setInternalEntryCurrentDirectory();
+
   }
 
   /**
@@ -5701,10 +5718,17 @@ public class TransMeta extends AbstractMeta
       variables.setVariable( Const.INTERNAL_VARIABLE_TRANSFORMATION_FILENAME_NAME, "" );
     }
 
-    variables.setVariable( Const.INTERNAL_VARIABLE_ENTRY_CURRENT_DIRECTORY,
-        variables.getVariable( repository != null ? Const.INTERNAL_VARIABLE_TRANSFORMATION_REPOSITORY_DIRECTORY
-          : Const.INTERNAL_VARIABLE_TRANSFORMATION_FILENAME_DIRECTORY ) );
+    setInternalEntryCurrentDirectory();
+
   }
+
+  protected void setInternalEntryCurrentDirectory() {
+    variables.setVariable( Const.INTERNAL_VARIABLE_ENTRY_CURRENT_DIRECTORY, variables.getVariable(
+      repository != null ?  Const.INTERNAL_VARIABLE_TRANSFORMATION_REPOSITORY_DIRECTORY
+        : filename != null ? Const.INTERNAL_VARIABLE_TRANSFORMATION_FILENAME_DIRECTORY
+        : Const.INTERNAL_VARIABLE_ENTRY_CURRENT_DIRECTORY ) );
+  }
+
 
   /**
    * Finds the mapping input step with the specified name. If no mapping input step is found, null is returned
@@ -5874,9 +5898,8 @@ public class TransMeta extends AbstractMeta
         //
         Map<String, String> directoryMap = resourceNamingInterface.getDirectoryMap();
         if ( directoryMap != null ) {
-          for ( String directory : directoryMap.keySet() ) {
-            String parameterName = directoryMap.get( directory );
-            transMeta.addParameterDefinition( parameterName, directory, "Data file path discovered during export" );
+          for ( Map.Entry<String, String> entry : directoryMap.entrySet() ) {
+            transMeta.addParameterDefinition( entry.getValue(), entry.getKey(), "Data file path discovered during export" );
           }
         }
 
@@ -6403,5 +6426,15 @@ public class TransMeta extends AbstractMeta
 
   private static String getStepMetaCacheKey( StepMeta stepMeta, boolean info ) {
     return String.format( "%1$b-%2$s-%3$s", info, stepMeta.getStepID(), stepMeta.toString() );
+  }
+
+  private static RowMetaInterface[] cloneRowMetaInterfaces( RowMetaInterface[] inform ) {
+    RowMetaInterface[] cloned = inform.clone();
+    for ( int i = 0; i < cloned.length; i++ ) {
+      if ( cloned[i] != null ) {
+        cloned[i] = cloned[i].clone();
+      }
+    }
+    return cloned;
   }
 }

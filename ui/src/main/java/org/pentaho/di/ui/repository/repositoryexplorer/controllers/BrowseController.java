@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2019 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -116,6 +116,8 @@ public class BrowseController extends AbstractXulEventHandler implements IUISupp
   private Shell shell;
 
   private static final int DIALOG_WIDTH = 357, DIALOG_HEIGHT = 165, DIALOG_COLOR = SWT.COLOR_WHITE;
+
+  protected static final String HOME_PATH = "/home", PUBLIC_PATH = "/public";
 
   /**
    * Allows for lookup of a UIRepositoryDirectory by ObjectId. This allows the reuse of instances that are inside a UI
@@ -396,11 +398,6 @@ public class BrowseController extends AbstractXulEventHandler implements IUISupp
     MessageDialog confirmDialog =
       new MessageDialog( getShell(), title, null, msg, MessageDialog.NONE, new String[] { ok }, 0 ) {
         @Override
-        protected Point getInitialSize() {
-          return new Point( DIALOG_WIDTH, DIALOG_HEIGHT );
-        }
-
-        @Override
         protected void configureShell( Shell shell ) {
           super.configureShell( shell );
           shell.setBackground( shell.getDisplay().getSystemColor( DIALOG_COLOR ) );
@@ -514,6 +511,9 @@ public class BrowseController extends AbstractXulEventHandler implements IUISupp
       if ( newName != null ) {
         if ( selectedFolder == null ) {
           selectedFolder = repositoryDirectory;
+        }
+        if ( newName.equals( "." ) || newName.equals( ".." ) ) {
+          throw new Exception( BaseMessages.getString( PKG, "BrowserController.InvalidFolderName" ) );
         }
         //Do an explicit check here to see if the folder already exists in the ui
         //This is to prevent a double message being sent in case the folder does
@@ -660,6 +660,15 @@ public class BrowseController extends AbstractXulEventHandler implements IUISupp
 
   // Object being dragged from the hierarchical folder tree
   public void onDragFromGlobalTree( DropEvent event ) {
+    for ( UIRepositoryDirectory uiRepositoryDirectory : this.getSelectedFolderItems() ) {
+      String path = uiRepositoryDirectory.getDirectory().getPath();
+
+      if ( path.equals( HOME_PATH ) || path.equals( PUBLIC_PATH ) ) {
+        event.setAccepted( false );
+        return;
+      }
+    }
+
     event.setAccepted( true );
   }
 
@@ -834,7 +843,12 @@ public class BrowseController extends AbstractXulEventHandler implements IUISupp
     } else {
       setRepositoryItems( selectedFileItems );
     }
-    folderTree.setSelectedItems( this.selectedFolderItems );
+
+    if ( selectedFileItems.isEmpty() ) {
+      // we only need to call this once when the tree selection changes, in which case the selectedFileItems is empty
+      // calling this will hide the history tab which we want to have visible when a file is selected and selectedFileItems is not empty
+      folderTree.setSelectedItems( this.selectedFolderItems );
+    }
   }
 
   public Binding getSelectedItemsBinding() {

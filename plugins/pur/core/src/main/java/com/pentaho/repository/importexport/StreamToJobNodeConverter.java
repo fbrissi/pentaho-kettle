@@ -1,5 +1,5 @@
 /*!
- * Copyright 2010 - 2017 Hitachi Vantara.  All rights reserved.
+ * Copyright 2010 - 2019 Hitachi Vantara.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package com.pentaho.repository.importexport;
 
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.Serializable;
 import java.util.Arrays;
@@ -24,21 +25,27 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 
+import com.google.common.annotations.VisibleForTesting;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.pentaho.di.cluster.SlaveServer;
 import org.pentaho.di.core.database.DatabaseMeta;
 import org.pentaho.di.core.exception.KettleException;
+import org.pentaho.di.core.exception.KettleMissingPluginsException;
+import org.pentaho.di.i18n.BaseMessages;
 import org.pentaho.di.job.JobMeta;
+import org.pentaho.di.job.entries.missing.MissingEntry;
 import org.pentaho.di.repository.Repository;
 import org.pentaho.di.repository.RepositoryElementInterface;
 import org.pentaho.di.repository.StringObjectId;
 import org.pentaho.di.repository.pur.JobDelegate;
+import org.pentaho.di.ui.job.entries.missing.MissingEntryDialog;
 import org.pentaho.platform.api.repository2.unified.Converter;
 import org.pentaho.platform.api.repository2.unified.IRepositoryFileData;
 import org.pentaho.platform.api.repository2.unified.IUnifiedRepository;
 import org.pentaho.platform.api.repository2.unified.RepositoryFile;
+import org.pentaho.platform.api.repository2.unified.ConverterException;
 import org.pentaho.platform.api.repository2.unified.data.node.NodeRepositoryFileData;
 import org.pentaho.platform.api.repository2.unified.data.simple.SimpleRepositoryFileData;
 import org.w3c.dom.Document;
@@ -52,6 +59,9 @@ public class StreamToJobNodeConverter implements Converter {
 
   IUnifiedRepository unifiedRepository;
   private static final Log logger = LogFactory.getLog( StreamToJobNodeConverter.class );
+
+  /** The package name, used for internationalization of messages. */
+  private static Class<?> PKG = MissingEntryDialog.class; // for i18n purposes, needed by Translator2!!
 
   /**
    * 
@@ -86,17 +96,7 @@ public class StreamToJobNodeConverter implements Converter {
           try {
             JobMeta jobMeta = repository.loadJob( new StringObjectId( fileId.toString() ), null );
             if ( jobMeta != null ) {
-              Set<String> privateDatabases = jobMeta.getPrivateDatabases();
-              if ( privateDatabases != null ) {
-                // keep only private transformation databases
-                for ( Iterator<DatabaseMeta> it = jobMeta.getDatabases().iterator(); it.hasNext(); ) {
-                  String databaseName = it.next().getName();
-                  if ( !privateDatabases.contains( databaseName ) ) {
-                    it.remove();
-                  }
-                }
-              }
-              return new ByteArrayInputStream( jobMeta.getXML().getBytes() );
+              return new ByteArrayInputStream( filterPrivateDatabases( jobMeta ).getXML().getBytes() );
             }
           } catch ( KettleException e ) {
             logger.error( e );
@@ -114,6 +114,22 @@ public class StreamToJobNodeConverter implements Converter {
       logger.error( e );
     }
     return is;
+  }
+
+  @VisibleForTesting
+  JobMeta filterPrivateDatabases( JobMeta jobMeta ) {
+    Set<String> privateDatabases = jobMeta.getPrivateDatabases();
+    if ( privateDatabases != null ) {
+      // keep only private transformation databases
+      for ( Iterator<DatabaseMeta> it = jobMeta.getDatabases().iterator(); it.hasNext(); ) {
+        DatabaseMeta databaseMeta = it.next();
+        String databaseName = databaseMeta.getName();
+        if ( !privateDatabases.contains( databaseName ) && !jobMeta.isDatabaseConnectionUsed( databaseMeta ) ) {
+          it.remove();
+        }
+      }
+    }
+    return jobMeta;
   }
 
   // package-local visibility for testing purposes
@@ -136,15 +152,32 @@ public class StreamToJobNodeConverter implements Converter {
       Document doc = PDIImportUtil.loadXMLFrom( inputStream );
       if ( doc != null ) {
         jobMeta.loadXML( doc.getDocumentElement(), repository, null );
+        if ( jobMeta.hasMissingPlugins() ) {
+          KettleMissingPluginsException
+            missingPluginsException =
+            new KettleMissingPluginsException( getErrorMessage( jobMeta.getMissingEntries() ) );
+          throw new ConverterException( missingPluginsException );
+        }
         JobDelegate delegate = new JobDelegate( repository, this.unifiedRepository );
         delegate.saveSharedObjects( jobMeta, null );
         return new NodeRepositoryFileData( delegate.elementToDataNode( jobMeta ), size );
       } else {
         return null;
       }
-    } catch ( Exception e ) {
+    } catch ( IOException | KettleException e ) {
       return null;
     }
+  }
+
+  private String getErrorMessage( List<MissingEntry> missingEntries ) {
+    StringBuilder entries = new StringBuilder();
+    for ( MissingEntry entry : missingEntries ) {
+      entries.append( "- " + entry.getName() + " - " + entry.getMissingPluginId() + "\n" );
+      if ( missingEntries.indexOf( entry ) == missingEntries.size() - 1 ) {
+        entries.append( '\n' );
+      }
+    }
+    return BaseMessages.getString( PKG, "MissingEntryDialog.MissingJobEntries", entries.toString() );
   }
 
   public void saveSharedObjects( final Repository repo, final RepositoryElementInterface element )

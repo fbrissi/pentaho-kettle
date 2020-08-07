@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2019 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -29,8 +29,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import org.apache.commons.lang.StringUtils;
-import org.apache.commons.vfs2.FileObject;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.custom.CCombo;
 import org.eclipse.swt.custom.CTabFolder;
@@ -67,7 +65,6 @@ import org.pentaho.di.core.row.RowMetaInterface;
 import org.pentaho.di.core.row.ValueMetaInterface;
 import org.pentaho.di.core.row.value.ValueMetaFactory;
 import org.pentaho.di.core.row.value.ValueMetaString;
-import org.pentaho.di.core.vfs.KettleVFS;
 import org.pentaho.di.i18n.BaseMessages;
 import org.pentaho.di.trans.TransMeta;
 import org.pentaho.di.trans.step.BaseStepMeta;
@@ -77,14 +74,16 @@ import org.pentaho.di.trans.steps.textfileoutput.TextFileField;
 import org.pentaho.di.trans.steps.textfileoutput.TextFileOutputMeta;
 import org.pentaho.di.ui.core.dialog.EnterSelectionDialog;
 import org.pentaho.di.ui.core.dialog.ErrorDialog;
+import org.pentaho.di.ui.core.events.dialog.FilterType;
+import org.pentaho.di.ui.core.events.dialog.SelectionAdapterFileDialogTextVar;
+import org.pentaho.di.ui.core.events.dialog.SelectionAdapterOptions;
+import org.pentaho.di.ui.core.events.dialog.SelectionOperation;
 import org.pentaho.di.ui.core.widget.ColumnInfo;
 import org.pentaho.di.ui.core.widget.ComboVar;
 import org.pentaho.di.ui.core.widget.TableView;
 import org.pentaho.di.ui.core.widget.TextVar;
-import org.pentaho.di.ui.spoon.Spoon;
 import org.pentaho.di.ui.trans.step.BaseStepDialog;
 import org.pentaho.di.ui.trans.step.TableItemInsertListener;
-import org.pentaho.vfs.ui.VfsFileChooserDialog;
 
 public class TextFileOutputDialog extends BaseStepDialog implements StepDialogInterface {
   private static Class<?> PKG = TextFileOutputMeta.class; // for i18n purposes, needed by Translator2!!
@@ -152,7 +151,7 @@ public class TextFileOutputDialog extends BaseStepDialog implements StepDialogIn
   private FormData fdlEnclosure, fdEnclosure;
 
   private Label wlEndedLine;
-  private Text wEndedLine;
+  private TextVar wEndedLine;
   private FormData fdlEndedLine, fdEndedLine;
 
   private Label wlEnclForced;
@@ -192,7 +191,7 @@ public class TextFileOutputDialog extends BaseStepDialog implements StepDialogIn
   private FormData fdlFastDump, fdFastDump;
 
   private Label wlSplitEvery;
-  private Text wSplitEvery;
+  private TextVar wSplitEvery;
   private FormData fdlSplitEvery, fdSplitEvery;
 
   private TableView wFields;
@@ -976,7 +975,7 @@ public class TextFileOutputDialog extends BaseStepDialog implements StepDialogIn
     fdlSplitEvery.top = new FormAttachment( wFastDump, margin );
     fdlSplitEvery.right = new FormAttachment( middle, -margin );
     wlSplitEvery.setLayoutData( fdlSplitEvery );
-    wSplitEvery = new Text( wContentComp, SWT.SINGLE | SWT.LEFT | SWT.BORDER );
+    wSplitEvery = new TextVar( transMeta, wContentComp, SWT.SINGLE | SWT.LEFT | SWT.BORDER );
     props.setLook( wSplitEvery );
     wSplitEvery.addModifyListener( lsMod );
     fdSplitEvery = new FormData();
@@ -994,7 +993,7 @@ public class TextFileOutputDialog extends BaseStepDialog implements StepDialogIn
     fdlEndedLine.top = new FormAttachment( wSplitEvery, margin );
     fdlEndedLine.right = new FormAttachment( middle, -margin );
     wlEndedLine.setLayoutData( fdlEndedLine );
-    wEndedLine = new Text( wContentComp, SWT.SINGLE | SWT.LEFT | SWT.BORDER );
+    wEndedLine = new TextVar( transMeta, wContentComp, SWT.SINGLE | SWT.LEFT | SWT.BORDER );
     props.setLook( wEndedLine );
     wEndedLine.addModifyListener( lsMod );
     fdEndedLine = new FormData();
@@ -1203,39 +1202,11 @@ public class TextFileOutputDialog extends BaseStepDialog implements StepDialogIn
       }
     } );
 
-    wbFilename.addSelectionListener( new SelectionAdapter() {
-      public void widgetSelected( SelectionEvent e ) {
-        VfsFileChooserDialog fileChooserDialog = Spoon.getInstance().getVfsFileChooserDialog( null, null );
-        if ( wFilename.getText() != null ) {
-          try {
-            fileChooserDialog.initialFile =
-                KettleVFS.getFileObject( transMeta.environmentSubstitute( wFilename.getText() ) );
-          } catch ( KettleException ex ) {
-            fileChooserDialog.initialFile = null;
-          }
-        }
-        FileObject
-            selectedFile =
-            fileChooserDialog
-                .open( shell, null, "file", new String[] { "*.txt", "*.csv", "*" },
-                    new String[] { BaseMessages.getString( PKG, "System.FileType.TextFiles" ),
-                        BaseMessages.getString( PKG, "System.FileType.CSVFiles" ),
-                        BaseMessages.getString( PKG, "System.FileType.AllFiles" ) },
-                    VfsFileChooserDialog.VFS_DIALOG_OPEN_FILE_OR_DIRECTORY );
-        if ( selectedFile != null ) {
-          String file = selectedFile.getName().getURI();
-          if ( !StringUtils.isBlank( file ) ) {
-            file = file.replace( "file://", "" ).replace( "/C:", "C:" );
-          }
-          if ( !file.contains( System.getProperty( "file.separator" ) ) ) {
-            if ( !System.getProperty( "file.separator" ).equals( "/" ) ) {
-              file = file.replace( "/", System.getProperty( "file.separator" ) );
-            }
-          }
-          wFilename.setText( file );
-        }
-      }
-    } );
+    wbFilename.addSelectionListener(
+      new SelectionAdapterFileDialogTextVar( log, wFilename, transMeta,
+        new SelectionAdapterOptions( SelectionOperation.SAVE_TO_FILE_FOLDER,
+          new FilterType[] { FilterType.TXT, FilterType.CSV, FilterType.ALL },
+          FilterType.TXT ) ) );
 
     // Detect X or ALT-F4 or something that kills this window...
     shell.addShellListener( new ShellAdapter() {
@@ -1466,7 +1437,7 @@ public class TextFileOutputDialog extends BaseStepDialog implements StepDialogIn
       wFileNameField.setText( input.getFileNameField() );
     }
 
-    wSplitEvery.setText( "" + input.getSplitEvery() );
+    wSplitEvery.setText( Const.NVL( input.getSplitEveryRows(), "" ) );
 
     wEnclForced.setSelection( input.isEnclosureForced() );
     wDisableEnclosureFix.setSelection( input.isEnclosureFixDisabled() );
@@ -1546,7 +1517,7 @@ public class TextFileOutputDialog extends BaseStepDialog implements StepDialogIn
     tfoi.setSeparator( wSeparator.getText() );
     tfoi.setEnclosure( wEnclosure.getText() );
     tfoi.setExtension( wExtension.getText() );
-    tfoi.setSplitEvery( Const.toInt( wSplitEvery.getText(), 0 ) );
+    tfoi.setSplitEveryRows( wSplitEvery.getText() );
     tfoi.setEndedLine( wEndedLine.getText() );
 
     tfoi.setFileNameField( wFileNameField.getText() );

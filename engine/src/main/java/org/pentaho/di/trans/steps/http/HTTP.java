@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2017 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2020 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -22,6 +22,7 @@
 
 package org.pentaho.di.trans.steps.http;
 
+import com.google.common.annotations.VisibleForTesting;
 import org.apache.commons.lang.StringUtils;
 import org.apache.http.Header;
 import org.apache.http.HttpEntity;
@@ -56,7 +57,6 @@ import org.pentaho.di.trans.step.StepInterface;
 import org.pentaho.di.trans.step.StepMeta;
 import org.pentaho.di.trans.step.StepMetaInterface;
 
-import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.UnknownHostException;
@@ -64,7 +64,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Retrieves values from a database by calling database stored procedures or functions
+ * Retrieves data from an HTTP endpoint
  *
  * @author Matt
  * @since 26-apr-2003
@@ -97,7 +97,8 @@ public class HTTP extends BaseStep implements StepInterface {
     return callHttpService( rowMeta, row );
   }
 
-  private Object[] callHttpService( RowMetaInterface rowMeta, Object[] rowData ) throws KettleException {
+  @VisibleForTesting
+  Object[] callHttpService( RowMetaInterface rowMeta, Object[] rowData ) throws KettleException {
     HttpClientManager.HttpClientBuilderFacade clientBuilder = HttpClientManager.getInstance().createBuilder();
 
     if ( data.realConnectionTimeout > -1 ) {
@@ -148,7 +149,7 @@ public class HTTP extends BaseStep implements StepInterface {
 
         // Preemptive authentication
         if ( StringUtils.isNotBlank( data.realProxyHost ) ) {
-          HttpHost target = new HttpHost( data.realProxyHost, data.realProxyPort, "http" );
+          HttpHost target = new HttpHost( uri.getHost(), uri.getPort(), uri.getScheme() );
           // Create AuthCache instance
           AuthCache authCache = new BasicAuthCache();
           // Generate BASIC scheme object and add it to the local
@@ -187,7 +188,7 @@ public class HTTP extends BaseStep implements StepInterface {
           default:
             HttpEntity entity = httpResponse.getEntity();
             if ( entity != null ) {
-              body = EntityUtils.toString( entity );
+              body = StringUtils.isEmpty( meta.getEncoding() ) ? EntityUtils.toString( entity ) : EntityUtils.toString( entity, meta.getEncoding() );
             } else {
               body = "";
             }
@@ -261,14 +262,13 @@ public class HTTP extends BaseStep implements StepInterface {
       }
 
       uriBuilder = new URIBuilder( baseUrl ); // the base URL with variable substitution
-      List<NameValuePair> queryParams = uriBuilder.getQueryParams();
 
       for ( int i = 0; i < data.argnrs.length; i++ ) {
         String key = meta.getArgumentParameter()[ i ];
         String value = outputRowMeta.getString( row, data.argnrs[ i ] );
-        BasicNameValuePair basicNameValuePair = new BasicNameValuePair( key, value );
-        queryParams.add( basicNameValuePair );
+        uriBuilder.addParameter( key, value );
       }
+      List<NameValuePair> queryParams = uriBuilder.getQueryParams();
       if ( !queryParams.isEmpty() ) {
         uriBuilder.setParameters( queryParams );
       }
@@ -280,14 +280,6 @@ public class HTTP extends BaseStep implements StepInterface {
 
   protected int requestStatusCode( HttpResponse httpResponse ) {
     return httpResponse.getStatusLine().getStatusCode();
-  }
-
-  protected InputStreamReader openStream( String encoding, HttpResponse httpResponse ) throws Exception {
-    if ( !Utils.isEmpty( encoding ) ) {
-      return new InputStreamReader( httpResponse.getEntity().getContent(), encoding );
-    } else {
-      return new InputStreamReader( httpResponse.getEntity().getContent() );
-    }
   }
 
   protected Header[] searchForHeaders( CloseableHttpResponse response ) {

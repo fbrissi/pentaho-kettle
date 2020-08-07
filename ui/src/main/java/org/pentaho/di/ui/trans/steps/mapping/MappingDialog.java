@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2020 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -75,6 +75,7 @@ import org.pentaho.di.ui.core.ConstUI;
 import org.pentaho.di.ui.core.dialog.EnterMappingDialog;
 import org.pentaho.di.ui.core.dialog.EnterSelectionDialog;
 import org.pentaho.di.ui.core.dialog.ErrorDialog;
+import org.pentaho.di.ui.core.dialog.WarningDialog;
 import org.pentaho.di.ui.core.gui.GUIResource;
 import org.pentaho.di.ui.core.widget.ColumnInfo;
 import org.pentaho.di.ui.core.widget.ColumnsResizer;
@@ -84,12 +85,16 @@ import org.pentaho.di.ui.spoon.Spoon;
 import org.pentaho.di.ui.trans.step.BaseStepDialog;
 import org.pentaho.di.ui.util.DialogHelper;
 import org.pentaho.di.ui.util.DialogUtils;
+import org.pentaho.di.ui.util.MappingUtil;
 import org.pentaho.di.ui.util.SwtSvgImageUtil;
 import org.pentaho.vfs.ui.VfsFileChooserDialog;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 public class MappingDialog extends BaseStepDialog implements StepDialogInterface {
   private static Class<?> PKG = MappingMeta.class; // for i18n purposes, needed by Translator2!!
@@ -1012,14 +1017,24 @@ public class MappingDialog extends BaseStepDialog implements StepDialogInterface
           String[] sourceFields = sourceRowMeta.getFieldNames();
           String[] targetFields = targetRowMeta.getFieldNames();
 
-          EnterMappingDialog dialog = new EnterMappingDialog( shell, sourceFields, targetFields );
+          //Refresh mappings
+          int nrLines = wFieldMappings.nrNonEmpty();
+          definitions.get( wInputList.getSelectionIndex() ).getValueRenames().clear();
+          for ( int i = 0; i < nrLines; i++ ) {
+            TableItem item = wFieldMappings.getNonEmpty( i );
+            definitions.get( wInputList.getSelectionIndex() ).getValueRenames().add( new MappingValueRename( item.getText( 1 ), item.getText( 2 ) ) );
+          }
+
+          List<MappingValueRename> mappingValue = definitions.get( wInputList.getSelectionIndex() ).getValueRenames();
+          List<SourceToTargetMapping> currentMappings = MappingUtil.getCurrentMappings( Arrays.asList( sourceFields ), Arrays.asList( targetFields ), mappingValue );
+          EnterMappingDialog dialog = new EnterMappingDialog( shell, sourceFields, targetFields, currentMappings );
           List<SourceToTargetMapping> mappings = dialog.open();
           if ( mappings != null ) {
             // first clear the dialog...
             wFieldMappings.clearAll( false );
 
             //
-            definitions.get( wInputList.getSelectionIndex() ).getValueRenames().clear();
+            mappingValue.clear();
 
             // Now add the new values...
             for ( SourceToTargetMapping mapping : mappings ) {
@@ -1029,15 +1044,22 @@ public class MappingDialog extends BaseStepDialog implements StepDialogInterface
 
               String source = input ? item.getText( 1 ) : item.getText( 2 );
               String target = input ? item.getText( 2 ) : item.getText( 1 );
-              definitions.get( wInputList.getSelectionIndex() ).getValueRenames().add( new MappingValueRename( source, target ) );
+              mappingValue.add( new MappingValueRename( source, target ) );
             }
             wFieldMappings.removeEmptyRows();
             wFieldMappings.setRowNums();
             wFieldMappings.optWidth( true );
           }
         } catch ( KettleException e ) {
-          new ErrorDialog( shell, BaseMessages.getString( PKG, "System.Dialog.Error.Title" ), BaseMessages.getString(
-            PKG, "MappingDialog.Exception.ErrorGettingMappingSourceAndTargetFields", e.toString() ), e );
+          Listener ok = new Listener() {
+            @Override
+            public void handleEvent( final Event event ) { /* do nothing for now */ }
+          };
+          Map<String, Listener> listenerMap = new LinkedHashMap<>();
+          listenerMap.put( BaseMessages.getString( "System.Button.OK" ), ok );
+          new WarningDialog( shell, BaseMessages.getString( PKG, "System.Dialog.Error.Title" ), e.getMessage(), listenerMap );
+          //new ErrorDialog( shell, BaseMessages.getString( PKG, "System.Dialog.Error.Title" ), BaseMessages.getString(
+           // PKG, "MappingDialog.Exception.ErrorGettingMappingSourceAndTargetFields", e.toString() ), e );
         }
       }
 
@@ -1052,7 +1074,15 @@ public class MappingDialog extends BaseStepDialog implements StepDialogInterface
         } catch ( KettleException e ) {
           // Show the missing/wrong step name error
           //
-          new ErrorDialog( shell, "Error", "Unexpected error", e );
+          Listener ok = new Listener() {
+            @Override
+            public void handleEvent( final Event event ) { /* do nothing for now */ }
+          };
+          Map<String, Listener> listenerMap = new LinkedHashMap<>();
+          listenerMap.put( BaseMessages.getString( "System.Button.OK" ), ok );
+          new WarningDialog( shell, "Error", e.getMessage(), listenerMap ).open();
+          //
+          //new ErrorDialog( shell, "Error", "Unexpected error", e );
         }
       }
     } );

@@ -3,7 +3,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2020 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -3210,32 +3210,32 @@ public class BaseStep implements VariableSpace, StepInterface, LoggingObjectInte
 
     r.addValueMeta( new ValueMetaNumber(
       BaseMessages.getString( PKG, "BaseStep.ColumnName.Copy" ) ) );
-    data[ nr ] = new Double( copynr );
+    data[ nr ] = (double) copynr;
     nr++;
 
     r.addValueMeta( new ValueMetaNumber(
       BaseMessages.getString( PKG, "BaseStep.ColumnName.LinesReaded" ) ) );
-    data[ nr ] = new Double( lines_read );
+    data[ nr ] = (double) lines_read;
     nr++;
 
     r.addValueMeta( new ValueMetaNumber(
       BaseMessages.getString( PKG, "BaseStep.ColumnName.LinesWritten" ) ) );
-    data[ nr ] = new Double( lines_written );
+    data[ nr ] = (double) lines_written;
     nr++;
 
     r.addValueMeta( new ValueMetaNumber(
       BaseMessages.getString( PKG, "BaseStep.ColumnName.LinesUpdated" ) ) );
-    data[ nr ] = new Double( lines_updated );
+    data[ nr ] = (double) lines_updated;
     nr++;
 
     r.addValueMeta( new ValueMetaNumber(
       BaseMessages.getString( PKG, "BaseStep.ColumnName.LinesSkipped" ) ) );
-    data[ nr ] = new Double( lines_skipped );
+    data[ nr ] = (double) lines_skipped;
     nr++;
 
     r.addValueMeta( new ValueMetaNumber(
       BaseMessages.getString( PKG, "BaseStep.ColumnName.Errors" ) ) );
-    data[ nr ] = new Double( errors );
+    data[ nr ] = (double) errors;
     nr++;
 
     r.addValueMeta( new ValueMetaDate( "start_date" ) );
@@ -3794,6 +3794,16 @@ public class BaseStep implements VariableSpace, StepInterface, LoggingObjectInte
   @Override
   public String environmentSubstitute( String aString ) {
     return variables.environmentSubstitute( aString );
+  }
+
+  /*
+   * (non-Javadoc)
+   *
+   * @see org.pentaho.di.core.variables.VariableSpace#environmentSubstitute(java.lang.String)
+   */
+  @Override
+  public String environmentSubstitute( String aString, boolean escapeHexDelimiter ) {
+    return variables.environmentSubstitute( aString, escapeHexDelimiter );
   }
 
   /*
@@ -4396,7 +4406,7 @@ public class BaseStep implements VariableSpace, StepInterface, LoggingObjectInte
       return handleGetRowFrom( rowSet );
     }
 
-    public void putRowTo( RowMetaInterface rowMeta, Object[] row, RowSet rowSet ) throws KettleStepException {
+    @Override public void putRowTo( RowMetaInterface rowMeta, Object[] row, RowSet rowSet ) throws KettleStepException {
       handlePutRowTo( rowMeta, row, rowSet );
     }
 

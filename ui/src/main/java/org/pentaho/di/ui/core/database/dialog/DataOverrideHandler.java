@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2017 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2020 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -25,18 +25,24 @@ package org.pentaho.di.ui.core.database.dialog;
 import java.util.ArrayList;
 
 import org.eclipse.swt.SWT;
+import org.eclipse.swt.graphics.Rectangle;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.MessageBox;
+import org.eclipse.swt.widgets.Monitor;
 import org.eclipse.swt.widgets.Shell;
+import org.pentaho.di.core.Const;
 import org.pentaho.di.core.RowMetaAndData;
 import org.pentaho.di.core.database.DatabaseMeta;
+import org.pentaho.di.core.database.DatabaseTestResults;
 import org.pentaho.di.core.row.RowMetaInterface;
 import org.pentaho.di.i18n.BaseMessages;
+import org.pentaho.di.ui.core.database.dialog.tags.ExtMenuList;
 import org.pentaho.di.ui.core.database.dialog.tags.ExtTextbox;
 import org.pentaho.di.ui.core.dialog.ErrorDialog;
 import org.pentaho.di.ui.core.dialog.PreviewRowsDialog;
 import org.pentaho.di.ui.core.dialog.ShowMessageDialog;
 import org.pentaho.ui.database.event.DataHandler;
+import org.pentaho.ui.xul.components.XulMenuList;
 import org.pentaho.ui.xul.components.XulTextbox;
 import org.pentaho.ui.xul.containers.XulTree;
 
@@ -145,7 +151,7 @@ public class DataOverrideHandler extends DataHandler {
       new XulTextbox[] {
         hostNameBox, databaseNameBox, portNumberBox, userNameBox, passwordBox, customDriverClassBox,
         customUrlBox, dataTablespaceBox, indexTablespaceBox, poolSizeBox, maxPoolSizeBox, languageBox,
-        systemNumberBox, clientBox };
+        systemNumberBox, clientBox, serverInstanceBox, warehouseBox };
 
     for ( int i = 0; i < boxes.length; i++ ) {
       XulTextbox xulTextbox = boxes[i];
@@ -161,6 +167,16 @@ public class DataOverrideHandler extends DataHandler {
       XulTree xulTree = trees[i];
       if ( xulTree != null ) {
         xulTree.setData( databaseMeta );
+      }
+    }
+
+    XulMenuList[] menus = new XulMenuList[] { namedClusterList };
+
+    for ( int i = 0; i < menus.length; i++ ) {
+      XulMenuList xulMenu = menus[i];
+      if ( xulMenu != null && xulMenu instanceof ExtMenuList ) {
+        ExtMenuList ext = (ExtMenuList) xulMenu;
+        ext.setVariableSpace( databaseMeta );
       }
     }
   }
@@ -183,4 +199,52 @@ public class DataOverrideHandler extends DataHandler {
     msgDialog.open();
   }
 
+  @Override
+  protected void showMessage( DatabaseTestResults databaseTestResults ) {
+    String title = "";
+    String message = "";
+
+    if ( databaseTestResults.isSuccess() ) {
+      title = BaseMessages.getString( PKG, "DatabaseDialog.DatabaseConnectionTestSuccess.title" );
+      message = databaseTestResults.getMessage();
+
+      if ( message.contains( Const.CR ) ) {
+        message = message.substring( 0, message.indexOf( Const.CR ) ) + Const.CR + message.substring( message.indexOf( Const.CR ) );
+        message = message.substring( 0, message.lastIndexOf( Const.CR ) );
+      }
+
+      ShowMessageDialog msgDialog = new ShowMessageDialog( getShell(), SWT.ICON_INFORMATION | SWT.OK, title, message, message.length() > 300 );
+      msgDialog.setType( Const.SHOW_MESSAGE_DIALOG_DB_TEST_SUCCESS );
+      msgDialog.open();
+    } else {
+      Exception exception = databaseTestResults.getException();
+
+      title = BaseMessages.getString( PKG, "DatabaseDialog.DatabaseConnectionTest.title" );
+      message = exception != null ? exception.getMessage() : "";
+
+      if ( message.contains( Const.CR ) ) {
+        message = message.trim().split( Const.CR )[0];
+      }
+
+      new ErrorDialog( getCenteredShell( getShell() ), title, message, exception );
+    }
+  }
+
+  private Shell getCenteredShell( Shell shell ) {
+    Rectangle shellBounds = shell.getBounds();
+    Monitor monitor = shell.getDisplay().getPrimaryMonitor();
+
+    if ( shell.getParent() != null ) {
+      monitor = shell.getParent().getMonitor();
+    }
+
+    Rectangle monitorClientArea = monitor.getClientArea();
+
+    int middleX = monitorClientArea.x + ( monitorClientArea.width - shellBounds.width ) / 2;
+    int middleY = monitorClientArea.y + ( monitorClientArea.height - shellBounds.height ) / 2;
+
+    shell.setLocation( middleX, middleY );
+
+    return shell;
+  }
 }

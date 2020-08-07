@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2019 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -34,7 +34,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.Hashtable;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -62,7 +61,7 @@ import org.w3c.dom.Document;
 import org.w3c.dom.Node;
 
 public abstract class BasePluginType implements PluginTypeInterface {
-  protected static Class<?> PKG = BasePluginType.class; // for i18n purposes, needed by Translator2!!
+  protected static final Class<?> PKG = BasePluginType.class; // for i18n purposes, needed by Translator2!!
 
   protected String id;
   protected String name;
@@ -76,14 +75,14 @@ public abstract class BasePluginType implements PluginTypeInterface {
 
   protected boolean searchLibDir;
 
-  Class<? extends java.lang.annotation.Annotation> pluginType;
+  Class<? extends java.lang.annotation.Annotation> pluginClass;
 
-  public BasePluginType( Class<? extends java.lang.annotation.Annotation> pluginType ) {
+  public BasePluginType( Class<? extends java.lang.annotation.Annotation> pluginClass ) {
     this.pluginFolders = new ArrayList<>();
     this.log = new LogChannel( "Plugin type" );
 
     registry = PluginRegistry.getInstance();
-    this.pluginType = pluginType;
+    this.pluginClass = pluginClass;
   }
 
   /**
@@ -92,8 +91,8 @@ public abstract class BasePluginType implements PluginTypeInterface {
    * @param name
    *          the name of the plugin
    */
-  public BasePluginType( Class<? extends java.lang.annotation.Annotation> pluginType, String id, String name ) {
-    this( pluginType );
+  public BasePluginType( Class<? extends java.lang.annotation.Annotation> pluginClass, String id, String name ) {
+    this( pluginClass );
     this.id = id;
     this.name = name;
   }
@@ -207,14 +206,12 @@ public abstract class BasePluginType implements PluginTypeInterface {
         inputStream = getResAsStreamExternal( "/" + xmlFile );
       }
 
-      if ( !Utils.isEmpty( getAlternativePluginFile() ) ) {
+      if ( !Utils.isEmpty( getAlternativePluginFile() ) && inputStream == null && !Utils.isEmpty( alternative ) ) {
         // Retry to load a regular file...
-        if ( inputStream == null && !Utils.isEmpty( alternative ) ) {
-          try {
-            inputStream = getFileInputStreamExternal( xmlFile );
-          } catch ( Exception e ) {
-            throw new KettlePluginException( "Unable to load native plugins '" + xmlFile + "'", e );
-          }
+        try {
+          inputStream = getFileInputStreamExternal( xmlFile );
+        } catch ( Exception e ) {
+          throw new KettlePluginException( "Unable to load native plugins '" + xmlFile + "'", e );
         }
       }
 
@@ -367,10 +364,8 @@ public abstract class BasePluginType implements PluginTypeInterface {
         // restore loglevel, when the last alternative fails, log it when loglevel is detailed
         //
         DefaultLogLevel.setLogLevel( oldLogLevel );
-        if ( !Utils.isEmpty( altPackageName ) ) {
-          if ( translation.startsWith( "!" ) && translation.endsWith( "!" ) ) {
-            translation = BaseMessages.getString( altPackageName, string, resourceClass );
-          }
+        if ( !Utils.isEmpty( altPackageName ) && translation.startsWith( "!" ) && translation.endsWith( "!" ) ) {
+          translation = BaseMessages.getString( altPackageName, string, resourceClass );
         }
       } else {
         // Translations are not supported, simply keep the original text.
@@ -392,15 +387,20 @@ public abstract class BasePluginType implements PluginTypeInterface {
 
       if ( pluginFolder.isPluginAnnotationsFolder() ) {
 
+        FileObject[] fileObjects = null;
         try {
           // Get all the jar files in the plugin folder...
           //
-          FileObject[] fileObjects = jarFileCache.getFileObjects( pluginFolder );
-          if ( fileObjects != null ) {
-            for ( FileObject fileObject : fileObjects ) {
+          fileObjects = jarFileCache.getFileObjects( pluginFolder );
+        } catch ( Exception e ) {
+          log.logError( e.getMessage(), e );
+        }
 
-              // These are the jar files : find annotations in it...
-              //
+        if ( fileObjects != null ) {
+          for ( FileObject fileObject : fileObjects ) {
+            // These are the jar files : find annotations in it...
+            //
+            try {
               AnnotationDB annotationDB = jarFileCache.getAnnotationDB( fileObject );
               Set<String> impls = annotationDB.getAnnotationIndex().get( annotationClassName );
               if ( impls != null ) {
@@ -410,11 +410,13 @@ public abstract class BasePluginType implements PluginTypeInterface {
                     .getParent().getURL() ) );
                 }
               }
+            } catch ( Exception jarPluginLoadError ) {
+              LogChannel.GENERAL.logError( "Error while finding annotations for jar plugin: '"
+                + fileObject + "'" );
+              LogChannel.GENERAL.logDebug( "Error while finding annotations for jar plugin: '"
+                + fileObject + "'", jarPluginLoadError );
             }
-
           }
-        } catch ( Exception e ) {
-          e.printStackTrace();
         }
       }
     }
@@ -486,7 +488,7 @@ public abstract class BasePluginType implements PluginTypeInterface {
     Class<? extends PluginTypeInterface> pluginType, boolean nativePlugin, URL pluginFolder ) throws KettlePluginException {
     try {
 
-      String id = XMLHandler.getTagAttribute( pluginNode, "id" );
+      String idAttr = XMLHandler.getTagAttribute( pluginNode, "id" );
       String description = getTagOrAttribute( pluginNode, "description" );
       String iconfile = getTagOrAttribute( pluginNode, "iconfile" );
       String tooltip = getTagOrAttribute( pluginNode, "tooltip" );
@@ -496,11 +498,12 @@ public abstract class BasePluginType implements PluginTypeInterface {
       String documentationUrl = getTagOrAttribute( pluginNode, "documentation_url" );
       String casesUrl = getTagOrAttribute( pluginNode, "cases_url" );
       String forumUrl = getTagOrAttribute( pluginNode, "forum_url" );
+      String suggestion = getTagOrAttribute( pluginNode, "suggestion" );
 
       Node libsnode = XMLHandler.getSubNode( pluginNode, "libraries" );
       int nrlibs = XMLHandler.countNodes( libsnode, "library" );
 
-      List<String> jarFiles = new ArrayList<String>();
+      List<String> jarFiles = new ArrayList<>();
       if ( path != null ) {
         for ( int j = 0; j < nrlibs; j++ ) {
           Node libnode = XMLHandler.getSubNodeByNr( libsnode, "library", j );
@@ -517,6 +520,9 @@ public abstract class BasePluginType implements PluginTypeInterface {
       Map<String, String> localDescriptions =
         readPluginLocale( pluginNode, "localized_description", "description" );
       description = getAlternativeTranslation( description, localDescriptions );
+      description += addDeprecation( category );
+
+      suggestion = getAlternativeTranslation( suggestion, localDescriptions );
 
       Map<String, String> localizedTooltips = readPluginLocale( pluginNode, "localized_tooltip", "tooltip" );
       tooltip = getAlternativeTranslation( tooltip, localizedTooltips );
@@ -527,7 +533,7 @@ public abstract class BasePluginType implements PluginTypeInterface {
         errorHelpFileFull = ( path == null ) ? errorHelpfile : path + Const.FILE_SEPARATOR + errorHelpfile;
       }
 
-      Map<Class<?>, String> classMap = new HashMap<Class<?>, String>();
+      Map<Class<?>, String> classMap = new HashMap<>();
 
       PluginMainClassType mainClassTypesAnnotation = pluginType.getAnnotation( PluginMainClassType.class );
       classMap.put( mainClassTypesAnnotation.value(), classname );
@@ -552,13 +558,13 @@ public abstract class BasePluginType implements PluginTypeInterface {
 
       PluginInterface pluginInterface =
         new Plugin(
-          id.split( "," ), pluginType, mainClassTypesAnnotation.value(), category, description, tooltip,
+          idAttr.split( "," ), pluginType, mainClassTypesAnnotation.value(), category, description, tooltip,
           iconFilename, false, nativePlugin, classMap, jarFiles, errorHelpFileFull, pluginFolder,
-          documentationUrl, casesUrl, forumUrl );
+          documentationUrl, casesUrl, forumUrl, suggestion );
       registry.registerPlugin( pluginType, pluginInterface );
 
       return pluginInterface;
-    } catch ( Throwable e ) {
+    } catch ( Exception e ) {
       throw new KettlePluginException( BaseMessages.getString(
         PKG, "BasePluginType.RuntimeError.UnableToReadPluginXML.PLUGIN0001" ), e );
     }
@@ -601,7 +607,7 @@ public abstract class BasePluginType implements PluginTypeInterface {
   }
 
   protected Map<String, String> readPluginLocale( Node pluginNode, String localizedTag, String translationTag ) {
-    Map<String, String> map = new Hashtable<String, String>();
+    Map<String, String> map = new HashMap<>();
 
     Node locTipsNode = XMLHandler.getSubNode( pluginNode, localizedTag );
     int nrLocTips = XMLHandler.countNodes( locTipsNode, translationTag );
@@ -671,10 +677,13 @@ public abstract class BasePluginType implements PluginTypeInterface {
 
   protected abstract String extractDocumentationUrl( java.lang.annotation.Annotation annotation );
 
+  protected abstract String extractSuggestion( java.lang.annotation.Annotation annotation );
+
   protected abstract String extractCasesUrl( java.lang.annotation.Annotation annotation );
 
   protected abstract String extractForumUrl( java.lang.annotation.Annotation annotation );
 
+  @SuppressWarnings( "squid:S1172" )  //Overriding classes use the parameter
   protected String extractClassLoaderGroup( java.lang.annotation.Annotation annotation ) {
     return null;
   }
@@ -690,7 +699,7 @@ public abstract class BasePluginType implements PluginTypeInterface {
   }
 
   protected void registerPluginJars() throws KettlePluginException {
-    List<JarFileAnnotationPlugin> jarFilePlugins = findAnnotatedClassFiles( pluginType.getName() );
+    List<JarFileAnnotationPlugin> jarFilePlugins = findAnnotatedClassFiles( pluginClass.getName() );
     for ( JarFileAnnotationPlugin jarFilePlugin : jarFilePlugins ) {
 
       URLClassLoader urlClassLoader =
@@ -704,7 +713,7 @@ public abstract class BasePluginType implements PluginTypeInterface {
         List<String> libraries = Arrays.stream( urlClassLoader.getURLs() )
           .map( URL::getFile )
           .collect( Collectors.toList() );
-        Annotation annotation = clazz.getAnnotation( pluginType );
+        Annotation annotation = clazz.getAnnotation( pluginClass );
 
         handlePluginAnnotation( clazz, annotation, libraries, false, jarFilePlugin.getPluginFolder() );
       } catch ( Exception e ) {
@@ -712,7 +721,7 @@ public abstract class BasePluginType implements PluginTypeInterface {
         LogChannel.GENERAL.logError(
           "Unexpected error registering jar plugin file: " + jarFilePlugin.getJarFile(), e );
       } finally {
-        if ( urlClassLoader != null && urlClassLoader instanceof KettleURLClassLoader ) {
+        if ( urlClassLoader instanceof KettleURLClassLoader ) {
           ( (KettleURLClassLoader) urlClassLoader ).closeClassLoader();
         }
       }
@@ -748,7 +757,7 @@ public abstract class BasePluginType implements PluginTypeInterface {
 
     String packageName = extractI18nPackageName( annotation );
     String altPackageName = clazz.getPackage().getName();
-    String name = getTranslation( extractName( annotation ), packageName, altPackageName, clazz );
+    String pluginName = getTranslation( extractName( annotation ), packageName, altPackageName, clazz );
     String description = getTranslation( extractDesc( annotation ), packageName, altPackageName, clazz );
     String category = getTranslation( extractCategory( annotation ), packageName, altPackageName, clazz );
     String imageFile = extractImageFile( annotation );
@@ -756,7 +765,10 @@ public abstract class BasePluginType implements PluginTypeInterface {
     String documentationUrl = extractDocumentationUrl( annotation );
     String casesUrl = extractCasesUrl( annotation );
     String forumUrl = extractForumUrl( annotation );
+    String suggestion = getTranslation( extractSuggestion( annotation ), packageName, altPackageName, clazz );
     String classLoaderGroup = extractClassLoaderGroup( annotation );
+
+    pluginName += addDeprecation( category );
 
     Map<Class<?>, String> classMap = new HashMap<>();
 
@@ -768,9 +780,9 @@ public abstract class BasePluginType implements PluginTypeInterface {
 
     PluginInterface plugin =
       new Plugin(
-        ids, this.getClass(), mainType.value(), category, name, description, imageFile, separateClassLoader,
+        ids, this.getClass(), mainType.value(), category, pluginName, description, imageFile, separateClassLoader,
         classLoaderGroup, nativePluginType, classMap, libraries, null, pluginFolder, documentationUrl,
-        casesUrl, forumUrl );
+        casesUrl, forumUrl, suggestion );
 
     ParentFirst parentFirstAnnotation = clazz.getAnnotation( ParentFirst.class );
     if ( parentFirstAnnotation != null ) {
@@ -778,7 +790,7 @@ public abstract class BasePluginType implements PluginTypeInterface {
     }
     registry.registerPlugin( this.getClass(), plugin );
 
-    if ( libraries != null && libraries.size() > 0 ) {
+    if ( libraries != null && !libraries.isEmpty() ) {
       LogChannel.GENERAL.logDetailed( "Plugin with id ["
         + ids[0] + "] has " + libraries.size() + " libaries in its private class path" );
     }
@@ -792,4 +804,12 @@ public abstract class BasePluginType implements PluginTypeInterface {
    * @param annotation
    */
   protected abstract void addExtraClasses( Map<Class<?>, String> classMap, Class<?> clazz, Annotation annotation );
+
+  private String addDeprecation( String category ) {
+    String deprecated = BaseMessages.getString( PKG, "PluginRegistry.Category.Deprecated" );
+    if ( deprecated.equals( category )  ) {
+      return " (" + deprecated.toLowerCase() + ")";
+    }
+    return "";
+  }
 }

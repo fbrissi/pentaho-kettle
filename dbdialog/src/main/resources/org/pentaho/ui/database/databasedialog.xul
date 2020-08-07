@@ -3,7 +3,7 @@
 <dialog id="general-datasource-window"
 	title="${DatabaseDialog.Shell.title}" 
 	appicon="ui/images/CNC.svg"
-    height="610" width="775"
+    height="755" width="775"
 	orient="vertical"
 	onload="dataHandler.loadConnectionData()"
 	buttons="accept, cancel"
@@ -12,6 +12,7 @@
 	buttonlabelcancel="${DatabaseDialog.USER_CANCEL}"
 	ondialogaccept="dataHandler.onOK()"
 	ondialogcancel="dataHandler.onCancel()"
+	proxyoutercontext="true"
 	xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
 	xmlns:pen="http://www.pentaho.org/2008/xul">
 	

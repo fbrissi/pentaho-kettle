@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2017 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2020 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -23,6 +23,7 @@
 package org.pentaho.di.trans.steps.httppost;
 
 
+import com.google.common.annotations.VisibleForTesting;
 import org.apache.commons.lang.StringUtils;
 import org.apache.http.Header;
 import org.apache.http.HttpEntity;
@@ -35,6 +36,7 @@ import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.client.protocol.HttpClientContext;
 import org.apache.http.client.utils.URIBuilder;
+import org.apache.http.entity.ByteArrayEntity;
 import org.apache.http.entity.ContentType;
 import org.apache.http.entity.InputStreamEntity;
 import org.apache.http.entity.StringEntity;
@@ -49,6 +51,7 @@ import org.pentaho.di.core.exception.KettleException;
 import org.pentaho.di.core.exception.KettleStepException;
 import org.pentaho.di.core.row.RowDataUtil;
 import org.pentaho.di.core.util.HttpClientManager;
+import org.pentaho.di.core.util.StringUtil;
 import org.pentaho.di.core.util.Utils;
 import org.pentaho.di.i18n.BaseMessages;
 import org.pentaho.di.trans.Trans;
@@ -59,7 +62,6 @@ import org.pentaho.di.trans.step.StepInterface;
 import org.pentaho.di.trans.step.StepMeta;
 import org.pentaho.di.trans.step.StepMetaInterface;
 
-import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStreamReader;
@@ -70,6 +72,8 @@ import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+
+import static org.pentaho.di.trans.steps.httppost.HTTPPOSTMeta.DEFAULT_ENCODING;
 
 /**
  * Make a HTTP Post call
@@ -206,7 +210,7 @@ public class HTTPPOST extends BaseStep implements StepInterface {
           } else {
             bytes = tmp.getBytes();
           }
-          post.setEntity( new InputStreamEntity( new ByteArrayInputStream( bytes ), bytes.length ) );
+          post.setEntity( new ByteArrayEntity( bytes ) );
         }
       }
 
@@ -222,7 +226,7 @@ public class HTTPPOST extends BaseStep implements StepInterface {
 
         // Execute the POST method
         if ( StringUtils.isNotBlank( data.realProxyHost ) ) {
-          HttpHost target = new HttpHost( data.realProxyHost, data.realProxyPort, "http" );
+          HttpHost target = new HttpHost( uriBuilder.getHost(), uriBuilder.getPort(), uriBuilder.getScheme() );
           // Create AuthCache instance
           AuthCache authCache = new BasicAuthCache();
           // Generate BASIC scheme object and add it to the local
@@ -499,7 +503,8 @@ public class HTTPPOST extends BaseStep implements StepInterface {
     return true;
   }
 
-  private String getRequestBodyParamsAsStr( NameValuePair[] pairs, String charset ) throws KettleException {
+  @VisibleForTesting
+  String getRequestBodyParamsAsStr( NameValuePair[] pairs, String charset ) throws KettleException {
     StringBuffer buf = new StringBuffer();
     try {
       for ( int i = 0; i < pairs.length; ++i ) {
@@ -509,10 +514,10 @@ public class HTTPPOST extends BaseStep implements StepInterface {
             buf.append( "&" );
           }
 
-          buf.append( URLEncoder.encode( pair.getName(), charset ) );
+          buf.append( URLEncoder.encode( pair.getName(), !StringUtil.isEmpty( charset ) ? charset : DEFAULT_ENCODING ) );
           buf.append( "=" );
           if ( pair.getValue() != null ) {
-            buf.append( URLEncoder.encode( pair.getValue(), charset ) );
+            buf.append( URLEncoder.encode( pair.getValue(), !StringUtil.isEmpty( charset ) ? charset : DEFAULT_ENCODING ) );
           }
         }
       }

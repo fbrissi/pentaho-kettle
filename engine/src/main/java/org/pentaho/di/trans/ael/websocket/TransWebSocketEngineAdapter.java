@@ -3,7 +3,7 @@
  *
  *  Pentaho Data Integration
  *
- *  Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
+ *  Copyright (C) 2002-2019 by Hitachi Vantara : http://www.pentaho.com
  *
  * ******************************************************************************
  *
@@ -47,6 +47,7 @@ import org.pentaho.di.trans.ael.adapters.TransMetaConverter;
 import org.pentaho.di.trans.ael.websocket.exception.HandlerRegistrationException;
 import org.pentaho.di.trans.ael.websocket.exception.MessageEventHandlerExecutionException;
 import org.pentaho.di.trans.ael.websocket.handler.MessageEventHandler;
+import org.pentaho.di.trans.ael.websocket.handler.StopMessageEventHandler;
 import org.pentaho.di.trans.step.StepInterface;
 import org.pentaho.di.trans.step.StepMeta;
 import org.pentaho.di.trans.step.StepMetaDataCombi;
@@ -67,7 +68,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import static com.google.common.base.Strings.isNullOrEmpty;
 import static java.util.stream.Collectors.toMap;
+import static org.pentaho.di.trans.step.BaseStepData.StepExecutionStatus.STATUS_HALTING;
+import static org.pentaho.di.trans.step.BaseStepData.StepExecutionStatus.STATUS_RUNNING;
 
 /**
  * Created by fcamara on 8/17/17.
@@ -78,7 +82,6 @@ public class TransWebSocketEngineAdapter extends Trans {
   private static final String TRANSFORMATION_LOG = "TRANSFORMATION_LOG_TRANS_WEBSOCK";
   private static final String TRANSFORMATION_STATUS = "TRANSFORMATION_STATUS_TRANS_WEBSOCK";
   private static final String TRANSFORMATION_ERROR = "TRANSFORMATION_ERROR_TRANS_WEBSOCK";
-  private static final String TRANSFORMATION_STOP = "TRANSFORMATION_STOP_TRANS_WEBSOCK";
 
   //session monitor properties
   private static final int SLEEP_TIME_MS = 10000;
@@ -88,11 +91,11 @@ public class TransWebSocketEngineAdapter extends Trans {
   private final Transformation transformation;
   private ExecutionRequest executionRequest;
   private DaemonMessagesClientEndpoint daemonMessagesClientEndpoint = null;
-  private final MessageEventService messageEventService;
+  protected final MessageEventService messageEventService;
   private LogLevel logLevel = null;
 
   private final String host;
-  private final String port;
+  private final int port;
   private final boolean ssl;
   private boolean cancelling = false;
 
@@ -112,7 +115,7 @@ public class TransWebSocketEngineAdapter extends Trans {
     LEVEL_MAP.put( org.pentaho.di.core.logging.LogLevel.ROWLEVEL, LogLevel.TRACE );
   }
 
-  public TransWebSocketEngineAdapter( TransMeta transMeta, String host, String port, boolean ssl ) {
+  public TransWebSocketEngineAdapter( TransMeta transMeta, String host, int port, boolean ssl ) {
     transformation = TransMetaConverter.convert( transMeta );
     this.transMeta = transMeta;
     this.messageEventService = new MessageEventService();
@@ -121,7 +124,7 @@ public class TransWebSocketEngineAdapter extends Trans {
     this.ssl = ssl;
   }
 
-  DaemonMessagesClientEndpoint getDaemonEndpoint() throws KettleException {
+  public DaemonMessagesClientEndpoint getDaemonEndpoint() throws KettleException {
     try {
       if ( daemonMessagesClientEndpoint == null ) {
         daemonMessagesClientEndpoint = new DaemonMessagesClientEndpoint( host, port, ssl, messageEventService );
@@ -237,6 +240,15 @@ public class TransWebSocketEngineAdapter extends Trans {
               LogEntry logEntry = event.getData();
               StepInterface stepInterface = findStepInterface( operation.getId(), 0 );
               if ( stepInterface != null ) {
+                // This is intended to put a red error (dash) on the step in PDI.
+                // In order to do that 3 things are needed: errors have to be set
+                // to a positive number, the state is stopped state (not finished)
+                // and Error log on the step (done just below this if statement)
+                if ( LogLevel.ERROR.equals( logEntry.getLogLogLevel() ) ) {
+                  stepInterface.setErrors( 1 );
+                  stepInterface.setStopped( true );
+                }
+
                 LogChannelInterface logChannel = stepInterface.getLogChannel();
                 logToChannel( logChannel, logEntry );
               } else {
@@ -247,7 +259,7 @@ public class TransWebSocketEngineAdapter extends Trans {
 
             @Override
             public String getIdentifier() {
-              return OPERATION_LOG + operation.getId();
+              return OPERATION_LOG + operation.getKey();
             }
           } );
       } catch ( HandlerRegistrationException e ) {
@@ -295,6 +307,13 @@ public class TransWebSocketEngineAdapter extends Trans {
                 case FINISHED:
                   l.transFinished( TransWebSocketEngineAdapter.this );
                   setFinished( true );
+                  getSteps().stream()
+                    .map( c -> c.step )
+                    .filter( s -> STATUS_RUNNING.equals( s.getStatus() ) || STATUS_HALTING.equals( s.getStatus() ) )
+                    .forEach( si -> {
+                      si.setStopped( true );
+                      si.setRunning( false );
+                    } );
                   break;
               }
             } catch ( KettleException e ) {
@@ -313,9 +332,18 @@ public class TransWebSocketEngineAdapter extends Trans {
       .addHandler( Util.getTransformationErrorEvent(), new MessageEventHandler() {
         @Override
         public void execute( Message message ) throws MessageEventHandlerExecutionException {
-          Throwable throwable = ( (PDIEvent<RemoteSource, LogEntry>) message ).getData().getThrowable();
+          String errorMessage = "Error Executing Transformation";
+          LogEntry data = ( (PDIEvent<RemoteSource, LogEntry>) message ).getData();
 
-          getLogChannel().logError( "Error Executing Transformation", throwable );
+          if ( !isNullOrEmpty( data.getMessage() ) ) {
+            errorMessage = errorMessage + System.lineSeparator() + data.getMessage();
+          }
+
+          if ( data.getThrowable() != null ) {
+            getLogChannel().logError( errorMessage, data.getThrowable() );
+          } else {
+            getLogChannel().logError( errorMessage );
+          }
           errors.incrementAndGet();
           finishProcess( true );
         }
@@ -327,38 +355,13 @@ public class TransWebSocketEngineAdapter extends Trans {
       } );
 
     messageEventService
-      .addHandler( Util.getStopMessage(), new MessageEventHandler() {
-        @Override
-        public void execute( Message message ) throws MessageEventHandlerExecutionException {
-          StopMessage stopMessage = (StopMessage) message;
-
-          if ( stopMessage.sessionWasKilled() || stopMessage.operationFailed() ) {
-            getLogChannel().logError( "Finalizing execution: " + stopMessage.getReasonPhrase() );
-          } else {
-            getLogChannel().logBasic( "Finalizing execution: " + stopMessage.getReasonPhrase() );
-          }
-
-          if ( !cancelling ) {
-            finishProcess( false );
-          }
-          try {
-            getDaemonEndpoint().close( stopMessage.getReasonPhrase() );
-          } catch ( KettleException e ) {
-            getLogChannel().logError( "Error finalizing", e );
-          }
-
-          //let's shutdown the session monitor thread
-          closeSessionMonitor();
-          // Signal for the the waitUntilFinished blocker...
-          transFinishedSignal.countDown();
-        }
-
-        @Override
-        public String getIdentifier() {
-          return TRANSFORMATION_STOP;
-        }
-      } );
-
+      .addHandler( Util.getStopMessage(), new StopMessageEventHandler(
+        getLogChannel(),
+        errors,
+        transFinishedSignal,
+        this,
+        cancelling
+      ) );
   }
 
   private List<StepMetaDataCombi> opsToSteps() {
@@ -387,7 +390,7 @@ public class TransWebSocketEngineAdapter extends Trans {
     return new ArrayList<>( operationToCombi.values() );
   }
 
-  @SuppressWarnings ( "unchecked" )
+  @SuppressWarnings( "unchecked" )
   private List<StepMetaDataCombi> getSubSteps( Transformation transformation, StepMetaDataCombi combi ) {
     HashMap<String, Transformation> config =
       ( (Optional<HashMap<String, Transformation>>) transformation
@@ -447,13 +450,14 @@ public class TransWebSocketEngineAdapter extends Trans {
                 + MAX_TEST_FAILED + ")." );
         } catch ( InterruptedException e ) {
           getLogChannel().logDebug( "Session Monitor was interrupted." );
+          Thread.currentThread().interrupt();
         }
       }
       closeSessionMonitor();
     } );
   }
 
-  private void closeSessionMonitor() {
+  public void closeSessionMonitor() {
     if ( sessionMonitor != null && !sessionMonitor.isShutdown() ) {
       try {
         getLogChannel().logDebug( "Shutting down the Session Monitor." );
@@ -494,7 +498,7 @@ public class TransWebSocketEngineAdapter extends Trans {
     return toRet;
   }
 
-  private void finishProcess( boolean emitToAllSteps ) {
+  public void finishProcess( boolean emitToAllSteps ) {
     setFinished( true );
     if ( emitToAllSteps ) {
       // emit error on all steps

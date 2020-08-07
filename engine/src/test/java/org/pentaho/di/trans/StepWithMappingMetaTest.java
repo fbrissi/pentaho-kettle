@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2019 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -22,6 +22,7 @@
 package org.pentaho.di.trans;
 
 import org.junit.Assert;
+import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.Mock;
@@ -29,6 +30,7 @@ import org.mockito.Mockito;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
 import org.pentaho.di.core.Const;
+import org.pentaho.di.core.KettleEnvironment;
 import org.pentaho.di.core.ObjectLocationSpecificationMethod;
 import org.pentaho.di.core.ProgressMonitorListener;
 import org.pentaho.di.core.variables.VariableSpace;
@@ -42,19 +44,18 @@ import org.powermock.api.mockito.PowerMockito;
 import org.powermock.core.classloader.annotations.PrepareForTest;
 import org.powermock.modules.junit4.PowerMockRunner;
 
-import static org.junit.Assert.assertEquals;
-import static org.mockito.Mockito.any;
-import static org.mockito.Mockito.anyBoolean;
-import static org.mockito.Mockito.anyString;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
-
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
+import static org.junit.Assert.assertEquals;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyBoolean;
 import static org.mockito.Mockito.anyMap;
+import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 
 /**
@@ -65,6 +66,15 @@ public class StepWithMappingMetaTest {
 
   @Mock
   TransMeta transMeta;
+
+  @Before
+  public void setupBefore() throws Exception {
+    // Without initialization of the Kettle Environment, the load of the transformation fails
+    // when run in Windows (saying it cannot find the Database plugin ID for Oracle). Digging into
+    // it I discovered that it's during the read of the shared objects xml which doesn't reference Oracle
+    // at all. Initializing the environment fixed everything.
+    KettleEnvironment.init();
+  }
 
   @Test
   public void loadMappingMeta() throws Exception {
@@ -128,7 +138,7 @@ public class StepWithMappingMetaTest {
       public StepDataInterface getStepData() {
         return null;
       }
-      
+
       @Override
       public StepInterface getStep( StepMeta stepMeta, StepDataInterface stepDataInterface, int copyNr, TransMeta transMeta, Trans trans ) {
         return null;
@@ -243,18 +253,196 @@ public class StepWithMappingMetaTest {
     String childValue = "childValue";
     String paramOverwrite = "paramOverwrite";
     String parentValue = "parentValue";
+    String stepValue = "stepValue";
 
     VariableSpace parent = new Variables();
     parent.setVariable( paramOverwrite, parentValue );
 
     TransMeta childVariableSpace = new TransMeta();
+    childVariableSpace.addParameterDefinition( childParam, "", "" );
     childVariableSpace.setParameterValue( childParam, childValue );
 
     String[] parameters = childVariableSpace.listParameters();
     StepWithMappingMeta.activateParams( childVariableSpace, childVariableSpace, parent,
-      parameters, new String[] { childParam, paramOverwrite }, new String[] { childValue, childValue } );
+      parameters, new String[] { childParam, paramOverwrite }, new String[] { childValue, stepValue }, true );
 
     Assert.assertEquals( childValue, childVariableSpace.getVariable( childParam ) );
-    Assert.assertEquals( parentValue, childVariableSpace.getVariable( paramOverwrite ) );
+    // the step parameter prevails
+    Assert.assertEquals( stepValue, childVariableSpace.getVariable( paramOverwrite ) );
+  }
+
+  @Test
+  @PrepareForTest( StepWithMappingMeta.class )
+  public void activateParamsWithFalsePassParametersFlagTest() throws Exception {
+    String childParam = "childParam";
+    String childValue = "childValue";
+    String paramOverwrite = "paramOverwrite";
+    String parentValue = "parentValue";
+    String stepValue = "stepValue";
+    String parentAndChildParameter = "parentAndChildParameter";
+
+    VariableSpace parent = new Variables();
+    parent.setVariable( paramOverwrite, parentValue );
+    parent.setVariable( parentAndChildParameter, parentValue );
+
+    TransMeta childVariableSpace = new TransMeta();
+    childVariableSpace.addParameterDefinition( childParam, "", "" );
+    childVariableSpace.setParameterValue( childParam, childValue );
+    childVariableSpace.addParameterDefinition( parentAndChildParameter, "", "" );
+    childVariableSpace.setParameterValue( parentAndChildParameter, childValue );
+
+    String[] parameters = childVariableSpace.listParameters();
+    StepWithMappingMeta.activateParams( childVariableSpace, childVariableSpace, parent,
+      parameters, new String[] { childParam, paramOverwrite }, new String[] { childValue, stepValue }, false );
+
+    Assert.assertEquals( childValue, childVariableSpace.getVariable( childParam ) );
+    // the step parameter prevails
+    Assert.assertEquals( stepValue, childVariableSpace.getVariable( paramOverwrite ) );
+
+    Assert.assertEquals( childValue, childVariableSpace.getVariable( parentAndChildParameter ) );
+  }
+
+  @Test
+  @PrepareForTest( StepWithMappingMeta.class )
+  public void activateParamsWithTruePassParametersFlagTest() throws Exception {
+    String childParam = "childParam";
+    String childValue = "childValue";
+    String paramOverwrite = "paramOverwrite";
+    String parentValue = "parentValue";
+    String stepValue = "stepValue";
+    String parentAndChildParameter = "parentAndChildParameter";
+
+    VariableSpace parent = new Variables();
+    parent.setVariable( paramOverwrite, parentValue );
+    parent.setVariable( parentAndChildParameter, parentValue );
+
+    TransMeta childVariableSpace = new TransMeta();
+    childVariableSpace.addParameterDefinition( childParam, "", "" );
+    childVariableSpace.setParameterValue( childParam, childValue );
+    childVariableSpace.addParameterDefinition( parentAndChildParameter, "", "" );
+    childVariableSpace.setParameterValue( parentAndChildParameter, childValue );
+
+    String[] parameters = childVariableSpace.listParameters();
+
+    StepWithMappingMeta.activateParams( childVariableSpace, childVariableSpace, parent,
+      parameters, new String[] { childParam, paramOverwrite }, new String[] { childValue, stepValue }, true );
+
+    //childVariableSpace.setVariable( parentAndChildParameter, parentValue);
+
+    Assert.assertEquals( childValue, childVariableSpace.getVariable( childParam ) );
+    // the step parameter prevails
+    Assert.assertEquals( stepValue, childVariableSpace.getVariable( paramOverwrite ) );
+
+    Assert.assertEquals( parentValue, childVariableSpace.getVariable( parentAndChildParameter ) );
+  }
+
+  @Test
+  @PrepareForTest( StepWithMappingMeta.class )
+  public void activateParamsTestWithNoParameterChild() throws Exception {
+    String newParam = "newParamParent";
+    String parentValue = "parentValue";
+
+    TransMeta parentMeta = new TransMeta();
+    TransMeta childVariableSpace = new TransMeta();
+
+    String[] parameters = childVariableSpace.listParameters();
+
+    StepWithMappingMeta.activateParams( childVariableSpace, childVariableSpace, parentMeta,
+      parameters, new String[] { newParam }, new String[] { parentValue }, true );
+
+    Assert.assertEquals( parentValue, childVariableSpace.getParameterValue( newParam ) );
+  }
+
+  @Test
+  @PrepareForTest( StepWithMappingMeta.class )
+  public void testFileNameAsVariable() throws Exception {
+
+    String transName = "test.ktr";
+    String transDirectory = "/admin";
+
+    String transNameVar = "transName";
+    String transDirectoryVar = "transDirectory";
+
+    VariableSpace parent = new Variables();
+    parent.setVariable( transNameVar, transName );
+    parent.setVariable( transDirectoryVar, transDirectory );
+
+    StepMeta stepMeta = new StepMeta();
+    TransMeta parentTransMeta = new TransMeta();
+    stepMeta.setParentTransMeta( parentTransMeta );
+
+    StepWithMappingMeta mappingMetaMock = mock( StepWithMappingMeta.class );
+    Mockito.when( mappingMetaMock.getSpecificationMethod() ).thenReturn( ObjectLocationSpecificationMethod.FILENAME );
+    Mockito.when( mappingMetaMock.getFileName() ).thenReturn( "${" + transDirectoryVar + "}/${" + transNameVar + "}" );
+    Mockito.when( mappingMetaMock.getParentStepMeta() ).thenReturn( stepMeta );
+
+    Repository rep = mock( Repository.class );
+    RepositoryDirectoryInterface directoryInterface = Mockito.mock( RepositoryDirectoryInterface.class );
+    Mockito.doReturn( directoryInterface ).when( rep ).findDirectory( anyString() );
+    Mockito.doReturn( new TransMeta() ).when( rep )
+      .loadTransformation( anyString(), any(), any(), anyBoolean(), any() );
+
+    TransMeta transMeta = StepWithMappingMeta.loadMappingMeta( mappingMetaMock, rep, null, parent, true );
+
+    Assert.assertNotNull( transMeta );
+    Mockito.verify( rep, Mockito.times( 1 ) ).findDirectory( Mockito.eq( transDirectory ) );
+    Mockito.verify( rep, Mockito.times( 1 ) ).loadTransformation( Mockito.eq( transName ),
+      Mockito.eq( directoryInterface ), Mockito.eq( null ), Mockito.eq( true ), Mockito.eq( null ) );
+  }
+
+  @Test
+  @PrepareForTest( StepWithMappingMeta.class )
+  public void replaceVariablesWithJobInternalVariablesTest()  {
+    String variableOverwrite = "paramOverwrite";
+    String variableChildOnly = "childValueVariable";
+    String [] jobVariables = Const.INTERNAL_JOB_VARIABLES;
+    VariableSpace ChildVariables = new Variables();
+    VariableSpace replaceByParentVariables = new Variables();
+
+    for ( String internalVariable : jobVariables ) {
+      ChildVariables.setVariable( internalVariable, "childValue" );
+      replaceByParentVariables.setVariable( internalVariable, "parentValue" );
+    }
+
+    ChildVariables.setVariable( variableChildOnly, "childValueVariable" );
+    ChildVariables.setVariable( variableOverwrite, "childNotInternalValue" );
+    replaceByParentVariables.setVariable( variableOverwrite, "parentNotInternalValue" );
+
+    StepWithMappingMeta.replaceVariableValues( ChildVariables, replaceByParentVariables );
+    // do not replace internal variables
+    Assert.assertEquals( "childValue", ChildVariables.getVariable( Const.INTERNAL_VARIABLE_ENTRY_CURRENT_DIRECTORY ) );
+    // replace non internal variables
+    Assert.assertEquals( "parentNotInternalValue", ChildVariables.getVariable( variableOverwrite ) );
+    // keep child only variables
+    Assert.assertEquals( variableChildOnly, ChildVariables.getVariable( variableChildOnly ) );
+
+  }
+
+  @Test
+  @PrepareForTest( StepWithMappingMeta.class )
+  public void replaceVariablesWithTransInternalVariablesTest()  {
+    String variableOverwrite = "paramOverwrite";
+    String variableChildOnly = "childValueVariable";
+    String [] jobVariables = Const.INTERNAL_TRANS_VARIABLES;
+    VariableSpace ChildVariables = new Variables();
+    VariableSpace replaceByParentVariables = new Variables();
+
+    for ( String internalVariable : jobVariables ) {
+      ChildVariables.setVariable( internalVariable, "childValue" );
+      replaceByParentVariables.setVariable( internalVariable, "parentValue" );
+    }
+
+    ChildVariables.setVariable( variableChildOnly, "childValueVariable" );
+    ChildVariables.setVariable( variableOverwrite, "childNotInternalValue" );
+    replaceByParentVariables.setVariable( variableOverwrite, "parentNotInternalValue" );
+
+    StepWithMappingMeta.replaceVariableValues( ChildVariables, replaceByParentVariables );
+    // do not replace internal variables
+    Assert.assertEquals( "childValue", ChildVariables.getVariable( Const.INTERNAL_VARIABLE_ENTRY_CURRENT_DIRECTORY ) );
+    // replace non internal variables
+    Assert.assertEquals( "parentNotInternalValue", ChildVariables.getVariable( variableOverwrite ) );
+    // keep child only variables
+    Assert.assertEquals( variableChildOnly, ChildVariables.getVariable( variableChildOnly ) );
+
   }
 }

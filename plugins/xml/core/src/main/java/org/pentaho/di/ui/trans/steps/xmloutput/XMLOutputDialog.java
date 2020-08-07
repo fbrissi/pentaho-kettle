@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2019 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -49,7 +49,6 @@ import org.eclipse.swt.widgets.Button;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Event;
-import org.eclipse.swt.widgets.FileDialog;
 import org.eclipse.swt.widgets.Label;
 import org.eclipse.swt.widgets.Listener;
 import org.eclipse.swt.widgets.MessageBox;
@@ -73,6 +72,11 @@ import org.pentaho.di.trans.steps.xmloutput.XMLField.ContentType;
 import org.pentaho.di.trans.steps.xmloutput.XMLOutputMeta;
 import org.pentaho.di.ui.core.dialog.EnterSelectionDialog;
 import org.pentaho.di.ui.core.dialog.ErrorDialog;
+import org.pentaho.di.ui.core.events.dialog.FilterType;
+import org.pentaho.di.ui.core.events.dialog.SelectionAdapterFileDialogTextVar;
+import org.pentaho.di.ui.core.events.dialog.SelectionAdapterOptions;
+import org.pentaho.di.ui.core.events.dialog.SelectionOperation;
+import org.pentaho.di.ui.core.events.dialog.ProviderFilterType;
 import org.pentaho.di.ui.core.widget.ColumnInfo;
 import org.pentaho.di.ui.core.widget.TableView;
 import org.pentaho.di.ui.core.widget.TextVar;
@@ -848,22 +852,16 @@ public class XMLOutputDialog extends BaseStepDialog implements StepDialogInterfa
       }
     } );
 
-    wbFilename.addSelectionListener( new SelectionAdapter() {
-      public void widgetSelected( SelectionEvent e ) {
-        FileDialog dialog = new FileDialog( shell, SWT.SAVE );
-        dialog.setFilterExtensions( new String[] { "*.xml", "*.txt", "*.csv", "*" } );
-        if ( wFilename.getText() != null ) {
-          dialog.setFileName( transMeta.environmentSubstitute( wFilename.getText() ) );
-        }
-        dialog.setFilterNames( new String[] { BaseMessages.getString( PKG, "System.FileType.XMLFiles" ),
-          BaseMessages.getString( PKG, "System.FileType.TextFiles" ),
-          BaseMessages.getString( PKG, "System.FileType.CSVFiles" ),
-          BaseMessages.getString( PKG, "System.FileType.AllFiles" ) } );
-        if ( dialog.open() != null ) {
-          wFilename.setText( dialog.getFilterPath() + System.getProperty( "file.separator" ) + dialog.getFileName() );
-        }
-      }
-    } );
+    wbFilename.addSelectionListener(
+            new SelectionAdapterFileDialogTextVar(
+                    log,
+                    wFilename,
+                    transMeta,
+                    new SelectionAdapterOptions(
+                            SelectionOperation.SAVE_TO,
+                            new FilterType[] { FilterType.XML, FilterType.TXT, FilterType.CSV, FilterType.ALL },
+                            FilterType.XML,
+                            new ProviderFilterType[] {ProviderFilterType.LOCAL} ) ) );
 
     // Detect X or ALT-F4 or something that kills this window...
     shell.addShellListener( new ShellAdapter() {
@@ -1118,7 +1116,7 @@ public class XMLOutputDialog extends BaseStepDialog implements StepDialogInterfa
       if ( field.getFieldName().equals( field.getElementName() ) ) {
         field.setElementName( "" );
       }
-      field.setContentType( ContentType.valueOf( item.getText( index++ ) ) );
+      field.setContentType( ContentType.getIfPresent( item.getText( index++ ) ) );
       field.setType( item.getText( index++ ) );
       field.setFormat( item.getText( index++ ) );
       field.setLength( Const.toInt( item.getText( index++ ), -1 ) );

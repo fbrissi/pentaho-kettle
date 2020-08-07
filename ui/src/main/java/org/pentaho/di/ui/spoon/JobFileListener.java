@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2020 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -22,8 +22,7 @@
 
 package org.pentaho.di.ui.spoon;
 
-import java.util.Locale;
-
+import com.google.common.annotations.VisibleForTesting;
 import org.pentaho.di.core.EngineMetaInterface;
 import org.pentaho.di.core.LastUsedFile;
 import org.pentaho.di.core.ObjectLocationSpecificationMethod;
@@ -39,11 +38,18 @@ import org.pentaho.di.ui.core.dialog.ErrorDialog;
 import org.pentaho.di.ui.job.entries.missing.MissingEntryDialog;
 import org.w3c.dom.Node;
 
-public class JobFileListener implements FileListener {
+import java.util.Date;
+import java.util.Locale;
+
+public class JobFileListener implements FileListener, ConnectionListener {
 
   private static Class<?> PKG = Spoon.class; // for i18n purposes, needed by Translator2!!
 
   public boolean open( Node jobNode, String fname, boolean importfile ) {
+    return open( jobNode, fname, null, importfile );
+  }
+
+  public boolean open( Node jobNode, String fname, String connection, boolean importfile ) {
     Spoon spoon = Spoon.getInstance();
     try {
       // Call extension point(s) before the file has been opened
@@ -57,11 +63,17 @@ public class JobFileListener implements FileListener {
           return true;
         }
       }
+      //same fix as in PDI-18786 where the clearCurrentDirectoryChangedListeners method was added
+      clearCurrentDirectoryChangedListenersWhenImporting( importfile, jobMeta );
       jobMeta.setRepositoryDirectory( spoon.getDefaultSaveLocation( jobMeta ) );
       jobMeta.setRepository( spoon.getRepository() );
       jobMeta.setMetaStore( spoon.getMetaStore() );
+      if ( connection != null ) {
+        jobMeta.setVariable( Spoon.CONNECTION, connection );
+      }
       spoon.setJobMetaVariables( jobMeta );
-      spoon.getProperties().addLastFile( LastUsedFile.FILE_TYPE_JOB, fname, null, false, null );
+      spoon.getProperties()
+        .addLastFile( LastUsedFile.FILE_TYPE_JOB, fname, null, false, null, null, new Date(), connection );
       spoon.addMenuLast();
 
       // If we are importing into a repository we need to fix 
@@ -87,10 +99,17 @@ public class JobFileListener implements FileListener {
     } catch ( KettleException e ) {
       new ErrorDialog(
         spoon.getShell(), BaseMessages.getString( PKG, "Spoon.Dialog.ErrorOpening.Title" ), BaseMessages
-          .getString( PKG, "Spoon.Dialog.ErrorOpening.Message" )
-          + fname, e );
+        .getString( PKG, "Spoon.Dialog.ErrorOpening.Message" )
+        + fname, e );
     }
     return false;
+  }
+
+  @VisibleForTesting
+  void clearCurrentDirectoryChangedListenersWhenImporting( boolean importfile, JobMeta jobMeta ) {
+    if ( importfile ) {
+      jobMeta.clearCurrentDirectoryChangedListeners();
+    }
   }
 
   private JobMeta fixLinks( JobMeta jobMeta ) {

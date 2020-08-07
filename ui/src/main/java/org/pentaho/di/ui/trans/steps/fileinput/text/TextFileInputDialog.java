@@ -3,7 +3,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2019 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -23,7 +23,6 @@
 
 package org.pentaho.di.ui.trans.steps.fileinput.text;
 
-import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.Charset;
@@ -31,9 +30,10 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.Vector;
+import java.util.stream.Collectors;
 
-import org.apache.commons.lang.StringUtils;
 import org.apache.commons.vfs2.FileObject;
 import org.eclipse.jface.wizard.Wizard;
 import org.eclipse.jface.wizard.WizardDialog;
@@ -65,7 +65,6 @@ import org.eclipse.swt.widgets.Label;
 import org.eclipse.swt.widgets.Listener;
 import org.eclipse.swt.widgets.MessageBox;
 import org.eclipse.swt.widgets.Shell;
-import org.eclipse.swt.widgets.Table;
 import org.eclipse.swt.widgets.TableItem;
 import org.eclipse.swt.widgets.Text;
 import org.pentaho.di.core.Const;
@@ -76,6 +75,7 @@ import org.pentaho.di.core.compress.CompressionProviderFactory;
 import org.pentaho.di.core.exception.KettleException;
 import org.pentaho.di.core.fileinput.FileInputList;
 import org.pentaho.di.core.gui.TextFileInputFieldInterface;
+import org.pentaho.di.core.logging.LogChannel;
 import org.pentaho.di.core.row.ValueMetaInterface;
 import org.pentaho.di.core.row.value.ValueMetaFactory;
 import org.pentaho.di.core.row.value.ValueMetaString;
@@ -99,16 +99,23 @@ import org.pentaho.di.ui.core.dialog.EnterSelectionDialog;
 import org.pentaho.di.ui.core.dialog.EnterTextDialog;
 import org.pentaho.di.ui.core.dialog.ErrorDialog;
 import org.pentaho.di.ui.core.dialog.PreviewRowsDialog;
+import org.pentaho.di.ui.core.events.dialog.FilterType;
+import org.pentaho.di.ui.core.events.dialog.SelectionAdapterFileDialogTextVar;
+import org.pentaho.di.ui.core.events.dialog.SelectionAdapterOptions;
+import org.pentaho.di.ui.core.events.dialog.SelectionOperation;
 import org.pentaho.di.ui.core.gui.GUIResource;
 import org.pentaho.di.ui.core.widget.ColumnInfo;
 import org.pentaho.di.ui.core.widget.TableView;
 import org.pentaho.di.ui.core.widget.TextVar;
-import org.pentaho.di.ui.spoon.Spoon;
 import org.pentaho.di.ui.trans.dialog.TransPreviewProgressDialog;
 import org.pentaho.di.ui.trans.step.BaseStepDialog;
-import org.pentaho.vfs.ui.VfsFileChooserDialog;
+import org.pentaho.di.trans.steps.common.CsvInputAwareMeta;
+import org.pentaho.di.ui.trans.step.common.CsvInputAwareImportProgressDialog;
+import org.pentaho.di.ui.trans.step.common.CsvInputAwareStepDialog;
+import org.pentaho.di.ui.trans.step.common.GetFieldsCapableStepDialog;
 
-public class TextFileInputDialog extends BaseStepDialog implements StepDialogInterface {
+public class TextFileInputDialog extends BaseStepDialog implements StepDialogInterface,
+  GetFieldsCapableStepDialog<TextFileInputMeta>, CsvInputAwareStepDialog {
   private static Class<?> PKG = TextFileInputMeta.class; // for i18n purposes, needed by Translator2!!
 
   private static final String[] YES_NO_COMBO =
@@ -203,10 +210,6 @@ public class TextFileInputDialog extends BaseStepDialog implements StepDialogInt
   private Label wlEnclosure;
   private Text wEnclosure;
   private FormData fdlEnclosure, fdEnclosure;
-
-  private Label wlEnclBreaks;
-  private Button wEnclBreaks;
-  private FormData fdlEnclBreaks, fdEnclBreaks;
 
   private Label wlEscape;
   private Text wEscape;
@@ -663,39 +666,9 @@ public class TextFileInputDialog extends BaseStepDialog implements StepDialogInt
     wAccFilenames.addSelectionListener( lsFlags );
 
     // Listen to the Browse... button
-    wbbFilename.addSelectionListener( new SelectionAdapter() {
-      public void widgetSelected( SelectionEvent e ) {
-        VfsFileChooserDialog fileChooserDialog = Spoon.getInstance().getVfsFileChooserDialog( null, null );
-        if ( wFilename.getText() != null ) {
-          try {
-            fileChooserDialog.initialFile =
-                KettleVFS.getFileObject( transMeta.environmentSubstitute( wFilename.getText() ) );
-          } catch ( KettleException ex ) {
-            fileChooserDialog.initialFile = null;
-          }
-        }
-        FileObject
-            selectedFile =
-            fileChooserDialog
-                .open( shell, null, "file", new String[] { "*.txt", "*.csv", "*" },
-                    new String[] { BaseMessages.getString( PKG, "System.FileType.TextFiles" ),
-                        BaseMessages.getString( PKG, "System.FileType.CSVFiles" ),
-                        BaseMessages.getString( PKG, "System.FileType.AllFiles" ) },
-                    VfsFileChooserDialog.VFS_DIALOG_OPEN_FILE_OR_DIRECTORY );
-        if ( selectedFile != null ) {
-          String file = selectedFile.getName().getURI();
-          if ( !StringUtils.isBlank( file ) ) {
-            file = file.replace( "file://", "" ).replace( "/C:", "C:" );
-          }
-          if ( !file.contains( System.getProperty( "file.separator" ) ) ) {
-            if ( !System.getProperty( "file.separator" ).equals( "/" ) ) {
-              file = file.replace( "/", System.getProperty( "file.separator" ) );
-            }
-          }
-          wFilename.setText( file );
-        }
-      }
-    } );
+    wbbFilename.addSelectionListener( new SelectionAdapterFileDialogTextVar( log, wFilename, transMeta,
+      new SelectionAdapterOptions( SelectionOperation.FILE_OR_FOLDER,
+        new FilterType[] { FilterType.TXT, FilterType.CSV, FilterType.ALL }, FilterType.TXT ) ) );
 
     // Detect X or ALT-F4 or something that kills this window...
     shell.addShellListener( new ShellAdapter() {
@@ -1119,33 +1092,13 @@ public class TextFileInputDialog extends BaseStepDialog implements StepDialogInt
     fdEnclosure.right = new FormAttachment( 100, 0 );
     wEnclosure.setLayoutData( fdEnclosure );
 
-    // Allow Enclosure breaks checkbox
-    wlEnclBreaks = new Label( wContentComp, SWT.RIGHT );
-    wlEnclBreaks.setText( BaseMessages.getString( PKG, "TextFileInputDialog.EnclBreaks.Label" ) );
-    props.setLook( wlEnclBreaks );
-    fdlEnclBreaks = new FormData();
-    fdlEnclBreaks.left = new FormAttachment( 0, 0 );
-    fdlEnclBreaks.top = new FormAttachment( wEnclosure, margin );
-    fdlEnclBreaks.right = new FormAttachment( middle, -margin );
-    wlEnclBreaks.setLayoutData( fdlEnclBreaks );
-    wEnclBreaks = new Button( wContentComp, SWT.CHECK );
-    props.setLook( wEnclBreaks );
-    fdEnclBreaks = new FormData();
-    fdEnclBreaks.left = new FormAttachment( middle, 0 );
-    fdEnclBreaks.top = new FormAttachment( wEnclosure, margin );
-    wEnclBreaks.setLayoutData( fdEnclBreaks );
-
-    // Disable until the logic works...
-    wlEnclBreaks.setEnabled( false );
-    wEnclBreaks.setEnabled( false );
-
     // Escape
     wlEscape = new Label( wContentComp, SWT.RIGHT );
     wlEscape.setText( BaseMessages.getString( PKG, "TextFileInputDialog.Escape.Label" ) );
     props.setLook( wlEscape );
     fdlEscape = new FormData();
     fdlEscape.left = new FormAttachment( 0, 0 );
-    fdlEscape.top = new FormAttachment( wEnclBreaks, margin );
+    fdlEscape.top = new FormAttachment( wEnclosure, margin );
     fdlEscape.right = new FormAttachment( middle, -margin );
     wlEscape.setLayoutData( fdlEscape );
     wEscape = new Text( wContentComp, SWT.SINGLE | SWT.LEFT | SWT.BORDER );
@@ -1153,7 +1106,7 @@ public class TextFileInputDialog extends BaseStepDialog implements StepDialogInt
     wEscape.addModifyListener( lsMod );
     fdEscape = new FormData();
     fdEscape.left = new FormAttachment( middle, 0 );
-    fdEscape.top = new FormAttachment( wEnclBreaks, margin );
+    fdEscape.top = new FormAttachment( wEnclosure, margin );
     fdEscape.right = new FormAttachment( 100, 0 );
     wEscape.setLayoutData( fdEscape );
 
@@ -2204,6 +2157,16 @@ public class TextFileInputDialog extends BaseStepDialog implements StepDialogInt
    *          The TextFileInputMeta object to obtain the data from.
    */
   public void getData( TextFileInputMeta meta ) {
+    getData( meta, true, true, null );
+  }
+
+  @Override
+  public void getData( final TextFileInputMeta meta, final boolean copyStepname, final boolean reloadAllFields,
+                       final Set<String> newFieldNames ) {
+    if ( copyStepname ) {
+      wStepname.setText( stepname );
+    }
+
     wAccFilenames.setSelection( meta.inputFiles.acceptingFilenames );
     wPassThruFields.setSelection( meta.inputFiles.passingThruFields );
     if ( meta.inputFiles.acceptingField != null ) {
@@ -2273,7 +2236,7 @@ public class TextFileInputDialog extends BaseStepDialog implements StepDialogInt
     wLimit.setText( "" + meta.content.rowLimit );
 
     logDebug( "getting fields info..." );
-    getFieldsData( meta, false );
+    getFieldsData( meta, false, reloadAllFields, newFieldNames );
 
     if ( meta.getEncoding() != null ) {
       wEncoding.setText( meta.getEncoding() );
@@ -2380,7 +2343,10 @@ public class TextFileInputDialog extends BaseStepDialog implements StepDialogInt
     wStepname.setFocus();
   }
 
-  private void getFieldsData( TextFileInputMeta in, boolean insertAtTop ) {
+  private void getFieldsData( TextFileInputMeta in, boolean insertAtTop, final boolean reloadAllFields,
+                              final Set<String> newFieldNames ) {
+    final List<String> lowerCaseNewFieldNames = newFieldNames == null ? new ArrayList()
+      : newFieldNames.stream().map( String::toLowerCase ).collect( Collectors.toList() );
     for ( int i = 0; i < in.inputFields.length; i++ ) {
       BaseFileField field = in.inputFields[i];
 
@@ -2389,11 +2355,10 @@ public class TextFileInputDialog extends BaseStepDialog implements StepDialogInt
       if ( insertAtTop ) {
         item = new TableItem( wFields.table, SWT.NONE, i );
       } else {
-        if ( i >= wFields.table.getItemCount() ) {
-          item = wFields.table.getItem( i );
-        } else {
-          item = new TableItem( wFields.table, SWT.NONE );
-        }
+        item = getTableItem( field.getName(), reloadAllFields );
+      }
+      if ( !reloadAllFields && !lowerCaseNewFieldNames.contains( field.getName().toLowerCase() ) ) {
+        continue;
       }
 
       item.setText( 1, Const.NVL( field.getName(), "" ) );
@@ -2622,168 +2587,29 @@ public class TextFileInputDialog extends BaseStepDialog implements StepDialogInt
 
   private void get() {
     if ( wFiletype.getText().equalsIgnoreCase( "CSV" ) ) {
-      getCSV();
+      getFields();
     } else {
       getFixed();
     }
   }
 
-  // Get the data layout
-  private void getCSV() {
-    TextFileInputMeta meta = new TextFileInputMeta();
-    getInfo( meta, true );
+  @Override
+  public String loadFieldsImpl( final TextFileInputMeta meta, final int samples ) {
+    return loadFieldsImpl( (CsvInputAwareMeta) meta, samples );
+  }
 
-    // CSV without separator defined
-    if ( meta.content.fileType.equalsIgnoreCase( "CSV" ) && ( meta.content.separator == null || meta.content.separator
-        .isEmpty() ) ) {
-      MessageBox mb = new MessageBox( shell, SWT.OK | SWT.ICON_ERROR );
-      mb.setMessage( BaseMessages.getString( PKG, "TextFileInput.Exception.NoSeparator" ) );
-      mb.setText( BaseMessages.getString( PKG, "TextFileInputDialog.DialogTitle" ) );
-      mb.open();
-      return;
-    }
+  @Override
+  public String massageFieldName( final String fieldName ) {
+    // Replace all spaces and hyphens (-) with underscores (_)
+    String massagedFieldName = fieldName;
+    massagedFieldName = Const.replace( massagedFieldName, " ", "_" );
+    massagedFieldName = Const.replace( massagedFieldName, "-", "_" );
+    return massagedFieldName;
+  }
 
-    TextFileInputMeta previousMeta = (TextFileInputMeta) meta.clone();
-    FileInputList textFileList = meta.getFileInputList( transMeta );
-    InputStream fileInputStream;
-    CompressionInputStream inputStream = null;
-    StringBuilder lineStringBuilder = new StringBuilder( 256 );
-    int fileFormatType = meta.getFileFormatTypeNr();
-
-    String delimiter = transMeta.environmentSubstitute( meta.content.separator );
-    String enclosure = transMeta.environmentSubstitute( meta.content.enclosure );
-    String escapeCharacter = transMeta.environmentSubstitute( meta.content.escapeCharacter );
-
-    if ( textFileList.nrOfFiles() > 0 ) {
-      int clearFields = meta.content.header ? SWT.YES : SWT.NO;
-      int nrInputFields = meta.inputFields.length;
-
-      if ( nrInputFields > 0 ) {
-        MessageBox mb = new MessageBox( shell, SWT.YES | SWT.NO | SWT.CANCEL | SWT.ICON_QUESTION );
-        mb.setMessage( BaseMessages.getString( PKG, "TextFileInputDialog.ClearFieldList.DialogMessage" ) );
-        mb.setText( BaseMessages.getString( PKG, "TextFileInputDialog.ClearFieldList.DialogTitle" ) );
-        clearFields = mb.open();
-        if ( clearFields == SWT.CANCEL ) {
-          return;
-        }
-      }
-
-      try {
-        wFields.table.removeAll();
-
-        FileObject fileObject = textFileList.getFile( 0 );
-        fileInputStream = KettleVFS.getInputStream( fileObject );
-        Table table = wFields.table;
-
-        CompressionProvider provider =
-            CompressionProviderFactory.getInstance().createCompressionProviderInstance( meta.content.fileCompression );
-        inputStream = provider.createInputStream( fileInputStream );
-
-        InputStreamReader reader;
-        if ( meta.getEncoding() != null && meta.getEncoding().length() > 0 ) {
-          reader = new InputStreamReader( inputStream, meta.getEncoding() );
-        } else {
-          reader = new InputStreamReader( inputStream );
-        }
-
-        EncodingType encodingType = EncodingType.guessEncodingType( reader.getEncoding() );
-
-        // Scan the header-line, determine fields...
-        String line = TextFileInputUtils.getLine( log, reader, encodingType, fileFormatType, lineStringBuilder );
-        if ( line != null ) {
-          // Estimate the number of input fields...
-          // Chop up the line using the delimiter
-          String[] fields =
-              TextFileInputUtils.guessStringsFromLine( transMeta, log, line, meta, delimiter, enclosure,
-                  escapeCharacter );
-
-          for ( int i = 0; i < fields.length; i++ ) {
-            String field = fields[i];
-            if ( field == null || field.length() == 0 || !meta.content.header ) {
-              field = "Field" + ( i + 1 );
-            } else {
-              // Trim the field
-              field = Const.trim( field );
-              // Replace all spaces & - with underscore _
-              field = Const.replace( field, " ", "_" );
-              field = Const.replace( field, "-", "_" );
-            }
-
-            TableItem item = new TableItem( table, SWT.NONE );
-            item.setText( 1, field );
-            item.setText( 2, "String" ); // The default type is String...
-          }
-
-          wFields.setRowNums();
-          wFields.optWidth( true );
-
-          // Copy it...
-          getInfo( meta, true );
-
-          // Sample a few lines to determine the correct type of the fields...
-          String shellText = BaseMessages.getString( PKG, "TextFileInputDialog.LinesToSample.DialogTitle" );
-          String lineText = BaseMessages.getString( PKG, "TextFileInputDialog.LinesToSample.DialogMessage" );
-          EnterNumberDialog end = new EnterNumberDialog( shell, 100, shellText, lineText );
-          int samples = end.open();
-          if ( samples >= 0 ) {
-            getInfo( meta, true );
-
-            TextFileCSVImportProgressDialog pd =
-                new TextFileCSVImportProgressDialog( shell, meta, transMeta, reader, samples, clearFields == SWT.YES );
-            String message = pd.open();
-            if ( message != null ) {
-              wFields.removeAll();
-
-              // OK, what's the result of our search?
-              getData( meta );
-
-              // If we didn't want the list to be cleared, we need to re-inject the previous values...
-              //
-              if ( clearFields == SWT.NO ) {
-                getFieldsData( previousMeta, true );
-                wFields.table.setSelection( previousMeta.inputFields.length, wFields.table.getItemCount()
-                    - 1 );
-              }
-
-              wFields.removeEmptyRows();
-              wFields.setRowNums();
-              wFields.optWidth( true );
-
-              EnterTextDialog etd =
-                  new EnterTextDialog( shell, BaseMessages.getString( PKG,
-                      "TextFileInputDialog.ScanResults.DialogTitle" ), BaseMessages.getString( PKG,
-                          "TextFileInputDialog.ScanResults.DialogMessage" ), message, true );
-              etd.setReadOnly();
-              etd.open();
-            }
-          }
-        } else {
-          MessageBox mb = new MessageBox( shell, SWT.OK | SWT.ICON_ERROR );
-          mb.setMessage( BaseMessages.getString( PKG, "TextFileInputDialog.UnableToReadHeaderLine.DialogMessage" ) );
-          mb.setText( BaseMessages.getString( PKG, "System.Dialog.Error.Title" ) );
-          mb.open();
-        }
-      } catch ( IOException e ) {
-        new ErrorDialog( shell, BaseMessages.getString( PKG, "TextFileInputDialog.IOError.DialogTitle" ), BaseMessages
-            .getString( PKG, "TextFileInputDialog.IOError.DialogMessage" ), e );
-      } catch ( KettleException e ) {
-        new ErrorDialog( shell, BaseMessages.getString( PKG, "System.Dialog.Error.Title" ), BaseMessages.getString( PKG,
-            "TextFileInputDialog.ErrorGettingFileDesc.DialogMessage" ), e );
-      } finally {
-        try {
-          if ( inputStream != null ) {
-            inputStream.close();
-          }
-        } catch ( Exception e ) {
-          // Ignore errors
-        }
-      }
-    } else {
-      MessageBox mb = new MessageBox( shell, SWT.OK | SWT.ICON_ERROR );
-      mb.setMessage( BaseMessages.getString( PKG, "TextFileInputDialog.NoValidFileFound.DialogMessage" ) );
-      mb.setText( BaseMessages.getString( PKG, "System.Dialog.Error.Title" ) );
-      mb.open();
-    }
+  @Override
+  public String[] getFieldNames( final TextFileInputMeta meta ) {
+    return getFieldNames( (CsvInputAwareMeta) meta );
   }
 
   public static int guessPrecision( double d ) {
@@ -2946,30 +2772,22 @@ public class TextFileInputDialog extends BaseStepDialog implements StepDialogInt
         if ( skipHeaders ) {
           // Skip the header lines first if more then one, it helps us position
           if ( meta.content.layoutPaged && meta.content.nrLinesDocHeader > 0 ) {
-            int skipped = 0;
-            String line = TextFileInputUtils.getLine( log, reader, encodingType, fileFormatType, lineStringBuilder );
-            while ( line != null && skipped < meta.content.nrLinesDocHeader - 1 ) {
-              skipped++;
-              line = TextFileInputUtils.getLine( log, reader, encodingType, fileFormatType, lineStringBuilder );
-            }
+            TextFileInputUtils.skipLines( log, reader, encodingType, fileFormatType,
+              lineStringBuilder,  meta.content.nrLinesDocHeader - 1, meta.getEnclosure(), 0 );
           }
 
           // Skip the header lines first if more then one, it helps us position
           if ( meta.content.header && meta.content.nrHeaderLines > 0 ) {
-            int skipped = 0;
-            String line = TextFileInputUtils.getLine( log, reader, encodingType, fileFormatType, lineStringBuilder );
-            while ( line != null && skipped < meta.content.nrHeaderLines - 1 ) {
-              skipped++;
-              line = TextFileInputUtils.getLine( log, reader, encodingType, fileFormatType, lineStringBuilder );
-            }
+            TextFileInputUtils.skipLines( log, reader, encodingType, fileFormatType,
+              lineStringBuilder,  meta.content.nrHeaderLines - 1, meta.getEnclosure(), 0 );
           }
         }
 
-        String line = TextFileInputUtils.getLine( log, reader, encodingType, fileFormatType, lineStringBuilder );
+        String line = TextFileInputUtils.getLine( log, reader, encodingType, fileFormatType, lineStringBuilder, meta.getEnclosure() );
         while ( line != null && ( linenr < maxnr || nrlines == 0 ) ) {
           retval.add( line );
           linenr++;
-          line = TextFileInputUtils.getLine( log, reader, encodingType, fileFormatType, lineStringBuilder );
+          line = TextFileInputUtils.getLine( log, reader, encodingType, fileFormatType, lineStringBuilder, meta.getEnclosure() );
         }
       } catch ( Exception e ) {
         throw new KettleException( BaseMessages.getString( PKG, "TextFileInputDialog.Exception.ErrorGettingFirstLines",
@@ -3351,5 +3169,57 @@ public class TextFileInputDialog extends BaseStepDialog implements StepDialogInt
     // / END OF ADDITIONAL FIELDS TAB
     // ///////////////////////////////////////////////////////////
 
+  }
+
+  @Override
+  public TableView getFieldsTable() {
+    return this.wFields;
+  }
+
+  @Override
+  public Shell getShell() {
+    return this.shell;
+  }
+
+  @Override
+  public TextFileInputMeta getNewMetaInstance() {
+    return new TextFileInputMeta();
+  }
+
+  @Override
+  public void populateMeta( TextFileInputMeta inputMeta ) {
+    getInfo( inputMeta, false );
+  }
+
+  @Override
+  public CsvInputAwareImportProgressDialog getCsvImportProgressDialog(
+    final CsvInputAwareMeta meta, final int samples, final InputStreamReader reader ) {
+    return new TextFileCSVImportProgressDialog( getShell(), (TextFileInputMeta) meta, transMeta, reader, samples, true );
+  }
+
+  @Override
+  public LogChannel getLogChannel() {
+    return log;
+  }
+
+  @Override
+  public TransMeta getTransMeta() {
+    return transMeta;
+  }
+
+  @Override
+  public InputStream getInputStream( final CsvInputAwareMeta meta ) {
+    InputStream fileInputStream;
+    CompressionInputStream inputStream = null;
+    try {
+      FileObject fileObject = meta.getHeaderFileObject( getTransMeta() );
+      fileInputStream = KettleVFS.getInputStream( fileObject );
+      CompressionProvider provider = CompressionProviderFactory.getInstance().createCompressionProviderInstance(
+        ( (TextFileInputMeta) meta ).content.fileCompression );
+      inputStream = provider.createInputStream( fileInputStream );
+    } catch ( final Exception e ) {
+      logError( BaseMessages.getString( "FileInputDialog.ErrorGettingFileDesc.DialogMessage" ), e );
+    }
+    return inputStream;
   }
 }

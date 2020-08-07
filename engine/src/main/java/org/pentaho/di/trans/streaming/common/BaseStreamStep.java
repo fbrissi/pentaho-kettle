@@ -2,7 +2,7 @@
  *
  * Pentaho Data Integration
  *
- * Copyright (C) 2002-2018 by Hitachi Vantara : http://www.pentaho.com
+ * Copyright (C) 2002-2020 by Hitachi Vantara : http://www.pentaho.com
  *
  *******************************************************************************
  *
@@ -49,12 +49,13 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 
+@SuppressWarnings ( "WeakerAccess" )
 public class BaseStreamStep extends BaseStep {
 
   private static final Class<?> PKG = BaseStreamStep.class;
-  private BaseStreamStepMeta stepMeta;
+  protected BaseStreamStepMeta variablizedStepMeta;
 
-  protected SubtransExecutor subtransExecutor;
+  private SubtransExecutor subtransExecutor;
   protected StreamWindow<List<Object>, Result> window;
   protected StreamSource<List<Object>> source;
 
@@ -63,22 +64,27 @@ public class BaseStreamStep extends BaseStep {
     super( stepMeta, stepDataInterface, copyNr, transMeta, trans );
   }
 
+  public BaseStreamStepMeta getVariablizedStepMeta() {
+    return variablizedStepMeta;
+  }
+
+  @Override
   public boolean init( StepMetaInterface stepMetaInterface, StepDataInterface stepDataInterface ) {
     Preconditions.checkNotNull( stepMetaInterface );
-    stepMeta = (BaseStreamStepMeta) stepMetaInterface;
-    stepMeta.setParentStepMeta( getStepMeta() );
-    stepMeta.setFileName( stepMeta.getTransformationPath() );
-
+    variablizedStepMeta = (BaseStreamStepMeta) stepMetaInterface;
+    variablizedStepMeta.setParentStepMeta( getStepMeta() );
+    variablizedStepMeta.setFileName( variablizedStepMeta.getTransformationPath() );
 
     boolean superInit = super.init( stepMetaInterface, stepDataInterface );
 
     try {
       TransMeta transMeta = TransExecutorMeta
-        .loadMappingMeta( stepMeta, getTransMeta().getRepository(), getTransMeta().getMetaStore(),
+        .loadMappingMeta( variablizedStepMeta, getTransMeta().getRepository(), getTransMeta().getMetaStore(),
           getParentVariableSpace() );
+      variablizedStepMeta = (BaseStreamStepMeta) variablizedStepMeta.withVariables( this );
       subtransExecutor = new SubtransExecutor( getStepname(),
         getTrans(), transMeta, true,
-        new TransExecutorParameters(), environmentSubstitute( stepMeta.getSubStep() ) );
+        new TransExecutorParameters(), variablizedStepMeta.getSubStep(), getPrefetchCount() );
 
     } catch ( KettleException e ) {
       log.logError( e.getLocalizedMessage(), e );
@@ -86,8 +92,8 @@ public class BaseStreamStep extends BaseStep {
     }
 
     List<CheckResultInterface> remarks = new ArrayList<>();
-    stepMeta.check(
-      remarks, getTransMeta(), stepMeta.getParentStepMeta(),
+    variablizedStepMeta.check(
+      remarks, getTransMeta(), variablizedStepMeta.getParentStepMeta(),
       null, null, null, null, //these parameters are not used inside the method
       variables, getRepository(), getMetaStore() );
     boolean errorsPresent =
@@ -113,24 +119,27 @@ public class BaseStreamStep extends BaseStep {
     Preconditions.checkNotNull( source );
     Preconditions.checkNotNull( window );
 
-    source.open();
+    try {
+      source.open();
 
-    bufferStream().forEach( result -> {
-      if ( result.isSafeStop() ) {
-        getTrans().safeStop();
-      }
+      bufferStream().forEach( result -> {
+        if ( result.isSafeStop() ) {
+          getTrans().safeStop();
+        }
 
-      putRows( result.getRows() );
-    } );
-    super.setOutputDone();
+        putRows( result.getRows() );
+      } );
+      super.setOutputDone();
 
-    // Needed for when an Abort Step is used.
-    source.close();
+    } finally {
+      // Needed for when an Abort Step is used.
+      source.close();
+    }
     return false;
   }
 
   private Iterable<Result> bufferStream() {
-    return window.buffer( source.observable() );
+    return window.buffer( source.flowable() );
   }
 
   @Override
@@ -174,17 +183,38 @@ public class BaseStreamStep extends BaseStep {
 
   protected int getBatchSize() {
     try {
-      return Integer.parseInt( stepMeta.getBatchSize() );
+      return Integer.parseInt( variablizedStepMeta.getBatchSize() );
     } catch ( NumberFormatException nfe ) {
       return 50;
     }
   }
 
+  /**
+   * Get Prefetch Count
+   *
+   * @return the number of messages to prefetch from the broker
+   */
+  protected int getPrefetchCount() {
+    try {
+      return Integer.parseInt( variablizedStepMeta.getPrefetchCount() );
+    } catch ( NumberFormatException nfe ) {
+      return BaseStreamStepMeta.PREFETCH;
+    }
+  }
+
   protected long getDuration() {
     try {
-      return Long.parseLong( stepMeta.getBatchDuration() );
+      return Long.parseLong( variablizedStepMeta.getBatchDuration() );
     } catch ( NumberFormatException nfe ) {
       return 5000L;
+    }
+  }
+
+  protected int getParallelism() {
+    try {
+      return Integer.parseInt( variablizedStepMeta.getParallelism() );
+    } catch ( NumberFormatException nfe ) {
+      return 1;
     }
   }
 
@@ -200,5 +230,9 @@ public class BaseStreamStep extends BaseStep {
   @VisibleForTesting
   public void setSource( StreamSource<List<Object>> source ) {
     this.source = source;
+  }
+
+  public SubtransExecutor getSubtransExecutor() {
+    return subtransExecutor;
   }
 }
